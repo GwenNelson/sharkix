@@ -10,7 +10,7 @@ the actual kernel is an ELF64 image supplied as Multiboot module 0.
 Expected QEMU layout:
 
     -kernel bootstub32
-    -initrd kernel.elf,dominit0,other-module,...
+    -initrd kernel.elf[,module1,module2,...]
 
 QEMU loads bootstub32 as a Multiboot-1 kernel and creates one Multiboot
 module descriptor for every comma-separated `-initrd` entry.
@@ -25,9 +25,8 @@ bootstub32 then:
            EAX = 0x2badb002
            EBX = original Multiboot-1 info pointer
 
-For seL4 this means the original module 1 becomes module 0, so it is seen
-as the rootserver.  Modules after it remain available in the Multiboot
-information.
+Module 0 is consumed by bootstub32. Every later module remains available in
+the Multiboot information; additional modules are optional.
 
 Build
 -----

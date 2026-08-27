@@ -287,13 +287,10 @@ u32 bootstub_main(u32 magic, struct multiboot_info *mbi)
 	if ((mbi->flags & MB_INFO_MODS) == 0)
 		fail("QEMU supplied no modules");
 
-	/*
-	 * Need at least:
-	 *   module 0 = real seL4 kernel
-	 *   module 1 = seL4 rootserver / dominit0
-	 */
-	if (mbi->mods_count < 2)
-		fail("need kernel ELF + rootserver modules");
+	/* Module 0 is the real kernel.  Additional modules are optional and are
+	 * preserved for the kernel after module 0 is consumed. */
+	if (mbi->mods_count < 1)
+		fail("need kernel ELF module");
 
 	/* C: Multiboot info and minimum module set look sane. */
 	debug_char('C');

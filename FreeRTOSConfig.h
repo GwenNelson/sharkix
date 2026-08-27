@@ -2,7 +2,7 @@
 #define FREERTOS_CONFIG_H
 
 #define configCPU_CLOCK_HZ                         ( ( unsigned long ) 100000000UL )
-#define configTICK_RATE_HZ                         1000
+#define configTICK_RATE_HZ                         10
 #define configMAX_PRIORITIES                       5
 #define configMINIMAL_STACK_SIZE                   128
 #define configMAX_TASK_NAME_LEN                    16
@@ -16,13 +16,13 @@
 #define configENABLE_BACKWARD_COMPATIBILITY        0
 #define configNUM_THREAD_LOCAL_STORAGE_POINTERS    0
 #define configUSE_MINI_LIST_ITEM                   1
-#define configSTACK_DEPTH_TYPE                     unsigned long
-#define configMESSAGE_BUFFER_LENGTH_TYPE           unsigned long
+#define configSTACK_DEPTH_TYPE                     size_t
+#define configMESSAGE_BUFFER_LENGTH_TYPE           size_t
 #define configHEAP_CLEAR_MEMORY_ON_FREE            0
 #define configSTATS_BUFFER_MAX_LENGTH              0xFFFF
 #define configUSE_NEWLIB_REENTRANT                 0
 
-#define configUSE_TIMERS                           1
+#define configUSE_TIMERS                           0
 #define configTIMER_TASK_PRIORITY                  2
 #define configTIMER_QUEUE_LENGTH                   10
 #define configTIMER_TASK_STACK_DEPTH               256
@@ -79,14 +79,7 @@
 #define configSUPPORT_FPU                         0
 #define configISR_STACK_SIZE                      2048
 
-/* IA32 flat port settings. */
-#define configUSE_COMMON_INTERRUPT_ENTRY_POINT    1
-#define configAPIC_BASE                           0xFEE00000UL
-
 #define configEXPECTED_IDLE_TIME_BEFORE_SLEEP     2
-
-#define vPortSVCHandler                          vPortYieldCall
-#define xPortPendSVHandler                       vPortYieldCall
 
 #define configPRE_SUPPRESS_TICKS_AND_SLEEP_PROCESSING( xExpectedIdleTime )     \
     do                                                                         \
@@ -112,7 +105,7 @@
 #define INCLUDE_xTaskGetCurrentTaskHandle        1
 #define INCLUDE_uxTaskGetStackHighWaterMark      1
 #define INCLUDE_eTaskGetState                    1
-#define INCLUDE_xTimerPendFunctionCall           1
+#define INCLUDE_xTimerPendFunctionCall           0
 #define INCLUDE_xTaskAbortDelay                  1
 #define INCLUDE_xTaskGetHandle                   1
 #define INCLUDE_xTaskResumeFromISR               1
