@@ -368,20 +368,32 @@ VM:
             Caller must own/control the VM object
                 Otherwise return VM_ERR_PERMISSION
 
-            Remove the owner's handle/reference to the object
+            Mark the VM object as being destroyed so no new mappings, grants
+            or references can be created
 
-            Remove all grants belonging to that owner as appropriate
+            Remove every grant associated with the VM object
 
-            Existing mappings which independently hold references may keep
-            the underlying VM object and backing pages alive
+            Immediately unmap every mapping of the VM object from every
+            address space, including the caller's own mappings
 
-            The handle itself is no longer valid for new operations once
-            destroyed
+            Invalidate all relevant TLB entries
 
-            When the VM object's refcount reaches zero:
-                destroy the VM object
+            Invalidate the VM object handle
+
+            Release all mapping references and the owning reference
+
+            Once teardown is complete:
+                refcount must reach zero
                 free all backing pages
-                free mapping/grant metadata belonging to it
+                free all mapping metadata
+                free all grant metadata
+                free the VM object
+
+            After SYS_VM_DESTROY returns:
+                the handle is invalid
+                no mappings of the object remain
+                no grants to the object remain
+                accessing any former mapping causes a normal page fault
 
             Return VM_OK
 
@@ -394,11 +406,26 @@ VM:
 
         grants do not by themselves need to hold references
 
-        SYS_VM_UNMAP releases a mapping reference
+        SYS_VM_UNMAP:
+            removes one mapping from the calling address space
+            drops that mapping's reference
+            does not revoke grants or affect mappings in other address spaces
 
-        SYS_VM_DESTROY releases the owning reference
+        SYS_VM_REVOKE:
+            removes one endpoint grant
+            removes every mapping derived from that grant
+            drops those mapping references
 
-        when refcount reaches 0:
+        SYS_VM_DESTROY:
+            forcibly destroys the object globally
+            removes every mapping from every address space
+            removes every grant
+            invalidates the handle
+            drops all references as part of teardown
+
+        when ordinary reference release causes refcount to reach 0:
+            implicitly destroy the VM object
+            remove any remaining grants and mappings
             backing pages are freed
             VM object metadata is freed
 
