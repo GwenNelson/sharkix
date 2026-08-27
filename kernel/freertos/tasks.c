@@ -378,6 +378,9 @@ typedef struct tskTaskControlBlock       /* The old naming convention is used to
 {
     volatile StackType_t * pxTopOfStack; /**< Points to the location of the last item placed on the tasks stack.  THIS MUST BE THE FIRST MEMBER OF THE TCB STRUCT. */
 
+    /* The x86_64 port reads this fixed second field while changing CR3. */
+    void * pvAddressSpace;
+
     #if ( portUSING_MPU_WRAPPERS == 1 )
         xMPU_SETTINGS xMPUSettings; /**< The MPU settings are defined as part of the port layer.  THIS MUST BE THE SECOND MEMBER OF THE TCB STRUCT. */
     #endif
@@ -1912,6 +1915,7 @@ STATIC void prvInitialiseNewTask( TaskFunction_t pxTaskCode,
     }
 
     pxNewTCB->uxPriority = uxPriority;
+    pxNewTCB->pvAddressSpace = NULL;
     #if ( configUSE_MUTEXES == 1 )
     {
         pxNewTCB->uxBasePriority = uxPriority;
@@ -6698,6 +6702,30 @@ STATIC void prvResetNextTaskUnblockTime( void )
     }
 
 #endif /* ( ( INCLUDE_xTaskGetCurrentTaskHandle == 1 ) || ( configUSE_RECURSIVE_MUTEXES == 1 ) ) */
+/*-----------------------------------------------------------*/
+
+void vTaskSetAddressSpace( TaskHandle_t xTask, void * pvAddressSpace )
+{
+    TCB_t * pxTCB = ( TCB_t * ) xTask;
+
+    if( pxTCB != NULL )
+    {
+        pxTCB->pvAddressSpace = pvAddressSpace;
+    }
+}
+/*-----------------------------------------------------------*/
+
+void vTaskSetStack( TaskHandle_t xTask, StackType_t * pxStack,
+                    StackType_t * pxTopOfStack )
+{
+    TCB_t * pxTCB = ( TCB_t * ) xTask;
+
+    if( pxTCB != NULL )
+    {
+        pxTCB->pxStack = pxStack;
+        pxTCB->pxTopOfStack = pxTopOfStack;
+    }
+}
 /*-----------------------------------------------------------*/
 
 #if ( ( INCLUDE_xTaskGetSchedulerState == 1 ) || ( configUSE_TIMERS == 1 ) )

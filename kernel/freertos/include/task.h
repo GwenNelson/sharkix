@@ -3711,6 +3711,12 @@ TickType_t uxTaskResetEventItemValue( void ) PRIVILEGED_FUNCTION;
  */
 TaskHandle_t xTaskGetCurrentTaskHandle( void ) PRIVILEGED_FUNCTION;
 
+/* Sharkix x86_64 address-space extensions.  These are used before starting
+ * the scheduler to attach a privileged task to its CR3 root and stack. */
+void vTaskSetAddressSpace( TaskHandle_t xTask, void * pvAddressSpace ) PRIVILEGED_FUNCTION;
+void vTaskSetStack( TaskHandle_t xTask, StackType_t * pxStack,
+                    StackType_t * pxTopOfStack ) PRIVILEGED_FUNCTION;
+
 /*
  * Return the handle of the task running on specified core.
  */

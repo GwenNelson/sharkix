@@ -3,6 +3,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "memory.h"
+#include "task_loader.h"
 
 #define VGA_WIDTH 80
 #define VGA_HEIGHT 25
@@ -26,26 +27,37 @@ static void console_write(const char *s)
         else { serial_putc(c); vga[(size_t)vga_y * VGA_WIDTH + vga_x] = 0x0f00 | (uint8_t)c; if (++vga_x == VGA_WIDTH) { vga_x = 0; if (++vga_y == VGA_HEIGHT) vga_y = 0; } }
     }
 }
-static void hello_task(void *argument)
+static void console_hex(uint64_t value)
+{
+    static const char digits[] = "0123456789abcdef";
+    char text[19] = "0x0000000000000000";
+    for (unsigned i = 0; i < 16; ++i) text[17 - i] = digits[(value >> (i * 4)) & 0xf];
+    console_write(text);
+}
+static void print_task_mapping(const char *name, const isolated_task_t *task)
+{
+    console_write(name); console_write(" CR3: "); console_hex(task->address_space->pml4_phys);
+    console_write(" code phys: "); console_hex(task->code_physical); console_write("\n");
+}
+static void kernel_task(void *argument)
 {
     (void)argument;
     for (;;) {
-        console_write("hello world from FreeRTOS\n");
-        for (volatile uint64_t delay = 0; delay < 10000000ULL; ++delay) {
-            __asm__ volatile ("pause");
-        }
+        uint64_t cr3;
+        __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+        if (cr3 != kernel_address_space.pml4_phys) serial_putc('!');
+        serial_putc('K');
+        taskYIELD();
     }
-}
-static void keepalive_task(void *argument)
-{
-    (void)argument;
-    for (;;) { __asm__ volatile ("pause"); }
 }
 void vApplicationMallocFailedHook(void) { taskDISABLE_INTERRUPTS(); for (;;) {} }
 void vApplicationStackOverflowHook(TaskHandle_t task, char *name) { (void)task; (void)name; taskDISABLE_INTERRUPTS(); for (;;) {} }
 
 void kernel_high_entry(uint32_t magic, uint32_t info)
 {
+    extern const uint8_t taskA_image_start[], taskA_image_end[];
+    extern const uint8_t taskB_image_start[], taskB_image_end[];
+    isolated_task_t task_a, task_b;
     (void)magic; (void)info;
     serial_init();
     console_write("SharkKernel x86_64\n");
@@ -54,9 +66,24 @@ void kernel_high_entry(uint32_t magic, uint32_t info)
     console_write("kernel heap base:    0xffffc00000000000\n");
     if (virt_to_phys(phys_to_virt(VGA_PHYS)) == VGA_PHYS) console_write("physmap translation: ok\n");
     memory_init();
+    if (isolated_task_create(taskA_image_start, (size_t)(taskA_image_end - taskA_image_start), "taskA", &task_a) != 0 ||
+        isolated_task_create(taskB_image_start, (size_t)(taskB_image_end - taskB_image_start), "taskB", &task_b) != 0) {
+        console_write("isolated task setup failed\n");
+        for (;;) __asm__ volatile ("cli; hlt");
+    }
+    console_write("kernel CR3: "); console_hex(kernel_address_space.pml4_phys); console_write("\n");
+    print_task_mapping("task A", &task_a);
+    print_task_mapping("task B", &task_b);
+    if (task_a.address_space->pml4_phys == task_b.address_space->pml4_phys ||
+        task_a.code_physical == task_b.code_physical ||
+        address_space_translate(task_a.address_space, 0x400000) != task_a.code_physical ||
+        address_space_translate(task_b.address_space, 0x400000) != task_b.code_physical) {
+        console_write("isolated mapping check failed\n");
+        for (;;) __asm__ volatile ("cli; hlt");
+    }
+    console_write("isolated lower mappings: ok\n");
     console_write("starting FreeRTOS...\n");
-    xTaskCreate(hello_task, "hello", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
-    xTaskCreate(keepalive_task, "keepalive", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(kernel_task, "kernel", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
     vTaskStartScheduler();
     console_write("scheduler failed\n");
     for (;;) {}
