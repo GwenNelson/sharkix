@@ -22,7 +22,7 @@ static void console_write(const char *s)
 {
     while (*s) {
         char c = *s++;
-        if (c == '\n') { serial_putc('\r'); vga_x = 0; if (++vga_y == VGA_HEIGHT) vga_y = 0; }
+        if (c == '\n') { serial_putc('\r'); serial_putc('\n'); vga_x = 0; if (++vga_y == VGA_HEIGHT) vga_y = 0; }
         else { serial_putc(c); vga[(size_t)vga_y * VGA_WIDTH + vga_x] = 0x0f00 | (uint8_t)c; if (++vga_x == VGA_WIDTH) { vga_x = 0; if (++vga_y == VGA_HEIGHT) vga_y = 0; } }
     }
 }
