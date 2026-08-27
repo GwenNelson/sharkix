@@ -6,6 +6,7 @@
 .extern xTaskIncrementTick
 .extern thread_prepare_current
 .extern dispatch_syscall
+.extern thread_block_current
 .extern thread_handle_exception
 .extern cpu0
 
@@ -30,14 +31,15 @@
 1:
 .endm
 
-/* On a CPL3 return frame CS is at RSP+8.  Kernel frames retain the previous
- * direct-jump convention so the pre-existing kernel FreeRTOS ABI is unchanged. */
-.macro RETURN_CONTEXT kernel_skip
+/* CPL3 contexts use IRETQ.  This port's software interrupt gate leaves its
+ * CPL0 frame plus an alignment slot; discard all six words before jumping back
+ * into a C kernel task.  Fresh kernel tasks use a compatible synthetic frame. */
+.macro RETURN_CONTEXT
  testb $3, 8(%rsp)
  jz 1f
  iretq
 1: movq (%rsp), %r11
- addq $\kernel_skip, %rsp
+ addq $48, %rsp
  sti
  jmp *%r11
 .endm
@@ -48,7 +50,7 @@ vPortStartFirstTask:
  movq pxCurrentTCB(%rip), %rax
  movq (%rax), %rsp
  RESTORE_REGS
- RETURN_CONTEXT 24
+ RETURN_CONTEXT
 
 .global vPortYieldHandler
 vPortYieldHandler:
@@ -62,7 +64,7 @@ vPortYieldHandler:
  movq pxCurrentTCB(%rip), %rax
  movq (%rax), %rsp
  RESTORE_REGS
- RETURN_CONTEXT 40
+ RETURN_CONTEXT
 
 .global vPortTimerHandler
 vPortTimerHandler:
@@ -80,7 +82,7 @@ vPortTimerHandler:
  movq pxCurrentTCB(%rip), %rax
  movq (%rax), %rsp
  RESTORE_REGS
- RETURN_CONTEXT 40
+ RETURN_CONTEXT
 
 .global vPortInvalidOpcodeHandler
 vPortInvalidOpcodeHandler:
@@ -115,19 +117,37 @@ vPortSyscallEntry:
  movq cpu0+8(%rip), %rsp
  pushq %r11; pushq %rcx; pushq %rax; pushq %rdi; pushq %rsi; pushq %rdx; pushq %r10
  pushq %r8; pushq %r9; pushq %rbx; pushq %rbp; pushq %r12; pushq %r13; pushq %r14; pushq %r15
- /* Saved layout: r15..r8, r10, rdx, rsi, rdi, rax, rcx, r11. */
- movq 48(%rsp), %rax
- subq $8, %rsp
- pushq %rax
- movq 112(%rsp), %rdi
- movq 104(%rsp), %rsi
- movq 96(%rsp), %rdx
- movq 88(%rsp), %rcx
- movq 80(%rsp), %r8
- movq 72(%rsp), %r9
+ /* SysV AMD64: syscall_result_t is returned through a hidden first pointer
+  * argument; the 56-byte by-value syscall_ctx_t is passed on the stack.  The
+  * 128-byte local area keeps the call 16-byte aligned and also survives while
+  * a blocked task is suspended. */
+ subq $128, %rsp
+ movq 224(%rsp), %rax; movq %rax, 0(%rsp)
+ movq 216(%rsp), %rax; movq %rax, 8(%rsp)
+ movq 208(%rsp), %rax; movq %rax, 16(%rsp)
+ movq 200(%rsp), %rax; movq %rax, 24(%rsp)
+ movq 192(%rsp), %rax; movq %rax, 32(%rsp)
+ movq 184(%rsp), %rax; movq %rax, 40(%rsp)
+ movq 176(%rsp), %rax; movq %rax, 48(%rsp)
+ leaq 64(%rsp), %rdi
  call dispatch_syscall
- addq $16, %rsp
- movq %rax, 96(%rsp)
+ cmpl $0, 64(%rsp)
+ je 1f
+ /* BLOCK: result.ctx is the persistent return context in this thread's
+  * syscall frame. thread_block_current() does not return until thread_wake(). */
+ leaq 72(%rsp), %rdi
+ call thread_block_current
+ testl %eax, %eax
+ jne vPortDefaultHandler
+1:
+ movq 72(%rsp), %rax; movq %rax, 224(%rsp)
+ movq 80(%rsp), %rax; movq %rax, 216(%rsp)
+ movq 88(%rsp), %rax; movq %rax, 208(%rsp)
+ movq 96(%rsp), %rax; movq %rax, 200(%rsp)
+ movq 104(%rsp), %rax; movq %rax, 192(%rsp)
+ movq 112(%rsp), %rax; movq %rax, 184(%rsp)
+ movq 120(%rsp), %rax; movq %rax, 176(%rsp)
+ addq $128, %rsp
  popq %r15; popq %r14; popq %r13; popq %r12; popq %rbp; popq %rbx; popq %r9; popq %r8
  popq %r10; popq %rdx; popq %rsi; popq %rdi; popq %rax; popq %rcx; popq %r11
  movq cpu0+16(%rip), %rsp

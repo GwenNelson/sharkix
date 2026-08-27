@@ -53,8 +53,8 @@ void kernel_startup_profile(void)
     startup_reaper();
     return;
 failed:
-    if (a && a->state == THREAD_CREATED) thread_destroy_unstarted(a);
-    if (b && b->state == THREAD_CREATED) thread_destroy_unstarted(b);
+    if (a && a->state == THREAD_STATE_READY) thread_destroy_unstarted(a);
+    if (b && b->state == THREAD_STATE_READY) thread_destroy_unstarted(b);
     if (address_space) address_space_release(address_space);
     console_write("two_tasks_one_space setup failed\n");
     for (;;) __asm__ volatile ("cli; hlt");

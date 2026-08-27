@@ -7,7 +7,7 @@ QEMU_ACCEL_FLAGS ?= $(if $(wildcard /dev/kvm),-enable-kvm -cpu host,-cpu qemu64)
 MKDIR_P ?= mkdir -p
 BUILD_DIR := build
 PROFILE ?= normal
-PROFILES := normal syscall exceptions vm lifecycle two_tasks_one_space
+PROFILES := normal syscall exceptions vm lifecycle two_tasks_one_space syscall_block
 
 ifeq ($(filter $(PROFILE),$(PROFILES)),)
 $(error unknown PROFILE '$(PROFILE)'; choose one of $(PROFILES))
@@ -19,9 +19,9 @@ CFLAGS := -std=gnu11 -ffreestanding -O2 -Wall -Wextra -m64 -mcmodel=kernel \
 ASFLAGS := -x assembler-with-cpp -ffreestanding -m64
 INCLUDES := -I. -Ikernel/freertos/include -Ikernel/arch/x86_64 -Ikernel
 LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib
-USER_TASKS := taskA taskB tests/ud tests/pagefault tests/kernel_access tests/exit
+USER_TASKS := taskA taskB tests/ud tests/pagefault tests/kernel_access tests/exit tests/syscall_blocker tests/syscall_waker
 USER_ELFS := $(addprefix $(BUILD_DIR)/user/,$(addsuffix .elf,$(USER_TASKS)))
-USER_OBJS := kernel/user_taskA.o kernel/user_taskB.o kernel/user_ud.o kernel/user_pagefault.o kernel/user_kernel_access.o kernel/user_exit.o
+USER_OBJS := kernel/user_taskA.o kernel/user_taskB.o kernel/user_ud.o kernel/user_pagefault.o kernel/user_kernel_access.o kernel/user_exit.o kernel/user_syscall_blocker.o kernel/user_syscall_waker.o
 KERNEL_OBJS := kernel/boot.o kernel/main.o kernel/libc.o kernel/memory.o kernel/thread.o kernel/program.o kernel/syscall.o \
  kernel/startup/common.o kernel/startup/$(PROFILE).o $(USER_OBJS) \
  kernel/freertos/tasks.o kernel/freertos/queue.o kernel/freertos/list.o \
@@ -64,6 +64,8 @@ $(eval $(call EMBED_RULE,ud,tests/ud,ud))
 $(eval $(call EMBED_RULE,pagefault,tests/pagefault,pagefault))
 $(eval $(call EMBED_RULE,kernel_access,tests/kernel_access,kernel_access))
 $(eval $(call EMBED_RULE,exit,tests/exit,exit))
+$(eval $(call EMBED_RULE,syscall_blocker,tests/syscall_blocker,syscall_blocker))
+$(eval $(call EMBED_RULE,syscall_waker,tests/syscall_waker,syscall_waker))
 
 bootstub32/bootstub32:
 	$(MAKE) -C bootstub32
