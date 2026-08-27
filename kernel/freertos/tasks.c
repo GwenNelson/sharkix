@@ -1766,6 +1766,45 @@ STATIC void prvAddNewTaskToReadyList( TCB_t * pxNewTCB ) PRIVILEGED_FUNCTION;
     }
 /*-----------------------------------------------------------*/
 
+    BaseType_t xTaskCreateSuspended( TaskFunction_t pxTaskCode,
+                                     const char * const pcName,
+                                     const configSTACK_DEPTH_TYPE uxStackDepth,
+                                     void * const pvParameters,
+                                     UBaseType_t uxPriority,
+                                     TaskHandle_t * const pxCreatedTask )
+    {
+        TCB_t * pxNewTCB = prvCreateTask( pxTaskCode, pcName, uxStackDepth,
+                                          pvParameters, uxPriority, pxCreatedTask );
+        if( pxNewTCB == NULL )
+        {
+            return errCOULD_NOT_ALLOCATE_REQUIRED_MEMORY;
+        }
+
+        /* A created SharkKernel Thread must not become runnable before its
+         * caller explicitly starts it.  This is the single-core counterpart
+         * of prvAddNewTaskToReadyList(), but leaves the task suspended. */
+        taskENTER_CRITICAL();
+        {
+            if( uxCurrentNumberOfTasks == ( UBaseType_t ) 0U )
+            {
+                prvInitialiseTaskLists();
+            }
+            uxCurrentNumberOfTasks++;
+            uxTaskNumber++;
+            #if ( configUSE_TRACE_FACILITY == 1 )
+            {
+                pxNewTCB->uxTCBNumber = uxTaskNumber;
+            }
+            #endif
+            traceTASK_CREATE( pxNewTCB );
+            vListInsertEnd( &xSuspendedTaskList, &( pxNewTCB->xStateListItem ) );
+            portSETUP_TCB( pxNewTCB );
+        }
+        taskEXIT_CRITICAL();
+        return pdPASS;
+    }
+/*-----------------------------------------------------------*/
+
     #if ( ( configNUMBER_OF_CORES > 1 ) && ( configUSE_CORE_AFFINITY == 1 ) )
         BaseType_t xTaskCreateAffinitySet( TaskFunction_t pxTaskCode,
                                            const char * const pcName,
@@ -3357,6 +3396,33 @@ STATIC void prvInitialiseNewTask( TaskFunction_t pxTaskCode,
     }
 
 #endif /* INCLUDE_vTaskSuspend */
+/*-----------------------------------------------------------*/
+
+void vTaskStartSuspended( TaskHandle_t xTaskToStart )
+{
+    TCB_t * const pxTCB = ( TCB_t * ) xTaskToStart;
+    configASSERT( pxTCB != NULL );
+    taskENTER_CRITICAL();
+    {
+        if( prvTaskIsTaskSuspended( pxTCB ) != pdFALSE )
+        {
+            ( void ) uxListRemove( &( pxTCB->xStateListItem ) );
+            if( ( pxCurrentTCB == NULL ) ||
+                ( ( xSchedulerRunning == pdFALSE ) &&
+                  ( pxCurrentTCB->uxPriority <= pxTCB->uxPriority ) ) )
+            {
+                pxCurrentTCB = pxTCB;
+            }
+            prvAddTaskToReadyList( pxTCB );
+        }
+    }
+    taskEXIT_CRITICAL();
+    if( ( xSchedulerRunning != pdFALSE ) && ( pxCurrentTCB != NULL ) &&
+        ( pxCurrentTCB->uxPriority < pxTCB->uxPriority ) )
+    {
+        portYIELD_WITHIN_API();
+    }
+}
 /*-----------------------------------------------------------*/
 
 #if ( INCLUDE_vTaskSuspend == 1 )

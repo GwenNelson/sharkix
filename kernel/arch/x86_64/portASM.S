@@ -2,7 +2,6 @@
 .text
 .code64
 .extern pxCurrentTCB
-.extern kernel_address_space
 .extern vTaskSwitchContext
 .extern xTaskIncrementTick
 .extern thread_prepare_current
@@ -19,23 +18,16 @@
  popq %rdi; popq %rsi; popq %rbp; popq %rdx; popq %rcx; popq %rbx; popq %rax
 .endm
 
-/* TCB field 2 is thread_t *.  thread_t->address_space is field 2. */
+/* TCB field 2 is thread_t *.  Keep all Thread layout knowledge in C. */
 .macro ACTIVATE_CURRENT_THREAD
  movq pxCurrentTCB(%rip), %rax
  movq 8(%rax), %rdi
- movq %rdi, %rbx
  call thread_prepare_current
- testq %rbx, %rbx
- jnz 1f
- leaq kernel_address_space(%rip), %rax
- jmp 2f
-1: movq 8(%rbx), %rax
-2: movq (%rax), %rax
  movq %cr3, %rdx
  cmpq %rdx, %rax
- je 3f
+ je 1f
  movq %rax, %cr3
-3:
+1:
 .endm
 
 /* On a CPL3 return frame CS is at RSP+8.  Kernel frames retain the previous

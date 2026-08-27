@@ -6,7 +6,7 @@
 extern uint64_t bootstrap_pml4[];
 extern void vPortInstallKernelGDT(void);
 
-address_space_t kernel_address_space;
+static address_space_t kernel_address_space;
 static uint64_t next_physical_page = 0x00400000ULL;
 static uint64_t free_physical_pages;
 static uint64_t allocated_pages;
@@ -55,21 +55,21 @@ static void free_lower_tables(uint64_t table_physical, unsigned level)
     phys_free_page(table_physical);
 }
 
-address_space_t *address_space_create(void)
+address_space_t *address_space_kernel(void) { return &kernel_address_space; }
+
+uint32_t address_space_references(const address_space_t *address_space)
 {
-    address_space_t *address_space = pvPortMalloc(sizeof(*address_space));
-    if (!address_space) return NULL;
-    address_space->pml4_phys = phys_alloc_page();
-    address_space->mappings = NULL;
-    uint64_t *destination = page_table(address_space->pml4_phys);
-    uint64_t *kernel_pml4 = page_table(kernel_address_space.pml4_phys);
-    for (unsigned i = 256; i < 512; ++i) destination[i] = kernel_pml4[i];
-    return address_space;
+    return address_space ? address_space->references : 0;
 }
 
-void address_space_destroy(address_space_t *address_space)
+void address_space_retain(address_space_t *address_space)
 {
-    if (!address_space || address_space == &kernel_address_space) return;
+    if (address_space && !address_space->permanent) ++address_space->references;
+}
+
+static void address_space_destroy(address_space_t *address_space)
+{
+    if (!address_space || address_space->permanent) return;
     address_space_mapping_t *mapping = address_space->mappings;
     while (mapping) {
         address_space_mapping_t *next = mapping->next;
@@ -82,6 +82,29 @@ void address_space_destroy(address_space_t *address_space)
         if (pml4[i] & PAGE_PRESENT) free_lower_tables(pml4[i] & PAGE_ADDR_MASK, 3);
     phys_free_page(address_space->pml4_phys);
     vPortFree(address_space);
+}
+
+void address_space_release(address_space_t *address_space)
+{
+    if (!address_space || address_space->permanent) return;
+    if (!address_space->references) return;
+    if (--address_space->references == 0) address_space_destroy(address_space);
+}
+
+address_space_t *address_space_create(uint32_t flags)
+{
+    address_space_t *address_space = pvPortMalloc(sizeof(*address_space));
+    if (!address_space) return NULL;
+    address_space->pml4_phys = phys_alloc_page();
+    address_space->mappings = NULL;
+    address_space->flags = flags;
+    address_space->references = 1;
+    address_space->live_threads = 0;
+    address_space->permanent = 0;
+    uint64_t *destination = page_table(address_space->pml4_phys);
+    uint64_t *kernel_pml4 = page_table(address_space_kernel()->pml4_phys);
+    for (unsigned i = 256; i < 512; ++i) destination[i] = kernel_pml4[i];
+    return address_space;
 }
 
 int address_space_map_page(address_space_t *address_space, uintptr_t va, uint64_t pa, uint64_t flags)
@@ -150,6 +173,10 @@ void memory_init(void)
     vPortInstallKernelGDT();
     kernel_address_space.pml4_phys = (uint64_t)(uintptr_t)bootstrap_pml4;
     kernel_address_space.mappings = NULL;
+    kernel_address_space.flags = 0;
+    kernel_address_space.references = UINT32_MAX;
+    kernel_address_space.live_threads = 0;
+    kernel_address_space.permanent = 1;
     page_table(kernel_address_space.pml4_phys)[0] = 0;
-    address_space_activate(&kernel_address_space);
+    address_space_activate(address_space_kernel());
 }

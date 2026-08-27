@@ -22,7 +22,7 @@ LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib
 USER_TASKS := taskA taskB tests/ud tests/pagefault tests/kernel_access tests/exit
 USER_ELFS := $(addprefix $(BUILD_DIR)/user/,$(addsuffix .elf,$(USER_TASKS)))
 USER_OBJS := kernel/user_taskA.o kernel/user_taskB.o kernel/user_ud.o kernel/user_pagefault.o kernel/user_kernel_access.o kernel/user_exit.o
-KERNEL_OBJS := kernel/boot.o kernel/main.o kernel/libc.o kernel/memory.o kernel/thread.o kernel/syscall.o \
+KERNEL_OBJS := kernel/boot.o kernel/main.o kernel/libc.o kernel/memory.o kernel/thread.o kernel/program.o kernel/syscall.o \
  kernel/startup/common.o kernel/startup/$(PROFILE).o $(USER_OBJS) \
  kernel/freertos/tasks.o kernel/freertos/queue.o kernel/freertos/list.o \
  kernel/freertos/event_groups.o kernel/freertos/stream_buffer.o kernel/freertos/croutine.o \

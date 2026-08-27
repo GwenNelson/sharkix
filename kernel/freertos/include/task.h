@@ -3713,6 +3713,15 @@ TaskHandle_t xTaskGetCurrentTaskHandle( void ) PRIVILEGED_FUNCTION;
 
 /* Sharkix x86_64 scheduler association extensions. */
 void vTaskSetSharkThread( TaskHandle_t xTask, void * pvSharkThread ) PRIVILEGED_FUNCTION;
+/* Sharkix: construct a FreeRTOS task on the suspended list.  This avoids the
+ * transient runnable state that xTaskCreate()+vTaskSuspend() would create. */
+BaseType_t xTaskCreateSuspended( TaskFunction_t pxTaskCode,
+                                 const char * const pcName,
+                                 const configSTACK_DEPTH_TYPE uxStackDepth,
+                                 void * const pvParameters,
+                                 UBaseType_t uxPriority,
+                                 TaskHandle_t * const pxCreatedTask ) PRIVILEGED_FUNCTION;
+void vTaskStartSuspended( TaskHandle_t xTaskToStart ) PRIVILEGED_FUNCTION;
 void vTaskSetStack( TaskHandle_t xTask, StackType_t * pxStack,
                     StackType_t * pxTopOfStack ) PRIVILEGED_FUNCTION;
 StackType_t * pxTaskGetStackBase( TaskHandle_t xTask ) PRIVILEGED_FUNCTION;
