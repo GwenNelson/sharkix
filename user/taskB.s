@@ -2,13 +2,8 @@
 .code64
 .global _start
 _start:
-    movw $0x3fd, %dx
-1:  inb %dx, %al
-    testb $0x20, %al
-    jz 1b
-    movw $0x3f8, %dx
-    movb $'B', %al
-    outb %al, %dx
+1:  movq $0, %rax
+    movq $'B', %rdi
+    syscall
     int $0x21
-    movw $0x3fd, %dx
     jmp 1b
