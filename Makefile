@@ -7,7 +7,7 @@ QEMU_ACCEL_FLAGS ?= $(if $(wildcard /dev/kvm),-enable-kvm -cpu host,-cpu qemu64)
 MKDIR_P ?= mkdir -p
 BUILD_DIR := build
 PROFILE ?= normal
-PROFILES := normal syscall exceptions vm lifecycle
+PROFILES := normal syscall exceptions vm lifecycle two_tasks_one_space
 
 ifeq ($(filter $(PROFILE),$(PROFILES)),)
 $(error unknown PROFILE '$(PROFILE)'; choose one of $(PROFILES))
