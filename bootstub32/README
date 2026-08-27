@@ -1,0 +1,78 @@
+bootstub32 - first-cut QEMU -> ELF64 Multiboot trampoline
+===========================================================
+
+Purpose
+-------
+
+Let QEMU's x86 `-kernel` direct Multiboot loader start a 32-bit shim, while
+the actual kernel is an ELF64 image supplied as Multiboot module 0.
+
+Expected QEMU layout:
+
+    -kernel bootstub32
+    -initrd kernel.elf,dominit0,other-module,...
+
+QEMU loads bootstub32 as a Multiboot-1 kernel and creates one Multiboot
+module descriptor for every comma-separated `-initrd` entry.
+
+bootstub32 then:
+
+    1. verifies module 0 is an x86-64 ELF
+    2. loads each PT_LOAD segment to its 32-bit p_paddr
+    3. removes module 0 from the Multiboot module descriptor array
+    4. leaves every other module untouched
+    5. jumps to the ELF entry with:
+           EAX = 0x2badb002
+           EBX = original Multiboot-1 info pointer
+
+For seL4 this means the original module 1 becomes module 0, so it is seen
+as the rootserver.  Modules after it remain available in the Multiboot
+information.
+
+Build
+-----
+
+    make
+
+Useful checks:
+
+    file bootstub32
+    readelf -h bootstub32
+    objdump -h bootstub32
+
+If installed:
+
+    grub-file --is-x86-multiboot bootstub32 && echo multiboot-ok
+
+Example FacetOS run
+-------------------
+
+    qemu-system-x86_64 \
+        -enable-kvm \
+        -cpu host \
+        -m 512M \
+        -kernel ./bootstub32 \
+        -initrd build/sdk/kernel/kernel.elf,build/facetos/dominit0/dominit0 \
+        -serial stdio
+
+Additional arbitrary modules:
+
+    -initrd kernel.elf,dominit0,domain0.conf,initrd.tar
+
+Module 0 is consumed by bootstub32.  Every later module is passed onward.
+
+Limitations of this first cut
+-----------------------------
+
+- QEMU's direct x86 loader is using Multiboot 1, so this forwards MB1 rather
+  than synthesizing Multiboot2.
+- The real ELF must be ELF64 little-endian x86-64.
+- PT_LOAD offsets, physical addresses, sizes and the entry point must fit
+  below 4GiB.
+- The entry point must be directly callable from 32-bit protected mode.
+  This matches the seL4 x86 bootstrap arrangement being targeted here.
+- PT_LOAD destinations may not overlap bootstub32 itself or the source ELF
+  module.
+- The stub intentionally has no general allocator, filesystem, relocation
+  support, dynamic linker, paging setup or long-mode setup.
+- Fatal errors are written directly to VGA text memory and then halt.
