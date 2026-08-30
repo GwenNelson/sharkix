@@ -40,7 +40,9 @@ volatile UBaseType_t ulCriticalNesting = 0;
 
 extern void vPortStartFirstTask(void), vPortTimerHandler(void), vPortYieldHandler(void);
 extern void vPortDefaultHandler(void), vPortPageFaultHandler(void), vPortInvalidOpcodeHandler(void);
+extern void vPortGeneralProtectionHandler(void);
 extern void vPortSyscallEntry(void);
+extern void vPortTaskBootstrap(void);
 
 static inline void outb(uint16_t p, uint8_t v) { __asm__ volatile ("outb %0, %1" : : "a"(v), "Nd"(p)); }
 static inline uint8_t inb(uint16_t p) { uint8_t v; __asm__ volatile ("inb %1, %0" : "=a"(v) : "Nd"(p)); return v; }
@@ -102,6 +104,7 @@ static void port_init_interrupts(void)
 {
     for (unsigned i = 0; i < 256; ++i) idt_set_gate(i, vPortDefaultHandler, 0);
     idt_set_gate(6, vPortInvalidOpcodeHandler, 0);
+    idt_set_gate(13, vPortGeneralProtectionHandler, 0);
     idt_set_gate(14, vPortPageFaultHandler, 0);
     idt_set_gate(0x20, vPortTimerHandler, 0);
     idt_set_gate(0x21, vPortYieldHandler, 3);
@@ -113,16 +116,43 @@ StackType_t *pxPortInitialiseStack(StackType_t *top, StackType_t *end, TaskFunct
 {
     (void)end;
     uint64_t *stack = (uint64_t *)((uintptr_t)top & ~(uintptr_t)portBYTE_ALIGNMENT_MASK);
-    *--stack = 0x202; *--stack = 0x18; *--stack = (uint64_t)(uintptr_t)code;
-    *--stack = 0; *--stack = 0; *--stack = 0; *--stack = 0; *--stack = 0; *--stack = 0;
-    *--stack = (uint64_t)(uintptr_t)argument;
-    for (unsigned i = 0; i < 8; ++i) *--stack = 0;
+    /* Kernel threads are cooperative; user IRET frames explicitly enable
+     * interrupts.  Keeping IF clear here prevents a PIT interrupt from
+     * arriving in the kernel-task construction/restore window. */
+    *--stack = 0x2;
+    *--stack = 0x18;
+    *--stack = (uint64_t)(uintptr_t)vPortTaskBootstrap;
+    *--stack = 0;                            /* rax */
+    *--stack = 0;                            /* rbx */
+    *--stack = 0;                            /* rcx */
+    *--stack = 0;                            /* rdx */
+    *--stack = 0;                            /* rbp */
+    *--stack = 0;                            /* rsi */
+    *--stack = 0;                            /* rdi */
+    *--stack = 0;                            /* r8 */
+    *--stack = 0;                            /* r9 */
+    *--stack = 0;                            /* r10 */
+    *--stack = 0;                            /* r11 */
+    *--stack = (uint64_t)(uintptr_t)code;    /* r12 */
+    *--stack = (uint64_t)(uintptr_t)argument;/* r13 */
+    *--stack = 0;                            /* r14 */
+    *--stack = 0;                            /* r15 */
     return (StackType_t *)stack;
 }
 
 BaseType_t xPortStartScheduler(void) { ulCriticalNesting = 0; port_init_interrupts(); vPortStartFirstTask(); return 0; }
 void vPortEndScheduler(void) { for (;;) __asm__ volatile ("cli; hlt"); }
 void vPortEnterCritical(void) { portDISABLE_INTERRUPTS(); ++ulCriticalNesting; }
-void vPortExitCritical(void) { if (ulCriticalNesting) --ulCriticalNesting; if (!ulCriticalNesting) portENABLE_INTERRUPTS(); }
+void vPortExitCritical(void)
+{
+    if (ulCriticalNesting) --ulCriticalNesting;
+    /* Kernel Sharkix threads are cooperatively scheduled.  In particular,
+     * do not reopen the PIT interrupt window while kernel C code is still
+     * returning through a scheduler/FreeRTOS transition.  User frames set
+     * IF explicitly when they are entered. */
+    if (!ulCriticalNesting &&
+        (!thread_current() || thread_current()->privilege == THREAD_PRIVILEGE_USER))
+        portENABLE_INTERRUPTS();
+}
 uint32_t ulPortSetInterruptMask(void) { uint64_t flags; __asm__ volatile ("pushfq; popq %0; cli" : "=r"(flags) : : "memory"); return (uint32_t)(flags & (1u << 9)); }
 void vPortClearInterruptMask(uint32_t value) { if (value) portENABLE_INTERRUPTS(); }

@@ -10,14 +10,18 @@ int program_map_flat_image(address_space_t *address_space, const program_image_t
         (load_address & (PAGE_SIZE - 1))) return -1;
     size_t mapped = 0;
     while (mapped < image->size) {
-        uint64_t page = phys_alloc_page();
+        uint64_t page;
         size_t count = image->size - mapped;
         if (count > PAGE_SIZE) count = PAGE_SIZE;
+        if (!phys_alloc_page(&page)) {
+            while (mapped) { mapped -= PAGE_SIZE; address_space_unmap_page(address_space, load_address + mapped); }
+            return -1;
+        }
         uint8_t *destination = (uint8_t *)phys_to_virt(page);
         for (size_t i = 0; i < count; ++i) destination[i] = image->data[mapped + i];
         if (address_space_map_page(address_space, load_address + mapped, page,
                                    PAGE_USER | ADDRESS_SPACE_MAP_OWNED) != 0) {
-            phys_free_page(page);
+            phys_page_put(page);
             while (mapped) { mapped -= PAGE_SIZE; address_space_unmap_page(address_space, load_address + mapped); }
             return -1;
         }
@@ -32,10 +36,14 @@ int program_map_user_stack(address_space_t *address_space, uintptr_t stack_base,
     if (!address_space || !stack_size || (stack_base & (PAGE_SIZE - 1))) return -1;
     size_t rounded = (stack_size + PAGE_SIZE - 1) & ~(size_t)(PAGE_SIZE - 1);
     for (size_t offset = 0; offset < rounded; offset += PAGE_SIZE) {
-        uint64_t page = phys_alloc_page();
+        uint64_t page;
+        if (!phys_alloc_page(&page)) {
+            while (offset) { offset -= PAGE_SIZE; address_space_unmap_page(address_space, stack_base + offset); }
+            return -1;
+        }
         if (address_space_map_page(address_space, stack_base + offset, page,
                                    PAGE_USER | PAGE_WRITABLE | PAGE_NX | ADDRESS_SPACE_MAP_OWNED) != 0) {
-            phys_free_page(page);
+            phys_page_put(page);
             while (offset) { offset -= PAGE_SIZE; address_space_unmap_page(address_space, stack_base + offset); }
             return -1;
         }

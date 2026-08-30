@@ -1315,6 +1315,7 @@ void vTaskPrioritySet( TaskHandle_t xTask,
  * \ingroup TaskCtrl
  */
 void vTaskSuspend( TaskHandle_t xTaskToSuspend ) PRIVILEGED_FUNCTION;
+void vTaskSuspendCurrentNoYield( void ) PRIVILEGED_FUNCTION;
 
 /**
  * task. h
@@ -3721,6 +3722,13 @@ BaseType_t xTaskCreateSuspended( TaskFunction_t pxTaskCode,
                                  void * const pvParameters,
                                  UBaseType_t uxPriority,
                                  TaskHandle_t * const pxCreatedTask ) PRIVILEGED_FUNCTION;
+TaskHandle_t xTaskCreateStaticSuspended( TaskFunction_t pxTaskCode,
+                                         const char * const pcName,
+                                         const configSTACK_DEPTH_TYPE uxStackDepth,
+                                         void * const pvParameters,
+                                         UBaseType_t uxPriority,
+                                         StackType_t * const puxStackBuffer,
+                                         StaticTask_t * const pxTaskBuffer ) PRIVILEGED_FUNCTION;
 void vTaskStartSuspended( TaskHandle_t xTaskToStart ) PRIVILEGED_FUNCTION;
 void vTaskSetStack( TaskHandle_t xTask, StackType_t * pxStack,
                     StackType_t * pxTopOfStack ) PRIVILEGED_FUNCTION;

@@ -1,6 +1,8 @@
 #ifndef SHARKIX_MEMORY_H
 #define SHARKIX_MEMORY_H
 
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define PHYSMAP_BASE 0xffff800000000000ULL
@@ -38,11 +40,23 @@ typedef struct address_space {
 
 void *phys_to_virt(uint64_t physical_address);
 uint64_t virt_to_phys(const void *virtual_address);
-void memory_init(void);
+void memory_init(uint32_t multiboot_magic, uint32_t multiboot_info_phys);
 uint64_t kernel_heap_break(void);
-uint64_t phys_alloc_page(void);
-void phys_free_page(uint64_t page);
+uint64_t phys_total_ram_bytes(void);
+uint64_t phys_managed_page_count(void);
+uint64_t phys_free_page_count(void);
+bool phys_alloc_page(uint64_t *out_page);
+bool phys_alloc_pages(size_t count, uint64_t *out_page);
+bool phys_alloc_page_below(uint64_t max_phys_addr, uint64_t *out_page);
+bool phys_alloc_pages_below(size_t count, uint64_t max_phys_addr, uint64_t *out_page);
+void phys_page_get(uint64_t page);
+void phys_page_put(uint64_t page);
 uint64_t phys_pages_in_use(void);
+void *ksbrk(ptrdiff_t increment);
+void *kmalloc(size_t size);
+void kfree(void *pointer);
+void *kernel_stack_alloc(size_t size);
+void kernel_stack_free(void *base, size_t size);
 /* The returned address space owns one reference.  The distinguished kernel
  * address space is permanent and is obtained through address_space_kernel(). */
 address_space_t *address_space_create(uint32_t flags);
@@ -50,6 +64,10 @@ address_space_t *address_space_kernel(void);
 void address_space_retain(address_space_t *address_space);
 void address_space_release(address_space_t *address_space);
 uint32_t address_space_references(const address_space_t *address_space);
+/* ADDRESS_SPACE_MAP_OWNED explicitly transfers one existing caller-held
+ * physical-page reference into the mapping.  Without it, a successful mapping
+ * acquires its own additional page reference and the caller retains any
+ * existing references it already holds. */
 int address_space_map_page(address_space_t *address_space, uintptr_t va,
                            uint64_t pa, uint64_t flags);
 int address_space_unmap_page(address_space_t *address_space, uintptr_t va);

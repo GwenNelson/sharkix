@@ -3176,6 +3176,7 @@ typedef struct xSTATIC_LIST
 typedef struct xSTATIC_TCB
 {
     void * pxDummy1;
+    void * pvDummySharkThread;
     #if ( portUSING_MPU_WRAPPERS == 1 )
         xMPU_SETTINGS xDummy2;
     #endif

@@ -29,8 +29,9 @@
 
 #define configUSE_EVENT_GROUPS                     1
 #define configUSE_STREAM_BUFFERS                   1
-#define configSUPPORT_STATIC_ALLOCATION            0
+#define configSUPPORT_STATIC_ALLOCATION            1
 #define configSUPPORT_DYNAMIC_ALLOCATION           1
+#define configKERNEL_PROVIDED_STATIC_MEMORY        1
 #define configTOTAL_HEAP_SIZE                      ( 64 * 1024 )
 #define configAPPLICATION_ALLOCATED_HEAP           0
 #define configSTACK_ALLOCATION_FROM_SEPARATE_HEAP   0
@@ -109,5 +110,6 @@
 #define INCLUDE_xTaskAbortDelay                  1
 #define INCLUDE_xTaskGetHandle                   1
 #define INCLUDE_xTaskResumeFromISR               1
+#define INCLUDE_xTaskGetIdleTaskHandle           1
 
 #endif

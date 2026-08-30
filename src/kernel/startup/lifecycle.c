@@ -8,9 +8,12 @@
 #include "thread.h"
 
 extern const uint8_t exit_image_start[], exit_image_end[];
+static void lifecycle_spinner_task(void *argument) { (void)argument; startup_kernel_spinner('K'); }
 static void lifecycle_task(void *argument)
 {
     (void)argument;
+    __asm__ volatile ("outb %0, %1" : : "a"((uint8_t)'X'), "Nd"((uint16_t)0x3f8));
+    console_write("lifecycle task running\n");
     uint64_t before = phys_pages_in_use();
     for (unsigned i = 0; i < 16; ++i) {
         uint64_t reaped = thread_reaped_count();
@@ -36,16 +39,20 @@ static void lifecycle_task(void *argument)
         console_write(" lifecycle retained creation failed\n");
     } else {
         while (thread_reaped_count() == held_reaped) taskYIELD();
-        uint64_t held_pages = phys_pages_in_use();
         address_space_release(held_as);
-        console_write(" retained pages "); console_decimal(held_pages); console_putc(' ');
-        console_decimal(phys_pages_in_use()); console_write("\n");
     }
-    console_write(" lifecycle pages "); console_decimal(before); console_putc(' '); console_decimal(phys_pages_in_use()); console_write("\n");
-    startup_kernel_spinner('K');
+    console_write("lifecycle pages "); console_decimal(before); console_putc(' '); console_decimal(phys_pages_in_use()); console_write("\n");
+    if (!startup_kernel_thread(lifecycle_spinner_task, "lifecycle-spin", tskIDLE_PRIORITY + 1)) {
+        console_write(" lifecycle spinner failed\n");
+        for (;;) __asm__ volatile ("cli; hlt");
+    }
+    thread_exit_current();
 }
 void kernel_startup_profile(void)
 {
     startup_reaper();
-    startup_kernel_thread(lifecycle_task, "lifecycle", tskIDLE_PRIORITY + 1);
+    if (!startup_kernel_thread(lifecycle_task, "lifecycle", tskIDLE_PRIORITY + 1)) {
+        console_write("lifecycle startup failed\n");
+        for (;;) __asm__ volatile ("cli; hlt");
+    }
 }

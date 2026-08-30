@@ -494,6 +494,8 @@ PRIVILEGED_DATA STATIC List_t xPendingReadyList;                         /**< Ta
 
 #if ( INCLUDE_vTaskSuspend == 1 )
 
+    static volatile BaseType_t xSharkSuspendNoYield;
+
     PRIVILEGED_DATA STATIC List_t xSuspendedTaskList; /**< Tasks that are currently suspended. */
 
 #endif
@@ -1352,6 +1354,47 @@ STATIC void prvAddNewTaskToReadyList( TCB_t * pxNewTCB ) PRIVILEGED_FUNCTION;
         }
 
         traceRETURN_xTaskCreateStatic( xReturn );
+
+        return xReturn;
+    }
+/*-----------------------------------------------------------*/
+
+    TaskHandle_t xTaskCreateStaticSuspended( TaskFunction_t pxTaskCode,
+                                             const char * const pcName,
+                                             const configSTACK_DEPTH_TYPE uxStackDepth,
+                                             void * const pvParameters,
+                                             UBaseType_t uxPriority,
+                                             StackType_t * const puxStackBuffer,
+                                             StaticTask_t * const pxTaskBuffer )
+    {
+        TaskHandle_t xReturn = NULL;
+        TCB_t * pxNewTCB;
+
+        pxNewTCB = prvCreateStaticTask( pxTaskCode, pcName, uxStackDepth,
+                                        pvParameters, uxPriority, puxStackBuffer,
+                                        pxTaskBuffer, &xReturn );
+
+        if( pxNewTCB != NULL )
+        {
+            taskENTER_CRITICAL();
+            {
+                if( uxCurrentNumberOfTasks == ( UBaseType_t ) 0U )
+                {
+                    prvInitialiseTaskLists();
+                }
+                uxCurrentNumberOfTasks++;
+                uxTaskNumber++;
+                #if ( configUSE_TRACE_FACILITY == 1 )
+                {
+                    pxNewTCB->uxTCBNumber = uxTaskNumber;
+                }
+                #endif
+                traceTASK_CREATE( pxNewTCB );
+                vListInsertEnd( &xSuspendedTaskList, &( pxNewTCB->xStateListItem ) );
+                portSETUP_TCB( pxNewTCB );
+            }
+            taskEXIT_CRITICAL();
+        }
 
         return xReturn;
     }
@@ -2610,7 +2653,7 @@ STATIC void prvInitialiseNewTask( TaskFunction_t pxTaskCode,
         configASSERT( pxTCB != NULL );
 
         #if ( configNUMBER_OF_CORES == 1 )
-            if( pxTCB == pxCurrentTCB )
+            if( ( pxTCB == pxCurrentTCB ) && ( xSharkSuspendNoYield == pdFALSE ) )
             {
                 /* The task calling this function is querying its own state. */
                 eReturn = eRunning;
@@ -3300,7 +3343,7 @@ STATIC void prvInitialiseNewTask( TaskFunction_t pxTaskCode,
              * be on the ready list. */
             #if ( configNUMBER_OF_CORES > 1 )
             {
-                if( xSchedulerRunning != pdFALSE )
+                if( ( xSchedulerRunning != pdFALSE ) && ( xSharkSuspendNoYield == pdFALSE ) )
                 {
                     /* Reset the next expected unblock time in case it referred to the
                      * task that is now in the Suspended state. */
@@ -3352,7 +3395,7 @@ STATIC void prvInitialiseNewTask( TaskFunction_t pxTaskCode,
                 mtCOVERAGE_TEST_MARKER();
             }
 
-            if( pxTCB == pxCurrentTCB )
+            if( ( pxTCB == pxCurrentTCB ) && ( xSharkSuspendNoYield == pdFALSE ) )
             {
                 if( xSchedulerRunning != pdFALSE )
                 {
@@ -3393,6 +3436,13 @@ STATIC void prvInitialiseNewTask( TaskFunction_t pxTaskCode,
         #endif /* #if ( configNUMBER_OF_CORES == 1 ) */
 
         traceRETURN_vTaskSuspend();
+    }
+
+    void vTaskSuspendCurrentNoYield( void )
+    {
+        xSharkSuspendNoYield = pdTRUE;
+        vTaskSuspend( NULL );
+        xSharkSuspendNoYield = pdFALSE;
     }
 
 #endif /* INCLUDE_vTaskSuspend */

@@ -12,8 +12,12 @@ void kernel_startup_profile(void)
     uint64_t before = phys_pages_in_use();
     for (unsigned i = 0; i < 32; ++i) {
         address_space_t *as = address_space_create(0);
-        uint64_t page = phys_alloc_page();
-        if (!as || address_space_map_page(as, 0x400000, page, PAGE_USER | ADDRESS_SPACE_MAP_OWNED) != 0) {
+        uint64_t page;
+        if (!as || !phys_alloc_page(&page)) {
+            console_write("vm profile failed\n"); for (;;) __asm__ volatile ("cli; hlt");
+        }
+        if (address_space_map_page(as, 0x400000, page, PAGE_USER | ADDRESS_SPACE_MAP_OWNED) != 0) {
+            phys_page_put(page);
             console_write("vm profile failed\n"); for (;;) __asm__ volatile ("cli; hlt");
         }
         address_space_unmap_page(as, 0x400000);

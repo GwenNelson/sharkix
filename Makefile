@@ -22,6 +22,7 @@ CFLAGS := -std=gnu11 -ffreestanding -O2 -Wall -Wextra -m64 -mcmodel=kernel \
  -fno-stack-protector -fno-pic -fno-pie -mno-red-zone -mno-sse -mno-mmx -mno-80387 \
  -fno-asynchronous-unwind-tables
 ASFLAGS := -x assembler-with-cpp -ffreestanding -m64
+DEPFLAGS := -MMD -MP
 INCLUDES := -I$(INCLUDE_DIR) -I$(INCLUDE_DIR)/sharkix/kernel/freertos \
  -I$(INCLUDE_DIR)/sharkix/kernel/arch/x86_64 -I$(INCLUDE_DIR)/sharkix/kernel
 LDFLAGS := -m elf_x86_64 -T $(KERNEL_SRC_DIR)/linker.ld -nostdlib
@@ -37,6 +38,8 @@ KERNEL_OBJS := $(KERNEL_BUILD_DIR)/boot.o $(KERNEL_BUILD_DIR)/main.o $(KERNEL_BU
 
 .PHONY: all clean iso run run-iso verify FORCE
 .SECONDARY: $(USER_ASM_OBJS) $(USER_ELFS)
+.DEFAULT_GOAL := all
+-include $(KERNEL_OBJS:.o=.d)
 all: kernel.elf
 kernel.elf: FORCE $(KERNEL_OBJS) $(KERNEL_SRC_DIR)/linker.ld $(INCLUDE_DIR)/FreeRTOSConfig.h
 	$(LD) $(LDFLAGS) -o $@ $(KERNEL_OBJS)
@@ -44,11 +47,11 @@ FORCE:
 
 $(KERNEL_BUILD_DIR)/%.o: $(KERNEL_SRC_DIR)/%.c $(INCLUDE_DIR)/FreeRTOSConfig.h
 	$(MKDIR_P) $(dir $@)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) -c $< -o $@
 
 $(KERNEL_BUILD_DIR)/%.o: $(KERNEL_SRC_DIR)/%.S $(INCLUDE_DIR)/FreeRTOSConfig.h
 	$(MKDIR_P) $(dir $@)
-	$(CC) $(ASFLAGS) $(INCLUDES) -c $< -o $@
+	$(CC) $(ASFLAGS) $(DEPFLAGS) $(INCLUDES) -c $< -o $@
 
 $(USER_BUILD_DIR)/%.o: $(USER_SRC_DIR)/%.s
 	$(MKDIR_P) $(dir $@)

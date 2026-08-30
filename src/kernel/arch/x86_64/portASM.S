@@ -7,8 +7,12 @@
 .extern thread_prepare_current
 .extern dispatch_syscall
 .extern thread_block_current
+.extern thread_timer_may_preempt_current
 .extern thread_handle_exception
+.extern thread_handle_kernel_exception
+.extern thread_exit_current
 .extern cpu0
+.extern vPortTaskBootstrap
 
 .macro SAVE_REGS
  pushq %rax; pushq %rbx; pushq %rcx; pushq %rdx; pushq %rbp; pushq %rsi; pushq %rdi
@@ -31,26 +35,15 @@
 1:
 .endm
 
-/* CPL3 contexts use IRETQ.  This port's software interrupt gate leaves its
- * CPL0 frame plus an alignment slot; discard all six words before jumping back
- * into a C kernel task.  Fresh kernel tasks use a compatible synthetic frame. */
-.macro RETURN_CONTEXT
- testb $3, 8(%rsp)
- jz 1f
- iretq
-1: movq (%rsp), %r11
- addq $48, %rsp
- sti
- jmp *%r11
-.endm
-
 .global vPortStartFirstTask
 vPortStartFirstTask:
  ACTIVATE_CURRENT_THREAD
  movq pxCurrentTCB(%rip), %rax
  movq (%rax), %rsp
  RESTORE_REGS
- RETURN_CONTEXT
+ movq (%rsp), %r11
+ addq $24, %rsp
+ jmp *%r11
 
 .global vPortYieldHandler
 vPortYieldHandler:
@@ -64,7 +57,13 @@ vPortYieldHandler:
  movq pxCurrentTCB(%rip), %rax
  movq (%rax), %rsp
  RESTORE_REGS
- RETURN_CONTEXT
+ testb $3, 8(%rsp)
+ jnz 1f
+ movq (%rsp), %r11
+ addq $24, %rsp
+ jmp *%r11
+1:
+ iretq
 
 .global vPortTimerHandler
 vPortTimerHandler:
@@ -74,20 +73,29 @@ vPortTimerHandler:
  movq %rsp, (%rax)
  call xTaskIncrementTick
  testl %eax, %eax
- je 2f
+ je 1f
+ call thread_timer_may_preempt_current
+ testl %eax, %eax
+ je 1f
  call vTaskSwitchContext
-2: movb $0x20, %al
+1: movb $0x20, %al
  outb %al, $0x20
  ACTIVATE_CURRENT_THREAD
  movq pxCurrentTCB(%rip), %rax
  movq (%rax), %rsp
  RESTORE_REGS
- RETURN_CONTEXT
+ testb $3, 8(%rsp)
+ jnz 1f
+ movq (%rsp), %r11
+ addq $24, %rsp
+ jmp *%r11
+1:
+ iretq
 
 .global vPortInvalidOpcodeHandler
 vPortInvalidOpcodeHandler:
  testb $3, 8(%rsp)
- jz vPortDefaultHandler
+ jz 1f
  cld
  SAVE_REGS
  movq $6, %rdi
@@ -95,12 +103,20 @@ vPortInvalidOpcodeHandler:
  xorq %rdx, %rdx
  xorq %rcx, %rcx
  call thread_handle_exception
+1:
+ cld
+ SAVE_REGS
+ movq $6, %rdi
+ movq 120(%rsp), %rsi
+ xorq %rdx, %rdx
+ xorq %rcx, %rcx
+ call thread_handle_kernel_exception
 
 .global vPortPageFaultHandler
 vPortPageFaultHandler:
  /* Error code precedes RIP, so CS is at RSP+16. */
  testb $3, 16(%rsp)
- jz vPortDefaultHandler
+ jz 1f
  cld
  SAVE_REGS
  movq $14, %rdi
@@ -108,6 +124,35 @@ vPortPageFaultHandler:
  movq 120(%rsp), %rdx
  movq %cr2, %rcx
  call thread_handle_exception
+1:
+ cld
+ SAVE_REGS
+ movq $14, %rdi
+ movq 128(%rsp), %rsi
+ movq 120(%rsp), %rdx
+ movq %cr2, %rcx
+ call thread_handle_kernel_exception
+
+.global vPortGeneralProtectionHandler
+vPortGeneralProtectionHandler:
+ /* Error code precedes RIP, so CS is at RSP+16. */
+ testb $3, 16(%rsp)
+ jz 1f
+ cld
+ SAVE_REGS
+ movq $13, %rdi
+ movq 128(%rsp), %rsi
+ movq 120(%rsp), %rdx
+ xorq %rcx, %rcx
+ call thread_handle_exception
+1:
+ cld
+ SAVE_REGS
+ movq $13, %rdi
+ movq 128(%rsp), %rsi
+ movq 120(%rsp), %rdx
+ xorq %rcx, %rcx
+ call thread_handle_kernel_exception
 
 .global vPortSyscallEntry
 vPortSyscallEntry:
@@ -118,9 +163,10 @@ vPortSyscallEntry:
  pushq %r11; pushq %rcx; pushq %rax; pushq %rdi; pushq %rsi; pushq %rdx; pushq %r10
  pushq %r8; pushq %r9; pushq %rbx; pushq %rbp; pushq %r12; pushq %r13; pushq %r14; pushq %r15
  /* SysV AMD64: syscall_result_t is returned through a hidden first pointer
-  * argument; the 56-byte by-value syscall_ctx_t is passed on the stack.  The
-  * 128-byte local area keeps the call 16-byte aligned and also survives while
-  * a blocked task is suspended. */
+  * argument; the 56-byte by-value syscall_ctx_t is passed on the stack.
+  * After the register saves RSP is 8 mod 16, so subtracting 128 leaves the
+  * required 8-byte pre-call alignment.  This frame remains resident while a
+  * blocked task is suspended. */
  subq $128, %rsp
  movq 224(%rsp), %rax; movq %rax, 0(%rsp)
  movq 216(%rsp), %rax; movq %rax, 8(%rsp)
@@ -152,6 +198,13 @@ vPortSyscallEntry:
  popq %r10; popq %rdx; popq %rsi; popq %rdi; popq %rax; popq %rcx; popq %r11
  movq cpu0+16(%rip), %rsp
  sysretq
+
+.global vPortTaskBootstrap
+vPortTaskBootstrap:
+ movq %r13, %rdi
+ call *%r12
+ call thread_exit_current
+ ud2
 
 .global vPortDefaultHandler
 vPortDefaultHandler:

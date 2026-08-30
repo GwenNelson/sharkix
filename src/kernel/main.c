@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "FreeRTOS.h"
+#include "sharkix/kernel/boot/multiboot1.h"
 #include "task.h"
 #include "arch.h"
 #include "console.h"
@@ -54,9 +55,10 @@ void kernel_high_entry(uint32_t magic, uint32_t info)
     console_write("kernel virtual base: 0xffffffff80000000\n");
     console_write("physmap base:        0xffff800000000000\n");
     console_write("kernel heap base:    0xffffc00000000000\n");
-    memory_init();
+    memory_init(magic, info);
     arch_init_cpu_local();
     arch_init_syscalls();
+    startup_common_init();
     if (virt_to_phys(phys_to_virt(VGA_PHYS)) == VGA_PHYS) console_write("physmap translation: ok\n");
     kernel_startup_profile();
     console_write("starting FreeRTOS...\n");

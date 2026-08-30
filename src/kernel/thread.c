@@ -18,7 +18,7 @@ uint64_t thread_current_id(void) { return cpu0.current_thread ? cpu0.current_thr
 
 static thread_t *thread_allocate(void)
 {
-    thread_t *thread = pvPortMalloc(sizeof(*thread));
+    thread_t *thread = kmalloc(sizeof(*thread));
     if (!thread) return NULL;
     uint8_t *bytes = (uint8_t *)thread;
     for (size_t i = 0; i < sizeof(*thread); ++i) bytes[i] = 0;
@@ -76,9 +76,28 @@ static void thread_release_address_space(thread_t *thread)
     thread->address_space = NULL;
 }
 
+static void thread_release_kernel_resources(thread_t *thread)
+{
+    if (!thread) return;
+    if (thread->freertos_task) {
+        kfree(thread->freertos_task);
+        thread->freertos_task = NULL;
+    }
+    if (thread->kernel_stack_base) {
+        kernel_stack_free(thread->kernel_stack_base, thread->kernel_stack_size);
+        thread->kernel_stack_base = NULL;
+        thread->kernel_stack_top = 0;
+        thread->kernel_stack_size = 0;
+    }
+}
+
 thread_t *thread_create(address_space_t *address_space, thread_privilege_t privilege,
                         const thread_create_params_t *params)
 {
+    StaticTask_t *task_buffer;
+    void *stack_base;
+    TaskHandle_t task;
+
     if (!address_space || !params || !params->entry_rip) return NULL;
     if (privilege == THREAD_PRIVILEGE_USER) {
         if (address_space == address_space_kernel() || !params->initial_stack_pointer) return NULL;
@@ -97,27 +116,50 @@ thread_t *thread_create(address_space_t *address_space, thread_privilege_t privi
     address_space_retain(address_space);
     ++address_space->live_threads;
 
-    TaskHandle_t task = NULL;
-    BaseType_t created = xTaskCreateSuspended((TaskFunction_t)(uintptr_t)params->entry_rip,
-                                               params->name ? params->name : "thread", stack_words,
-                                               params->argument, params->priority, &task);
-    if (created != pdPASS) {
+    stack_base = kernel_stack_alloc(stack_words * sizeof(StackType_t));
+    if (!stack_base) {
         thread_release_address_space(thread);
         thread_unlink(thread);
-        vPortFree(thread);
+        kfree(thread);
+        return NULL;
+    }
+    task_buffer = kmalloc(sizeof(*task_buffer));
+    if (!task_buffer) {
+        kernel_stack_free(stack_base, stack_words * sizeof(StackType_t));
+        thread_release_address_space(thread);
+        thread_unlink(thread);
+        kfree(thread);
+        return NULL;
+    }
+    /* Do not let the tick handler observe a task between FreeRTOS creation
+     * and installation of its SharkKernel association/initial frame. */
+    vPortEnterCritical();
+    task = xTaskCreateStaticSuspended((TaskFunction_t)(uintptr_t)params->entry_rip,
+                                      params->name ? params->name : "thread", stack_words,
+                                      params->argument, params->priority,
+                                      (StackType_t *)stack_base, task_buffer);
+    if (!task) {
+        vPortExitCritical();
+        kfree(task_buffer);
+        kernel_stack_free(stack_base, stack_words * sizeof(StackType_t));
+        thread_release_address_space(thread);
+        thread_unlink(thread);
+        kfree(thread);
         return NULL;
     }
 
     thread->freertos_task = task;
-    thread->kernel_stack_base = pxTaskGetStackBase(task);
+    thread->kernel_stack_base = stack_base;
     thread->kernel_stack_size = stack_words * sizeof(StackType_t);
-    thread->kernel_stack_top = (uintptr_t)thread->kernel_stack_base + thread->kernel_stack_size;
+    thread->kernel_stack_top = (uintptr_t)stack_base + thread->kernel_stack_size;
     vTaskSetSharkThread(task, thread);
-    if (privilege == THREAD_PRIVILEGE_USER)
+    if (privilege == THREAD_PRIVILEGE_USER) {
         vTaskSetStack(task, (StackType_t *)thread->kernel_stack_base,
                       user_initial_stack(thread, params->entry_rip, params->initial_stack_pointer));
+    }
     if (thread_transition(thread, THREAD_STATE_NEW, THREAD_STATE_READY) != 0)
         for (;;) __asm__ volatile ("cli; hlt");
+    vPortExitCritical();
     return thread;
 }
 
@@ -134,9 +176,10 @@ void thread_destroy_unstarted(thread_t *thread)
     if (!thread || thread->state != THREAD_STATE_READY) return;
     vTaskSetSharkThread(thread->freertos_task, NULL);
     vTaskDelete(thread->freertos_task);
+    thread_release_kernel_resources(thread);
     thread_release_address_space(thread);
     thread_unlink(thread);
-    vPortFree(thread);
+    kfree(thread);
 }
 
 thread_t *thread_create_started(address_space_t *address_space, thread_privilege_t privilege,
@@ -164,13 +207,22 @@ uint64_t thread_prepare_current(thread_t *thread)
         vPortSetKernelStack(0);
         return address_space_kernel()->pml4_phys;
     }
-    if (thread->state != THREAD_STATE_RUNNABLE && thread->state != THREAD_STATE_RUNNING)
+    if (thread->state != THREAD_STATE_RUNNABLE && thread->state != THREAD_STATE_RUNNING) {
+        console_write("thread prepare bad state "); console_decimal(thread->state);
+        console_write(" tid "); console_decimal(thread->id); console_write("\n");
         for (;;) __asm__ volatile ("cli; hlt");
+    }
     if (thread->state == THREAD_STATE_RUNNABLE)
         (void)thread_transition(thread, THREAD_STATE_RUNNABLE, THREAD_STATE_RUNNING);
     cpu0.kernel_stack_top = thread->kernel_stack_top;
     vPortSetKernelStack(thread->kernel_stack_top);
     return thread->address_space->pml4_phys;
+}
+
+int thread_timer_may_preempt_current(void)
+{
+    thread_t *thread = thread_current();
+    return (!thread || thread->privilege == THREAD_PRIVILEGE_USER) ? 1 : 0;
 }
 
 void thread_exit_current(void)
@@ -184,7 +236,6 @@ void thread_exit_current(void)
     thread->reap_next = dead_threads;
     dead_threads = thread;
     vTaskDelete(NULL);
-    taskYIELD();
     for (;;) __asm__ volatile ("cli; hlt");
 }
 
@@ -195,9 +246,10 @@ void thread_reap(void)
     while (final_dead_threads) {
         thread_t *thread = final_dead_threads;
         final_dead_threads = thread->reap_next;
+        thread_release_kernel_resources(thread);
         thread_release_address_space(thread);
         thread_unlink(thread);
-        vPortFree(thread);
+        kfree(thread);
         ++reaped_threads;
     }
     while (dead_threads) {
@@ -215,10 +267,19 @@ uint64_t thread_reaped_count(void) { return reaped_threads; }
 int thread_block_current(syscall_ctx_t *context)
 {
     thread_t *thread = thread_current();
+    uintptr_t frame_rsp;
+    __asm__ volatile ("movq %%rsp, %0" : "=r"(frame_rsp));
     if (!thread || thread->state != THREAD_STATE_RUNNING || !context) return -1;
     thread->blocked_syscall_ctx = context;
+    thread->blocked_resume_rsp = frame_rsp;
     if (thread_transition(thread, THREAD_STATE_RUNNING, THREAD_STATE_BLOCKED) != 0) return -1;
-    vTaskSuspend(NULL);
+    /* Keep the FreeRTOS task and its saved syscall frame alive while the
+     * generic SharkKernel wait is outstanding.  Deleting the task here would
+     * make wake impossible and would also hand ownership of its TCB to the
+     * idle-task reaper. */
+    vTaskSuspendCurrentNoYield();
+    taskYIELD();
+    __asm__ volatile ("movq %0, %%rsp" : : "r"(thread->blocked_resume_rsp) : "memory");
     thread->blocked_syscall_ctx = NULL;
     return 0;
 }
@@ -239,4 +300,16 @@ void thread_handle_exception(unsigned vector, uint64_t rip, uint64_t error, uint
     if (vector == 14) { console_write(" address "); console_hex(address); console_write(" error "); console_hex(error); }
     console_write(" cpl 3\n");
     thread_exit_current();
+}
+
+void thread_handle_kernel_exception(unsigned vector, uint64_t rip, uint64_t error, uint64_t address)
+{
+    console_write("kernel exception vector "); console_decimal(vector);
+    console_write(" rip "); console_hex(rip);
+    if (vector == 14) {
+        console_write(" address "); console_hex(address);
+        console_write(" error "); console_hex(error);
+    }
+    console_write("\n");
+    for (;;) __asm__ volatile ("cli; hlt");
 }

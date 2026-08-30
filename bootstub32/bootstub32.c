@@ -20,57 +20,16 @@ typedef unsigned char      u8;
 typedef unsigned short     u16;
 typedef unsigned int       u32;
 
-#define MB_BOOTLOADER_MAGIC	0x2badb002u
-
-#define MB_INFO_MODS		(1u << 3)
-
 #define ELFCLASS64		2
 #define ELFDATA2LSB		1
 #define EM_X86_64		62
 #define PT_LOAD			1
 
+#include "../include/sharkix/kernel/boot/multiboot1.h"
+
 struct u64le {
 	u32 lo;
 	u32 hi;
-} __attribute__((packed));
-
-struct multiboot_module {
-	u32 start;
-	u32 end;
-	u32 string;
-	u32 reserved;
-} __attribute__((packed));
-
-/*
- * Multiboot-1 information structure.
- * Fields after mods_addr are included so the layout exactly matches the ABI;
- * bootstub32 only modifies mods_count and the module array itself.
- */
-struct multiboot_info {
-	u32 flags;
-	u32 mem_lower;
-	u32 mem_upper;
-	u32 boot_device;
-	u32 cmdline;
-	u32 mods_count;
-	u32 mods_addr;
-
-	u32 syms[4];
-
-	u32 mmap_length;
-	u32 mmap_addr;
-	u32 drives_length;
-	u32 drives_addr;
-	u32 config_table;
-	u32 boot_loader_name;
-	u32 apm_table;
-
-	u32 vbe_control_info;
-	u32 vbe_mode_info;
-	u16 vbe_mode;
-	u16 vbe_interface_seg;
-	u16 vbe_interface_off;
-	u16 vbe_interface_len;
 } __attribute__((packed));
 
 struct elf64_ehdr {
@@ -165,7 +124,7 @@ static u32 checked_low32(struct u64le value, const char *what)
 	return value.lo;
 }
 
-static u32 load_kernel_elf(struct multiboot_module *kernel_module)
+static u32 load_kernel_elf(multiboot_module_t *kernel_module)
 {
 	u32 image_start = kernel_module->start;
 	u32 image_end   = kernel_module->end;
@@ -258,10 +217,10 @@ static u32 load_kernel_elf(struct multiboot_module *kernel_module)
 }
 
 
-static void remove_kernel_module(struct multiboot_info *mbi)
+static void remove_kernel_module(multiboot_info_t *mbi)
 {
-	struct multiboot_module *mods =
-		(struct multiboot_module *)mbi->mods_addr;
+	multiboot_module_t *mods =
+		(multiboot_module_t *)mbi->mods_addr;
 
 	for (u32 i = 1; i < mbi->mods_count; i++) {
 		mods[i - 1].start    = mods[i].start;
@@ -273,12 +232,12 @@ static void remove_kernel_module(struct multiboot_info *mbi)
 	mbi->mods_count--;
 }
 
-u32 bootstub_main(u32 magic, struct multiboot_info *mbi)
+u32 bootstub_main(u32 magic, multiboot_info_t *mbi)
 {
 	/* B: entered C successfully. */
 	debug_char('B');
 
-	if (magic != MB_BOOTLOADER_MAGIC)
+	if (magic != MULTIBOOT_BOOTLOADER_MAGIC)
 		fail("not entered via Multiboot-1");
 
 	if (mbi == (void *)0)
@@ -295,8 +254,8 @@ u32 bootstub_main(u32 magic, struct multiboot_info *mbi)
 	/* C: Multiboot info and minimum module set look sane. */
 	debug_char('C');
 
-	struct multiboot_module *mods =
-		(struct multiboot_module *)mbi->mods_addr;
+	multiboot_module_t *mods =
+		(multiboot_module_t *)mbi->mods_addr;
 
 	u32 entry = load_kernel_elf(&mods[0]);
 

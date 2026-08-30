@@ -42,7 +42,7 @@ void kernel_startup_profile(void)
                               (size_t)(syscall_waker_image_end - syscall_waker_image_start) };
     program_start_options_t options = {
         .privilege = THREAD_PRIVILEGE_USER, .name = "blocker",
-        .priority = tskIDLE_PRIORITY + 2, .kernel_stack_size = 4 * PAGE_SIZE,
+        .priority = tskIDLE_PRIORITY + 1, .kernel_stack_size = 4 * PAGE_SIZE,
         .reap_on_exit = 1
     };
     thread_t *blocker_thread;
