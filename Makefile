@@ -36,7 +36,7 @@ KERNEL_OBJS := $(KERNEL_BUILD_DIR)/boot.o $(KERNEL_BUILD_DIR)/main.o $(KERNEL_BU
  $(KERNEL_BUILD_DIR)/startup/common.o $(KERNEL_BUILD_DIR)/startup/$(PROFILE).o $(USER_OBJS) \
  $(KERNEL_BUILD_DIR)/freertos/tasks.o $(KERNEL_BUILD_DIR)/freertos/queue.o $(KERNEL_BUILD_DIR)/freertos/list.o \
  $(KERNEL_BUILD_DIR)/freertos/event_groups.o $(KERNEL_BUILD_DIR)/freertos/stream_buffer.o $(KERNEL_BUILD_DIR)/freertos/croutine.o \
- $(KERNEL_BUILD_DIR)/freertos/heap_4.o $(KERNEL_BUILD_DIR)/arch/x86_64/port.o $(KERNEL_BUILD_DIR)/arch/x86_64/portASM.o
+ $(KERNEL_BUILD_DIR)/freertos/heap_4.o $(KERNEL_BUILD_DIR)/arch/x86_64/port.o $(KERNEL_BUILD_DIR)/arch/x86_64/portASM.o $(KERNEL_BUILD_DIR)/ipc.o
 
 .PHONY: all clean iso run run-iso verify FORCE
 .SECONDARY: $(USER_ASM_OBJS) $(USER_ELFS)
