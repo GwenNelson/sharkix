@@ -6,6 +6,11 @@ QEMU ?= qemu-system-x86_64
 QEMU_ACCEL_FLAGS ?= $(if $(wildcard /dev/kvm),-enable-kvm -cpu host,-cpu qemu64)
 MKDIR_P ?= mkdir -p
 BUILD_DIR := build
+INCLUDE_DIR := include
+KERNEL_SRC_DIR := src/kernel
+USER_SRC_DIR := src/user
+KERNEL_BUILD_DIR := $(BUILD_DIR)/kernel
+USER_BUILD_DIR := $(BUILD_DIR)/user
 PROFILE ?= normal
 PROFILES := normal syscall exceptions vm lifecycle two_tasks_one_space syscall_block
 
@@ -17,42 +22,45 @@ CFLAGS := -std=gnu11 -ffreestanding -O2 -Wall -Wextra -m64 -mcmodel=kernel \
  -fno-stack-protector -fno-pic -fno-pie -mno-red-zone -mno-sse -mno-mmx -mno-80387 \
  -fno-asynchronous-unwind-tables
 ASFLAGS := -x assembler-with-cpp -ffreestanding -m64
-INCLUDES := -I. -Ikernel/freertos/include -Ikernel/arch/x86_64 -Ikernel
-LDFLAGS := -m elf_x86_64 -T kernel/linker.ld -nostdlib
+INCLUDES := -I$(INCLUDE_DIR) -I$(INCLUDE_DIR)/sharkix/kernel/freertos/include \
+ -I$(INCLUDE_DIR)/sharkix/kernel/arch/x86_64 -I$(INCLUDE_DIR)/sharkix/kernel
+LDFLAGS := -m elf_x86_64 -T $(KERNEL_SRC_DIR)/linker.ld -nostdlib
 USER_TASKS := taskA taskB tests/ud tests/pagefault tests/kernel_access tests/exit tests/syscall_blocker tests/syscall_waker
-USER_ELFS := $(addprefix $(BUILD_DIR)/user/,$(addsuffix .elf,$(USER_TASKS)))
-USER_OBJS := kernel/user_taskA.o kernel/user_taskB.o kernel/user_ud.o kernel/user_pagefault.o kernel/user_kernel_access.o kernel/user_exit.o kernel/user_syscall_blocker.o kernel/user_syscall_waker.o
-KERNEL_OBJS := kernel/boot.o kernel/main.o kernel/libc.o kernel/memory.o kernel/thread.o kernel/program.o kernel/syscall.o \
- kernel/startup/common.o kernel/startup/$(PROFILE).o $(USER_OBJS) \
- kernel/freertos/tasks.o kernel/freertos/queue.o kernel/freertos/list.o \
- kernel/freertos/event_groups.o kernel/freertos/stream_buffer.o kernel/freertos/croutine.o \
- kernel/freertos/heap_4.o kernel/arch/x86_64/port.o kernel/arch/x86_64/portASM.o
+USER_ASM_OBJS := $(addprefix $(USER_BUILD_DIR)/,$(addsuffix .o,$(USER_TASKS)))
+USER_ELFS := $(addprefix $(USER_BUILD_DIR)/,$(addsuffix .elf,$(USER_TASKS)))
+USER_OBJS := $(KERNEL_BUILD_DIR)/user_taskA.o $(KERNEL_BUILD_DIR)/user_taskB.o $(KERNEL_BUILD_DIR)/user_ud.o $(KERNEL_BUILD_DIR)/user_pagefault.o $(KERNEL_BUILD_DIR)/user_kernel_access.o $(KERNEL_BUILD_DIR)/user_exit.o $(KERNEL_BUILD_DIR)/user_syscall_blocker.o $(KERNEL_BUILD_DIR)/user_syscall_waker.o
+KERNEL_OBJS := $(KERNEL_BUILD_DIR)/boot.o $(KERNEL_BUILD_DIR)/main.o $(KERNEL_BUILD_DIR)/libc.o $(KERNEL_BUILD_DIR)/memory.o $(KERNEL_BUILD_DIR)/thread.o $(KERNEL_BUILD_DIR)/program.o $(KERNEL_BUILD_DIR)/syscall.o \
+ $(KERNEL_BUILD_DIR)/startup/common.o $(KERNEL_BUILD_DIR)/startup/$(PROFILE).o $(USER_OBJS) \
+ $(KERNEL_BUILD_DIR)/freertos/tasks.o $(KERNEL_BUILD_DIR)/freertos/queue.o $(KERNEL_BUILD_DIR)/freertos/list.o \
+ $(KERNEL_BUILD_DIR)/freertos/event_groups.o $(KERNEL_BUILD_DIR)/freertos/stream_buffer.o $(KERNEL_BUILD_DIR)/freertos/croutine.o \
+ $(KERNEL_BUILD_DIR)/freertos/heap_4.o $(KERNEL_BUILD_DIR)/arch/x86_64/port.o $(KERNEL_BUILD_DIR)/arch/x86_64/portASM.o
 
 .PHONY: all clean iso run run-iso verify FORCE
-.SECONDARY: $(USER_ELFS)
+.SECONDARY: $(USER_ASM_OBJS) $(USER_ELFS)
 all: kernel.elf
-kernel.elf: FORCE $(KERNEL_OBJS) kernel/linker.ld FreeRTOSConfig.h
+kernel.elf: FORCE $(KERNEL_OBJS) $(KERNEL_SRC_DIR)/linker.ld $(INCLUDE_DIR)/FreeRTOSConfig.h
 	$(LD) $(LDFLAGS) -o $@ $(KERNEL_OBJS)
 FORCE:
-kernel/%.o: kernel/%.c FreeRTOSConfig.h
+
+$(KERNEL_BUILD_DIR)/%.o: $(KERNEL_SRC_DIR)/%.c $(INCLUDE_DIR)/FreeRTOSConfig.h
+	$(MKDIR_P) $(dir $@)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-kernel/%.o: kernel/%.S FreeRTOSConfig.h
-	$(CC) $(ASFLAGS) $(INCLUDES) -c $< -o $@
-kernel/arch/x86_64/%.o: kernel/arch/x86_64/%.c FreeRTOSConfig.h
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-kernel/arch/x86_64/%.o: kernel/arch/x86_64/%.S FreeRTOSConfig.h
+
+$(KERNEL_BUILD_DIR)/%.o: $(KERNEL_SRC_DIR)/%.S $(INCLUDE_DIR)/FreeRTOSConfig.h
+	$(MKDIR_P) $(dir $@)
 	$(CC) $(ASFLAGS) $(INCLUDES) -c $< -o $@
 
-$(BUILD_DIR)/user/%.o: user/%.s
+$(USER_BUILD_DIR)/%.o: $(USER_SRC_DIR)/%.s
 	$(MKDIR_P) $(dir $@)
 	$(CC) $(ASFLAGS) -c $< -o $@
-$(BUILD_DIR)/user/%.elf: $(BUILD_DIR)/user/%.o user/task.ld
-	$(LD) -m elf_x86_64 -T user/task.ld -nostdlib -o $@ $<
-$(BUILD_DIR)/user/%.bin: $(BUILD_DIR)/user/%.elf
+$(USER_BUILD_DIR)/%.elf: $(USER_BUILD_DIR)/%.o $(USER_SRC_DIR)/task.ld
+	$(LD) -m elf_x86_64 -T $(USER_SRC_DIR)/task.ld -nostdlib -o $@ $<
+$(USER_BUILD_DIR)/%.bin: $(USER_BUILD_DIR)/%.elf
 	$(OBJCOPY) -O binary $< $@
 
 define EMBED_RULE
-kernel/user_$(1).o: $(BUILD_DIR)/user/$(2).bin
+$(KERNEL_BUILD_DIR)/user_$(1).o: $(USER_BUILD_DIR)/$(2).bin
+	$(MKDIR_P) $$(dir $$@)
 	$(LD) -r -b binary -m elf_x86_64 -o $$@ $$<
 	$(OBJCOPY) --rename-section .data=.rodata,alloc,load,readonly,data,contents \
 	 --redefine-sym _binary_build_user_$(subst /,_,$(2))_bin_start=$(3)_image_start \
