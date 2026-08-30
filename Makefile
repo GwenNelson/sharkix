@@ -52,7 +52,7 @@ kernel.elf: FORCE $(KERNEL_OBJS) $(LIBFIFO_A) $(KERNEL_SRC_DIR)/linker.ld $(INCL
 FORCE:
 
 $(LIBFIFO_A):
-	$(MAKE) -C external/libfifo build/libfifo.a
+	$(MAKE) -C external/libfifo CFLAGS='$(CFLAGS)' build/libfifo.a
 
 $(KERNEL_BUILD_DIR)/%.o: $(KERNEL_SRC_DIR)/%.c $(INCLUDE_DIR)/FreeRTOSConfig.h
 	$(MKDIR_P) $(dir $@)
