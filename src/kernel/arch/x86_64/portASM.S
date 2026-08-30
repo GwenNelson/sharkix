@@ -37,6 +37,12 @@
 
 .global vPortStartFirstTask
 vPortStartFirstTask:
+ /* Kernel tasks are entered by a direct jump rather than IRETQ, so the
+  * synthetic initial RFLAGS word is not loaded into hardware.  Establish
+  * the intended cooperative-kernel interrupt state explicitly before any
+  * task code runs; otherwise IF inherited from scheduler startup allows
+  * timer interrupts to nest on the task stack indefinitely. */
+ cli
  ACTIVATE_CURRENT_THREAD
  movq pxCurrentTCB(%rip), %rax
  movq (%rax), %rsp
@@ -60,7 +66,7 @@ vPortYieldHandler:
  testb $3, 8(%rsp)
  jnz 1f
  movq (%rsp), %r11
- addq $24, %rsp
+ addq $40, %rsp
  jmp *%r11
 1:
  iretq
@@ -87,7 +93,7 @@ vPortTimerHandler:
  testb $3, 8(%rsp)
  jnz 1f
  movq (%rsp), %r11
- addq $24, %rsp
+ addq $40, %rsp
  jmp *%r11
 1:
  iretq

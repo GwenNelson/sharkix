@@ -81,7 +81,12 @@ $(eval $(call EMBED_RULE,syscall_waker,tests/syscall_waker,syscall_waker))
 bootstub32/bootstub32:
 	$(MAKE) -C bootstub32
 run: kernel.elf bootstub32/bootstub32
-	$(QEMU) $(QEMU_ACCEL_FLAGS) -m 512M -kernel ./bootstub32/bootstub32 -initrd kernel.elf -serial stdio -display none -no-reboot
+	@$(QEMU) $(QEMU_ACCEL_FLAGS) -m 512M -kernel ./bootstub32/bootstub32 -initrd kernel.elf -serial stdio -display none -no-reboot; \
+	status=$$?; \
+	echo; \
+	echo "QEMU exit status: $$status"; \
+	exit $$status
+
 iso: kernel.elf
 	$(MKDIR_P) iso/boot/grub
 	cp kernel.elf iso/boot/kernel.elf
