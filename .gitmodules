@@ -1,0 +1,3 @@
+[submodule "external/libfifo"]
+	path = external/libfifo
+	url = https://github.com/GwenNelson/libfifo.git
