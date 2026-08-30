@@ -2,6 +2,15 @@
 #define SHARKIX_SYSCALL_H
 #include <stdint.h>
 
+
+// standard syscall enum
+#define SYSCALL(name, number) SYSCALL_##name = number,
+typedef enum syscall_enum_t {
+#include "syscalls.inc"
+} syscall_enum_t;
+#undef SYSCALL
+
+
 /* The SharkKernel register syscall ABI only.  User return RIP/RSP/RFLAGS are
  * architectural state kept by the x86_64 syscall frame, not this structure. */
 typedef struct syscall_ctx {

@@ -3,11 +3,7 @@
 #include "console.h"
 #include "thread.h"
 #include "syscall.h"
-
-#define SYSCALL_TEST_WRITE  0U
-#define SYSCALL_TEST_EXIT   1U
-#define SYSCALL_TEST_BLOCK  2U
-#define SYSCALL_TEST_WAKE   3U
+#include "errno.h"
 
 static uint64_t announced_a;
 static uint64_t announced_b;
@@ -82,10 +78,17 @@ static syscall_result_t sys_test_wake(syscall_ctx_t ctx)
 syscall_result_t dispatch_syscall(syscall_ctx_t ctx)
 {
     switch (ctx.rax) {
-    case SYSCALL_TEST_WRITE: return sys_test(ctx);
-    case SYSCALL_TEST_EXIT: thread_exit_current();
-    case SYSCALL_TEST_BLOCK: return sys_test_block(ctx);
-    case SYSCALL_TEST_WAKE: return sys_test_wake(ctx);
+    case SYSCALL_TEST_WRITE: 
+	 return sys_test(ctx);
+	 break;
+    case SYSCALL_TEST_EXIT:
+	 thread_exit_current();
+	 break;
+    case SYSCALL_TEST_BLOCK:
+	 return sys_test_block(ctx);
+    case SYSCALL_TEST_WAKE:
+	 return sys_test_wake(ctx);
+	 break;
     default:
         ctx.rax = UINT64_MAX;
         return syscall_return(ctx);
