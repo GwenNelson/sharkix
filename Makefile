@@ -23,6 +23,10 @@ CFLAGS := -std=gnu11 -ffreestanding -O2 -Wall -Wextra -m64 -mcmodel=kernel \
  -fno-stack-protector -fno-pic -fno-pie -mno-red-zone -mno-sse -mno-mmx -mno-80387 \
  -fno-asynchronous-unwind-tables
 ASFLAGS := -x assembler-with-cpp -ffreestanding -m64
+DEBUG_CFLAGS := -std=gnu11 -ffreestanding -O0 -g -Wall -Wextra -m64 -mcmodel=kernel \
+ -fno-stack-protector -fno-pic -fno-pie -mno-red-zone -mno-sse -mno-mmx -mno-80387 \
+ -fno-asynchronous-unwind-tables
+DEBUG_ASFLAGS := -x assembler-with-cpp -ffreestanding -m64 -g
 DEPFLAGS := -MMD -MP
 INCLUDES := -I$(INCLUDE_DIR) -I$(INCLUDE_DIR)/sharkix/kernel/freertos \
  -I$(INCLUDE_DIR)/sharkix/kernel/arch/x86_64 -I$(INCLUDE_DIR)/sharkix/kernel \
@@ -38,7 +42,7 @@ KERNEL_OBJS := $(KERNEL_BUILD_DIR)/boot.o $(KERNEL_BUILD_DIR)/main.o $(KERNEL_BU
  $(KERNEL_BUILD_DIR)/freertos/event_groups.o $(KERNEL_BUILD_DIR)/freertos/stream_buffer.o $(KERNEL_BUILD_DIR)/freertos/croutine.o \
  $(KERNEL_BUILD_DIR)/freertos/heap_4.o $(KERNEL_BUILD_DIR)/arch/x86_64/port.o $(KERNEL_BUILD_DIR)/arch/x86_64/portASM.o $(KERNEL_BUILD_DIR)/ipc.o
 
-.PHONY: all clean iso run run-iso verify FORCE
+.PHONY: all clean iso run run-gdb run-iso verify FORCE
 .SECONDARY: $(USER_ASM_OBJS) $(USER_ELFS)
 .DEFAULT_GOAL := all
 -include $(KERNEL_OBJS:.o=.d)
@@ -48,7 +52,7 @@ kernel.elf: FORCE $(KERNEL_OBJS) $(LIBFIFO_A) $(KERNEL_SRC_DIR)/linker.ld $(INCL
 FORCE:
 
 $(LIBFIFO_A):
-	$(MAKE) -C external/libfifo
+	$(MAKE) -C external/libfifo build/libfifo.a
 
 $(KERNEL_BUILD_DIR)/%.o: $(KERNEL_SRC_DIR)/%.c $(INCLUDE_DIR)/FreeRTOSConfig.h
 	$(MKDIR_P) $(dir $@)
@@ -91,6 +95,12 @@ run: kernel.elf bootstub32/bootstub32
 	echo; \
 	echo "QEMU exit status: $$status"; \
 	exit $$status
+run-gdb:
+	$(MAKE) clean
+	$(MAKE) CFLAGS='$(DEBUG_CFLAGS)' ASFLAGS='$(DEBUG_ASFLAGS)' kernel.elf
+	$(MAKE) -C bootstub32 clean
+	$(MAKE) -C bootstub32 DEBUG=1
+	$(QEMU) $(QEMU_ACCEL_FLAGS) -m 512M -kernel ./bootstub32/bootstub32 -initrd kernel.elf -serial stdio -display none -no-reboot -S -s
 
 iso: kernel.elf
 	$(MKDIR_P) iso/boot/grub
