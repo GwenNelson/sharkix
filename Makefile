@@ -13,6 +13,7 @@ KERNEL_BUILD_DIR := $(BUILD_DIR)/kernel
 USER_BUILD_DIR := $(BUILD_DIR)/user
 PROFILE ?= normal
 PROFILES := normal syscall exceptions vm lifecycle two_tasks_one_space syscall_block
+LIBFIFO_A := external/libfifo/build/libfifo.a
 
 ifeq ($(filter $(PROFILE),$(PROFILES)),)
 $(error unknown PROFILE '$(PROFILE)'; choose one of $(PROFILES))
@@ -24,7 +25,8 @@ CFLAGS := -std=gnu11 -ffreestanding -O2 -Wall -Wextra -m64 -mcmodel=kernel \
 ASFLAGS := -x assembler-with-cpp -ffreestanding -m64
 DEPFLAGS := -MMD -MP
 INCLUDES := -I$(INCLUDE_DIR) -I$(INCLUDE_DIR)/sharkix/kernel/freertos \
- -I$(INCLUDE_DIR)/sharkix/kernel/arch/x86_64 -I$(INCLUDE_DIR)/sharkix/kernel
+ -I$(INCLUDE_DIR)/sharkix/kernel/arch/x86_64 -I$(INCLUDE_DIR)/sharkix/kernel \
+ -Iexternal/libfifo/include
 LDFLAGS := -m elf_x86_64 -T $(KERNEL_SRC_DIR)/linker.ld -nostdlib
 USER_TASKS := taskA taskB tests/ud tests/pagefault tests/kernel_access tests/exit tests/syscall_blocker tests/syscall_waker
 USER_ASM_OBJS := $(addprefix $(USER_BUILD_DIR)/,$(addsuffix .o,$(USER_TASKS)))
@@ -41,9 +43,12 @@ KERNEL_OBJS := $(KERNEL_BUILD_DIR)/boot.o $(KERNEL_BUILD_DIR)/main.o $(KERNEL_BU
 .DEFAULT_GOAL := all
 -include $(KERNEL_OBJS:.o=.d)
 all: kernel.elf
-kernel.elf: FORCE $(KERNEL_OBJS) $(KERNEL_SRC_DIR)/linker.ld $(INCLUDE_DIR)/FreeRTOSConfig.h
-	$(LD) $(LDFLAGS) -o $@ $(KERNEL_OBJS)
+kernel.elf: FORCE $(KERNEL_OBJS) $(LIBFIFO_A) $(KERNEL_SRC_DIR)/linker.ld $(INCLUDE_DIR)/FreeRTOSConfig.h
+	$(LD) $(LDFLAGS) -o $@ $(KERNEL_OBJS) $(LIBFIFO_A)
 FORCE:
+
+$(LIBFIFO_A):
+	$(MAKE) -C external/libfifo
 
 $(KERNEL_BUILD_DIR)/%.o: $(KERNEL_SRC_DIR)/%.c $(INCLUDE_DIR)/FreeRTOSConfig.h
 	$(MKDIR_P) $(dir $@)
@@ -101,3 +106,4 @@ verify: kernel.elf
 clean:
 	rm -f $(KERNEL_OBJS) $(USER_OBJS) kernel.elf sharkix.iso
 	rm -rf iso $(BUILD_DIR)
+	make -C external/libfifo clean
