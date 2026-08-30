@@ -22,7 +22,7 @@ CFLAGS := -std=gnu11 -ffreestanding -O2 -Wall -Wextra -m64 -mcmodel=kernel \
  -fno-stack-protector -fno-pic -fno-pie -mno-red-zone -mno-sse -mno-mmx -mno-80387 \
  -fno-asynchronous-unwind-tables
 ASFLAGS := -x assembler-with-cpp -ffreestanding -m64
-INCLUDES := -I$(INCLUDE_DIR) -I$(INCLUDE_DIR)/sharkix/kernel/freertos/include \
+INCLUDES := -I$(INCLUDE_DIR) -I$(INCLUDE_DIR)/sharkix/kernel/freertos \
  -I$(INCLUDE_DIR)/sharkix/kernel/arch/x86_64 -I$(INCLUDE_DIR)/sharkix/kernel
 LDFLAGS := -m elf_x86_64 -T $(KERNEL_SRC_DIR)/linker.ld -nostdlib
 USER_TASKS := taskA taskB tests/ud tests/pagefault tests/kernel_access tests/exit tests/syscall_blocker tests/syscall_waker
