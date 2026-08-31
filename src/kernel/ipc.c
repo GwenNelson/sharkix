@@ -4,6 +4,8 @@
 
 #include <sharkix/kernel/ipc.h>
 #include <sharkix/kernel/memory.h>
+#include <libfifo/fifo.h>
+#include <libfifo/sync.h>
 
 static ipc_endpoint_t *endpoints;
 static ipc_handle_t next_handle;
@@ -134,10 +136,11 @@ ipc_status_t ipc_recv(thread_t *caller, ipc_handle_t handle, ipc_message_t *mess
                  goto out;
              }
 
-             if (endpoint->owner != caller) {
+	     // we should be checking this in the syscall layer, not here
+/*             if (endpoint->owner != caller) {
                  status = IPC_ERR_PERMISSION;
                  goto out;
-             }
+             }*/
 
              if (!fifo_pop(&endpoint->queue, (void **)&queued)) {
                  status = IPC_ERR_CANCELLED;

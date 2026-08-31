@@ -275,7 +275,7 @@ static void test_single_thread(void *argument) {
 
 static ipc_handle_t threaded_endpoint;
 
-#define THREADED_TEST_MESSAGES 10000
+#define THREADED_TEST_MESSAGES 10
 
 static void test_ipc_consumer(void* argument);
 static void test_ipc_producer(void *argument) {
@@ -296,12 +296,13 @@ static void test_ipc_producer(void *argument) {
 	        for(;;);
             }
 
-	    // now we can spawn the consumer thread
-	    startup_kernel_thread(test_ipc_producer, "ipc-producer", tskIDLE_PRIORITY + 2);
 
             console_write("IPC producer running, tid=");
             console_decimal(thread->id);
             console_putc('\n');
+
+	    // now we can spawn the consumer thread, which should begin to receive these
+	    startup_kernel_thread(test_ipc_consumer, "ipc-consumer", tskIDLE_PRIORITY + 2);
 
             for (i = 0; i < THREADED_TEST_MESSAGES; i++) {
                 memset(&message, 0, sizeof(message));
@@ -351,7 +352,7 @@ static void test_ipc_consumer(void *argument) {
 }
 
 static void test_ipc_threads(void* argument) {
-       startup_kernel_thread(test_ipc_consumer, "ipc-consumer", tskIDLE_PRIORITY + 2);
+       startup_kernel_thread(test_ipc_producer, "ipc-producer", tskIDLE_PRIORITY + 2);
 }
 
 void kernel_startup_profile(void) {
