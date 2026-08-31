@@ -50,6 +50,7 @@ void kernel_startup_profile(void)
     baseline_reaped = thread_reaped_count();
     if (program_load_and_start(&blocker, &options, NULL, &blocker_thread) != 0) goto failed;
     options.name = "waker";
+    options.stack_base = PROGRAM_DEFAULT_STACK_BASE + 0x00200000;
     if (program_load_and_start(&waker, &options, NULL, &waker_thread) != 0) goto failed;
     blocker_id = blocker_thread->id;
     waker_id = waker_thread->id;

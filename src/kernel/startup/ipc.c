@@ -273,40 +273,92 @@ static void test_single_thread(void *argument) {
                 ;
 }
 
-/*
- * For now this is deliberately just a scheduler/thread smoke test.
- *
- * Once IPC blocking semantics exist, these are the obvious place to
- * turn into a sender and receiver pair.
- */
-static void test_thread_a(void *argument) {
+static ipc_handle_t threaded_endpoint;
+
+#define THREADED_TEST_MESSAGES 10000
+
+static void test_ipc_producer(void *argument) {
+            thread_t *thread;
+            ipc_message_t message;
+            unsigned int i;
+
             (void)argument;
 
-            console_write("IPC thread A running, tid=");
-            console_decimal(thread_current()->id);
+            thread = thread_current();
+
+            console_write("IPC producer running, tid=");
+            console_decimal(thread->id);
             console_putc('\n');
+
+            for (i = 0; i < THREADED_TEST_MESSAGES; i++) {
+                memset(&message, 0, sizeof(message));
+
+                message.words[0] = 0xAAAAAAAAAAAAAAAA;
+                message.words[1] = i;
+                message.words[2] = i ^ 0x55555555;
+                message.words[3] = ~(uint64_t)i;
+                message.words[4] = i * 17;
+
+                TEST_CHECK_STATUS(ipc_send(thread, threaded_endpoint, &message), IPC_OK, "producer send");
+            }
+
+            console_write("IPC producer PASSED\n");
 
             for (;;)
                 ;
 }
 
-static void test_thread_b(void *argument) {
+static void test_ipc_consumer(void *argument) {
+            thread_t *thread;
+            ipc_message_t message;
+            unsigned int i;
+
             (void)argument;
 
-            console_write("IPC thread B running, tid=");
-            console_decimal(thread_current()->id);
+            thread = thread_current();
+
+            console_write("IPC consumer running, tid=");
+            console_decimal(thread->id);
             console_putc('\n');
+
+            for (i = 0; i < THREADED_TEST_MESSAGES; i++) {
+                TEST_CHECK_STATUS(ipc_recv(thread, threaded_endpoint, &message), IPC_OK, "consumer recv");
+
+                TEST_CHECK(message.words[0] == 0xAAAAAAAAAAAAAAAA, "consumer word 0");
+                TEST_CHECK(message.words[1] == i, "consumer FIFO order");
+                TEST_CHECK(message.words[2] == (i ^ 0x55555555), "consumer word 2");
+                TEST_CHECK(message.words[3] == ~(uint64_t)i, "consumer word 3");
+                TEST_CHECK(message.words[4] == (i * 17), "consumer word 4");
+            }
+
+            console_write("IPC consumer PASSED\n");
 
             for (;;)
                 ;
 }
 
-void kernel_startup_profile(void)
-{
-    ipc_init();
+static void test_ipc_threads(void* argument) {
+	ipc_status_t status;
+	thread_t *thread;
+	thread = thread_current();
+	status = ipc_create(thread, &threaded_endpoint);
+    	if (status != IPC_OK) {
+        	console_write("FAIL: threaded endpoint create status=");
+	        console_decimal(status);
+        	console_putc('\n');
+	        for(;;);
+        }
 
-    startup_kernel_thread(test_single_thread, "ipctest", tskIDLE_PRIORITY + 2);
-
-    startup_kernel_thread(test_thread_a, "ipcthread-a", tskIDLE_PRIORITY + 1);
-    startup_kernel_thread(test_thread_b, "ipcthread-b", tskIDLE_PRIORITY + 1);
+	startup_kernel_thread(test_ipc_consumer, "ipc-consumer", tskIDLE_PRIORITY + 2);
+	startup_kernel_thread(test_ipc_producer, "ipc-producer", tskIDLE_PRIORITY + 2);
 }
+
+void kernel_startup_profile(void) {
+     thread_t *thread;
+
+     ipc_init();
+
+     startup_kernel_thread(test_single_thread, "ipctest", tskIDLE_PRIORITY+2);
+     startup_kernel_thread(test_ipc_threads,"ipctest-threads",tskIDLE_PRIORITY+2);
+}
+

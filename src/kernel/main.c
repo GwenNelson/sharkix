@@ -23,11 +23,19 @@ void console_init(void)
 }
 void console_putc(char c)
 {
+    vPortEnterCritical();
     while ((inb(0x3fd) & 0x20) == 0) {}
-    if (c == '\n') { outb(0x3f8, '\r'); outb(0x3f8, '\n'); vga_x = 0; if (++vga_y == VGA_HEIGHT) vga_y = 0; return; }
+    if (c == '\n') {
+        outb(0x3f8, '\r'); outb(0x3f8, '\n');
+        vga_x = 0;
+        if (++vga_y == VGA_HEIGHT) vga_y = 0;
+        vPortExitCritical();
+        return;
+    }
     outb(0x3f8, (uint8_t)c);
     vga[(size_t)vga_y * VGA_WIDTH + vga_x] = 0x0f00 | (uint8_t)c;
     if (++vga_x == VGA_WIDTH) { vga_x = 0; if (++vga_y == VGA_HEIGHT) vga_y = 0; }
+    vPortExitCritical();
 }
 void console_write(const char *text) { while (*text) console_putc(*text++); }
 void console_hex(uint64_t value)

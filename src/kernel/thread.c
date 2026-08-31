@@ -22,47 +22,85 @@ static thread_t *thread_allocate(void)
     if (!thread) return NULL;
     uint8_t *bytes = (uint8_t *)thread;
     for (size_t i = 0; i < sizeof(*thread); ++i) bytes[i] = 0;
+    vPortEnterCritical();
     thread->id = next_thread_id++;
     thread->state = THREAD_STATE_NEW;
     thread->registry_next = thread_registry;
     thread_registry = thread;
+    vPortExitCritical();
     return thread;
 }
 
 thread_t *thread_lookup(uint64_t id)
 {
-    for (thread_t *t = thread_registry; t; t = t->registry_next)
-        if (t->id == id) return t;
-    return NULL;
+    thread_t *result = NULL;
+
+    vPortEnterCritical();
+    for (thread_t *t = thread_registry; t; t = t->registry_next) {
+        if (t->id == id) {
+            result = t;
+            break;
+        }
+    }
+    vPortExitCritical();
+    return result;
 }
 
 thread_state_t thread_get_state(uint64_t id)
 {
-    thread_t *thread = thread_lookup(id);
-    return thread ? thread->state : THREAD_STATE_INVALID;
+    thread_state_t state = THREAD_STATE_INVALID;
+
+    vPortEnterCritical();
+    for (thread_t *thread = thread_registry; thread; thread = thread->registry_next) {
+        if (thread->id == id) {
+            state = thread->state;
+            break;
+        }
+    }
+    vPortExitCritical();
+    return state;
 }
 
 static void thread_unlink(thread_t *thread)
 {
+    vPortEnterCritical();
     thread_t **link = &thread_registry;
     while (*link && *link != thread) link = &(*link)->registry_next;
     if (*link) *link = thread->registry_next;
+    vPortExitCritical();
 }
 
 static int thread_transition(thread_t *thread, thread_state_t from, thread_state_t to)
 {
-    if (!thread || thread->state != from) return -1;
-    thread->state = to;
-    return 0;
+    int result = -1;
+
+    vPortEnterCritical();
+    if (thread && thread->state == from) {
+        thread->state = to;
+        result = 0;
+    }
+    vPortExitCritical();
+    return result;
+}
+
+void thread_scheduler_task_ready(void *association)
+{
+    thread_t *thread = association;
+
+    vPortEnterCritical();
+    if (thread && thread->state == THREAD_STATE_BLOCKED &&
+        thread_transition(thread, THREAD_STATE_BLOCKED, THREAD_STATE_RUNNABLE) != 0)
+        for (;;) __asm__ volatile ("cli; hlt");
+    vPortExitCritical();
 }
 
 static StackType_t *user_initial_stack(thread_t *thread, uintptr_t entry, uintptr_t user_stack)
 {
     uint64_t *stack = (uint64_t *)(thread->kernel_stack_top & ~(uintptr_t)0xf);
-    *--stack = 0x23;          /* SS */
+    *--stack = 0x2b;          /* SS */
     *--stack = user_stack;    /* RSP */
     *--stack = 0x202;         /* RFLAGS */
-    *--stack = 0x2b;          /* CS */
+    *--stack = 0x33;          /* CS */
     *--stack = entry;         /* RIP */
     for (unsigned i = 0; i < 15; ++i) *--stack = 0;
     return (StackType_t *)stack;
@@ -71,9 +109,11 @@ static StackType_t *user_initial_stack(thread_t *thread, uintptr_t entry, uintpt
 static void thread_release_address_space(thread_t *thread)
 {
     if (!thread->address_space) return;
+    vPortEnterCritical();
     if (thread->address_space->live_threads) --thread->address_space->live_threads;
     address_space_release(thread->address_space);
     thread->address_space = NULL;
+    vPortExitCritical();
 }
 
 static void thread_release_kernel_resources(thread_t *thread)
@@ -113,8 +153,10 @@ thread_t *thread_create(address_space_t *address_space, thread_privilege_t privi
     if (!thread) return NULL;
     thread->privilege = privilege;
     thread->address_space = address_space;
+    vPortEnterCritical();
     address_space_retain(address_space);
     ++address_space->live_threads;
+    vPortExitCritical();
 
     stack_base = kernel_stack_alloc(stack_words * sizeof(StackType_t));
     if (!stack_base) {
@@ -165,21 +207,32 @@ thread_t *thread_create(address_space_t *address_space, thread_privilege_t privi
 
 int thread_start(thread_t *thread)
 {
-    if (!thread || thread->state != THREAD_STATE_READY || !thread->freertos_task) return -1;
-    if (thread_transition(thread, THREAD_STATE_READY, THREAD_STATE_RUNNABLE) != 0) return -1;
+    uint32_t interrupt_mask = ulPortSetInterruptMask();
+
+    if (!thread || thread->state != THREAD_STATE_READY || !thread->freertos_task ||
+        thread_transition(thread, THREAD_STATE_READY, THREAD_STATE_RUNNABLE) != 0) {
+        vPortClearInterruptMask(interrupt_mask);
+        return -1;
+    }
     vTaskStartSuspended(thread->freertos_task);
+    vPortClearInterruptMask(interrupt_mask);
     return 0;
 }
 
 void thread_destroy_unstarted(thread_t *thread)
 {
-    if (!thread || thread->state != THREAD_STATE_READY) return;
+    vPortEnterCritical();
+    if (!thread || thread->state != THREAD_STATE_READY) {
+        vPortExitCritical();
+        return;
+    }
     vTaskSetSharkThread(thread->freertos_task, NULL);
     vTaskDelete(thread->freertos_task);
     thread_release_kernel_resources(thread);
     thread_release_address_space(thread);
     thread_unlink(thread);
     kfree(thread);
+    vPortExitCritical();
 }
 
 thread_t *thread_create_started(address_space_t *address_space, thread_privilege_t privilege,
@@ -192,6 +245,24 @@ thread_t *thread_create_started(address_space_t *address_space, thread_privilege
         return NULL;
     }
     return thread;
+}
+
+int thread_delay_current(TickType_t ticks)
+{
+    thread_t *thread = thread_current();
+    uint32_t interrupt_mask;
+
+    if (!thread || ticks == 0) return -1;
+    interrupt_mask = ulPortSetInterruptMask();
+    if (thread_transition(thread, THREAD_STATE_RUNNING, THREAD_STATE_BLOCKED) != 0) {
+        vPortClearInterruptMask(interrupt_mask);
+        return -1;
+    }
+    vTaskDelay(ticks);
+    if (thread->state != THREAD_STATE_RUNNING)
+        for (;;) __asm__ volatile ("cli; hlt");
+    vPortClearInterruptMask(interrupt_mask);
+    return 0;
 }
 
 uint64_t thread_prepare_current(thread_t *thread)
@@ -219,17 +290,14 @@ uint64_t thread_prepare_current(thread_t *thread)
     return thread->address_space->pml4_phys;
 }
 
-int thread_timer_may_preempt_current(void)
-{
-    thread_t *thread = thread_current();
-    return (!thread || thread->privilege == THREAD_PRIVILEGE_USER) ? 1 : 0;
-}
-
 void thread_exit_current(void)
 {
     thread_t *thread = thread_current();
     if (!thread) for (;;) __asm__ volatile ("cli; hlt");
     if (thread->state != THREAD_STATE_RUNNING) for (;;) __asm__ volatile ("cli; hlt");
+    /* Keep the task non-preemptible from TERMINATING/list insertion until
+     * vTaskDelete removes it from the FreeRTOS ready list and yields away. */
+    portDISABLE_INTERRUPTS();
     if (thread_transition(thread, THREAD_STATE_RUNNING, THREAD_STATE_TERMINATING) != 0)
         for (;;) __asm__ volatile ("cli; hlt");
     vTaskSetSharkThread(thread->freertos_task, NULL);
@@ -244,34 +312,45 @@ void thread_reap(void)
     /* Keep DEAD objects registered for one reaper interval.  This makes
      * THREAD_STATE_DEAD observable before the ID becomes INVALID. */
     while (final_dead_threads) {
+        vPortEnterCritical();
         thread_t *thread = final_dead_threads;
         final_dead_threads = thread->reap_next;
+        thread_unlink(thread);
+        vPortExitCritical();
         thread_release_kernel_resources(thread);
         thread_release_address_space(thread);
-        thread_unlink(thread);
         kfree(thread);
+        vPortEnterCritical();
         ++reaped_threads;
+        vPortExitCritical();
     }
     while (dead_threads) {
+        vPortEnterCritical();
         thread_t *thread = dead_threads;
         dead_threads = thread->reap_next;
         if (thread_transition(thread, THREAD_STATE_TERMINATING, THREAD_STATE_DEAD) != 0)
             for (;;) __asm__ volatile ("cli; hlt");
         thread->reap_next = final_dead_threads;
         final_dead_threads = thread;
+        vPortExitCritical();
     }
 }
 
-uint64_t thread_reaped_count(void) { return reaped_threads; }
+uint64_t thread_reaped_count(void)
+{
+    uint64_t count;
+    vPortEnterCritical();
+    count = reaped_threads;
+    vPortExitCritical();
+    return count;
+}
 
 int thread_block_current(syscall_ctx_t *context)
 {
     thread_t *thread = thread_current();
-    uintptr_t frame_rsp;
-    __asm__ volatile ("movq %%rsp, %0" : "=r"(frame_rsp));
     if (!thread || thread->state != THREAD_STATE_RUNNING || !context) return -1;
+    portDISABLE_INTERRUPTS();
     thread->blocked_syscall_ctx = context;
-    thread->blocked_resume_rsp = frame_rsp;
     if (thread_transition(thread, THREAD_STATE_RUNNING, THREAD_STATE_BLOCKED) != 0) return -1;
     /* Keep the FreeRTOS task and its saved syscall frame alive while the
      * generic SharkKernel wait is outstanding.  Deleting the task here would
@@ -279,19 +358,30 @@ int thread_block_current(syscall_ctx_t *context)
      * idle-task reaper. */
     vTaskSuspendCurrentNoYield();
     taskYIELD();
-    __asm__ volatile ("movq %0, %%rsp" : : "r"(thread->blocked_resume_rsp) : "memory");
     thread->blocked_syscall_ctx = NULL;
     return 0;
 }
 int thread_wake(thread_t *thread)
 {
-    if (!thread || thread->state != THREAD_STATE_BLOCKED || !thread->freertos_task) return -1;
-    if (thread_transition(thread, THREAD_STATE_BLOCKED, THREAD_STATE_RUNNABLE) != 0) return -1;
+    uint32_t interrupt_mask = ulPortSetInterruptMask();
+
+    if (!thread || thread->state != THREAD_STATE_BLOCKED || !thread->freertos_task ||
+        thread_transition(thread, THREAD_STATE_BLOCKED, THREAD_STATE_RUNNABLE) != 0) {
+        vPortClearInterruptMask(interrupt_mask);
+        return -1;
+    }
     vTaskResume(thread->freertos_task);
+    vPortClearInterruptMask(interrupt_mask);
     return 0;
 }
 syscall_ctx_t *thread_get_blocked_syscall_context(thread_t *thread)
-{ return thread && thread->state == THREAD_STATE_BLOCKED ? thread->blocked_syscall_ctx : NULL; }
+{
+    syscall_ctx_t *context;
+    vPortEnterCritical();
+    context = thread && thread->state == THREAD_STATE_BLOCKED ? thread->blocked_syscall_ctx : NULL;
+    vPortExitCritical();
+    return context;
+}
 
 void thread_handle_exception(unsigned vector, uint64_t rip, uint64_t error, uint64_t address)
 {

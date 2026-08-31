@@ -27,16 +27,18 @@ typedef struct __attribute__((packed)) {
 } tss_t;
 
 static idt_entry_t idt[256] __attribute__((aligned(16)));
-static uint64_t kernel_gdt[8] __attribute__((aligned(8))) = {
+static uint64_t kernel_gdt[9] __attribute__((aligned(8))) = {
     0x0000000000000000ULL,
     0x00cf9a000000ffffULL, /* 0x08: bootstrap-compatible code */
     0x00cf92000000ffffULL, /* 0x10: kernel data */
     0x00af9a000000ffffULL, /* 0x18: kernel 64-bit code */
-    0x00cff2000000ffffULL, /* 0x20: user data */
-    0x00affa000000ffffULL  /* 0x28: user 64-bit code */
+    0x00cf92000000ffffULL, /* 0x20: SYSCALL kernel data */
+    0x00cff2000000ffffULL, /* 0x28: user data */
+    0x00affa000000ffffULL  /* 0x30: user 64-bit code */
 };
 static tss_t tss __attribute__((aligned(16)));
 volatile UBaseType_t ulCriticalNesting = 0;
+static uint64_t critical_outer_flags;
 
 extern void vPortStartFirstTask(void), vPortTimerHandler(void), vPortYieldHandler(void);
 extern void vPortDefaultHandler(void), vPortPageFaultHandler(void), vPortInvalidOpcodeHandler(void);
@@ -62,10 +64,10 @@ void vPortInstallKernelGDT(void)
 {
     uint64_t base = (uint64_t)(uintptr_t)&tss;
     uint64_t limit = sizeof(tss) - 1;
-    kernel_gdt[6] = limit | ((base & 0xffffffULL) << 16) | (0x89ULL << 40) | (((base >> 24) & 0xffULL) << 56);
-    kernel_gdt[7] = base >> 32;
+    kernel_gdt[7] = limit | ((base & 0xffffffULL) << 16) | (0x89ULL << 40) | (((base >> 24) & 0xffULL) << 56);
+    kernel_gdt[8] = base >> 32;
     descriptor_ptr_t gdtr = { (uint16_t)(sizeof(kernel_gdt) - 1), (uint64_t)(uintptr_t)kernel_gdt };
-    __asm__ volatile ("lgdt %0; mov $0x30, %%ax; ltr %%ax" : : "m"(gdtr) : "rax", "memory");
+    __asm__ volatile ("lgdt %0; mov $0x38, %%ax; ltr %%ax" : : "m"(gdtr) : "rax", "memory");
 }
 
 void arch_init_cpu_local(void)
@@ -76,7 +78,8 @@ void arch_init_cpu_local(void)
 void arch_init_syscalls(void)
 {
     wrmsr(MSR_EFER, rdmsr(MSR_EFER) | 1ULL | (1ULL << 11)); /* SCE and NXE */
-    wrmsr(MSR_STAR, ((uint64_t)0x1b << 48) | ((uint64_t)0x18 << 32));
+    /* SYSCALL selects 0x18/0x20.  SYSRETQ derives user SS 0x2b and CS 0x33. */
+    wrmsr(MSR_STAR, ((uint64_t)0x23 << 48) | ((uint64_t)0x18 << 32));
     wrmsr(MSR_LSTAR, (uint64_t)(uintptr_t)vPortSyscallEntry);
     wrmsr(MSR_FMASK, (1ULL << 9) | (1ULL << 10));
 }
@@ -116,10 +119,11 @@ StackType_t *pxPortInitialiseStack(StackType_t *top, StackType_t *end, TaskFunct
 {
     (void)end;
     uint64_t *stack = (uint64_t *)((uintptr_t)top & ~(uintptr_t)portBYTE_ALIGNMENT_MASK);
-    /* Kernel threads are cooperative; user IRET frames explicitly enable
-     * interrupts.  Keeping IF clear here prevents a PIT interrupt from
-     * arriving in the kernel-task construction/restore window. */
-    *--stack = 0x2;
+    /* Match the five-word long-mode interrupt frame consumed by IRETQ. */
+    uint64_t initial_rsp = (uint64_t)(uintptr_t)stack;
+    *--stack = 0x10;
+    *--stack = initial_rsp;
+    *--stack = 0x202;
     *--stack = 0x18;
     *--stack = (uint64_t)(uintptr_t)vPortTaskBootstrap;
     *--stack = 0;                            /* rax */
@@ -142,16 +146,19 @@ StackType_t *pxPortInitialiseStack(StackType_t *top, StackType_t *end, TaskFunct
 
 BaseType_t xPortStartScheduler(void) { ulCriticalNesting = 0; port_init_interrupts(); vPortStartFirstTask(); return 0; }
 void vPortEndScheduler(void) { for (;;) __asm__ volatile ("cli; hlt"); }
-void vPortEnterCritical(void) { portDISABLE_INTERRUPTS(); ++ulCriticalNesting; }
+void vPortEnterCritical(void)
+{
+    uint64_t flags;
+
+    __asm__ volatile ("pushfq; cli; popq %0" : "=r"(flags) : : "memory");
+    if (ulCriticalNesting == 0) critical_outer_flags = flags;
+    ++ulCriticalNesting;
+}
 void vPortExitCritical(void)
 {
-    if (ulCriticalNesting) --ulCriticalNesting;
-    /* Kernel Sharkix threads are cooperatively scheduled.  In particular,
-     * do not reopen the PIT interrupt window while kernel C code is still
-     * returning through a scheduler/FreeRTOS transition.  User frames set
-     * IF explicitly when they are entered. */
-    if (!ulCriticalNesting &&
-        (!thread_current() || thread_current()->privilege == THREAD_PRIVILEGE_USER))
+    configASSERT(ulCriticalNesting != 0);
+    --ulCriticalNesting;
+    if (ulCriticalNesting == 0 && (critical_outer_flags & (1ULL << 9)))
         portENABLE_INTERRUPTS();
 }
 uint32_t ulPortSetInterruptMask(void) { uint64_t flags; __asm__ volatile ("pushfq; popq %0; cli" : "=r"(flags) : : "memory"); return (uint32_t)(flags & (1u << 9)); }

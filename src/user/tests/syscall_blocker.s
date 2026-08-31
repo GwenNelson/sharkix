@@ -2,8 +2,17 @@
 .code64
 .global _start
 _start:
+    movabsq $0x737461636b2d7273, %rbx
+    pushq %rbx
+    movq %rsp, %r12
     movq $2, %rax
     syscall
+    cmpq %r12, %rsp
+    jne failure
+    movabsq $0x737461636b2d7273, %rbx
+    cmpq %rbx, (%rsp)
+    jne failure
+    addq $8, %rsp
     movabsq $0x000000000000b10c, %rbx
     cmpq %rbx, %rax
     jne failure

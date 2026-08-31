@@ -8,7 +8,14 @@ static thread_t *reaper_thread;
 static void reaper_task(void *argument)
 {
     (void)argument;
-    for (;;) { vTaskReapDeleted(); thread_reap(); taskYIELD(); }
+    for (;;) {
+        vTaskReapDeleted();
+        thread_reap();
+        if (thread_delay_current(1) != 0) {
+            console_write("reaper delay failed\n");
+            for (;;) __asm__ volatile ("cli; hlt");
+        }
+    }
 }
 
 thread_t *startup_kernel_thread(TaskFunction_t entry, const char *name, UBaseType_t priority)

@@ -48,6 +48,14 @@
 #define configUSE_SB_COMPLETED_CALLBACK            0
 #define configCHECK_FOR_STACK_OVERFLOW              2
 
+#ifndef __ASSEMBLER__
+    /* Keep Sharkix's managed-thread state synchronized when FreeRTOS moves a
+     * delayed task back to a ready list.  The TCB stores only the association. */
+    void thread_scheduler_task_ready(void *association);
+    #define traceMOVED_TASK_TO_READY_STATE(pxTCB) \
+        thread_scheduler_task_ready((pxTCB)->pvSharkThread)
+#endif
+
 #define configGENERATE_RUN_TIME_STATS              0
 #define configUSE_TRACE_FACILITY                   0
 #define configUSE_STATS_FORMATTING_FUNCTIONS       0
