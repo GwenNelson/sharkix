@@ -443,7 +443,267 @@ static void test_ipc_threads(void *argument) {
                                   tskIDLE_PRIORITY + 2);
 }
 
+/*
+ * Sharkloop is deliberately self-contained in this startup test.  The
+ * semaphores are used only for publication and completion; the ring itself
+ * uses the normal blocking IPC operations.
+ */
+#define SHARKLOOP_WORKERS       100U
+#define SHARKLOOP_HOPS          100000ULL
+#define SHARKLOOP_PROGRESS_HOPS 10000ULL
+#define SHARKLOOP_MAGIC         0x534841524b4c4f50ULL
+#define SHARKLOOP_CHECK_MAGIC   0x9e3779b97f4a7c15ULL
+#define SHARKLOOP_STOP_MARKER   0xffffffffffffffffULL
+
+static ipc_handle_t sharkloop_endpoints[SHARKLOOP_WORKERS];
+static uint64_t sharkloop_thread_ids[SHARKLOOP_WORKERS];
+static unsigned sharkloop_worker_indices[SHARKLOOP_WORKERS];
+static fifo_semaphore_t sharkloop_endpoint_ready_sem;
+static fifo_semaphore_t sharkloop_final_hop_sem;
+static fifo_semaphore_t sharkloop_worker_done_sem;
+static uint64_t sharkloop_injector_id;
+
+static void sharkloop_fail(const char *message) __attribute__((noreturn));
+static void sharkloop_fail(const char *message)
+{
+            console_write("[SHARKLOOP] FAIL: ");
+            console_write(message);
+            console_putc('\n');
+            vTaskSuspendAll();
+            __asm__ volatile ("cli" ::: "memory");
+            for (;;)
+                __asm__ volatile ("hlt");
+}
+
+static void sharkloop_fail_value(const char *message, unsigned worker, uint64_t value)
+{
+            console_write("[SHARKLOOP] FAIL: ");
+            console_write(message);
+            console_write(" worker=");
+            console_decimal(worker);
+            console_write(" value=");
+            console_hex(value);
+            console_putc('\n');
+            vTaskSuspendAll();
+            __asm__ volatile ("cli" ::: "memory");
+            for (;;)
+                __asm__ volatile ("hlt");
+}
+
+static void sharkloop_data_message(ipc_message_t *message, uint64_t sequence,
+                                   unsigned destination)
+{
+            memset(message, 0, sizeof(*message));
+            message->type = IPC_MSGTYPE_SEND;
+            message->words[0] = SHARKLOOP_MAGIC;
+            message->words[1] = sequence;
+            message->words[2] = destination;
+            message->words[3] = sequence ^ SHARKLOOP_CHECK_MAGIC;
+            message->words[4] = (sequence * 0x100000001b3ULL) ^
+                                ((uint64_t)destination << 32) ^ SHARKLOOP_MAGIC;
+}
+
+static void sharkloop_stop_message(ipc_message_t *message, unsigned destination)
+{
+            memset(message, 0, sizeof(*message));
+            message->type = IPC_MSGTYPE_SEND;
+            message->words[0] = SHARKLOOP_MAGIC;
+            message->words[1] = SHARKLOOP_STOP_MARKER;
+            message->words[2] = destination;
+            message->words[3] = SHARKLOOP_STOP_MARKER ^ SHARKLOOP_CHECK_MAGIC;
+            message->words[4] = ((uint64_t)destination << 32) ^ SHARKLOOP_MAGIC;
+}
+
+static void sharkloop_check_data(const ipc_message_t *message, unsigned worker,
+                                 uint64_t expected_sequence)
+{
+            ipc_message_t expected;
+
+            sharkloop_data_message(&expected, expected_sequence, worker);
+            if (message->type != IPC_MSGTYPE_SEND ||
+                message->words[0] != expected.words[0] ||
+                message->words[1] != expected.words[1] ||
+                message->words[2] != expected.words[2] ||
+                message->words[3] != expected.words[3] ||
+                message->words[4] != expected.words[4])
+                sharkloop_fail_value("invalid data token", worker, message->words[1]);
+}
+
+static void sharkloop_check_stop(const ipc_message_t *message, unsigned worker)
+{
+            ipc_message_t expected;
+
+            sharkloop_stop_message(&expected, worker);
+            if (message->type != IPC_MSGTYPE_SEND ||
+                message->words[0] != expected.words[0] ||
+                message->words[1] != expected.words[1] ||
+                message->words[2] != expected.words[2] ||
+                message->words[3] != expected.words[3] ||
+                message->words[4] != expected.words[4])
+                sharkloop_fail_value("invalid STOP token", worker, message->words[1]);
+}
+
+static void sharkloop_worker(void *argument)
+{
+            unsigned worker = *(unsigned *)argument;
+            unsigned next = (worker + 1U) % SHARKLOOP_WORKERS;
+            unsigned previous = (worker + SHARKLOOP_WORKERS - 1U) % SHARKLOOP_WORKERS;
+            uint64_t expected_sequence = worker;
+            ipc_handle_t endpoint;
+            ipc_message_t message;
+            ipc_message_t next_message;
+            thread_t *thread = thread_current();
+            ipc_status_t status;
+
+            if (!thread || worker >= SHARKLOOP_WORKERS)
+                sharkloop_fail("worker started with invalid state");
+
+            status = ipc_create(thread, &endpoint);
+            if (status != IPC_OK)
+                sharkloop_fail_value("worker endpoint create failed", worker, status);
+
+            sharkloop_thread_ids[worker] = thread->id;
+            sharkloop_endpoints[worker] = endpoint;
+            fifo_semaphore_post(&sharkloop_endpoint_ready_sem);
+
+            for (;;) {
+                status = ipc_recv(thread, endpoint, &message);
+                if (status != IPC_OK)
+                    sharkloop_fail_value("worker receive failed", worker, status);
+
+                if (message.words[1] == SHARKLOOP_STOP_MARKER) {
+                    if (worker == 0 || expected_sequence != SHARKLOOP_HOPS + worker)
+                        sharkloop_fail_value("STOP arrived in impossible state", worker,
+                                             expected_sequence);
+                    if (message.sender_tid != sharkloop_thread_ids[previous])
+                        sharkloop_fail_value("STOP sender mismatch", worker,
+                                             message.sender_tid);
+                    sharkloop_check_stop(&message, worker);
+
+                    if (worker != SHARKLOOP_WORKERS - 1U) {
+                        sharkloop_stop_message(&next_message, next);
+                        status = ipc_send(thread, sharkloop_endpoints[next], &next_message);
+                        if (status != IPC_OK)
+                            sharkloop_fail_value("STOP forward failed", worker, status);
+                    }
+
+                    status = ipc_destroy(thread, endpoint);
+                    if (status != IPC_OK)
+                        sharkloop_fail_value("worker endpoint destroy failed", worker, status);
+                    fifo_semaphore_post(&sharkloop_worker_done_sem);
+                    return;
+                }
+
+                if (message.sender_tid != sharkloop_thread_ids[previous] &&
+                    !(worker == 0 && expected_sequence == 0 &&
+                      message.sender_tid == sharkloop_injector_id))
+                    sharkloop_fail_value("data sender mismatch", worker, message.sender_tid);
+                sharkloop_check_data(&message, worker, expected_sequence);
+                if (expected_sequence >= SHARKLOOP_HOPS)
+                    sharkloop_fail_value("data token arrived after final hop", worker,
+                                         expected_sequence);
+
+                if (worker == SHARKLOOP_WORKERS - 1U &&
+                    expected_sequence + 1U == SHARKLOOP_HOPS)
+                    fifo_semaphore_post(&sharkloop_final_hop_sem);
+
+                if (worker == 0 &&
+                    expected_sequence + SHARKLOOP_WORKERS == SHARKLOOP_HOPS) {
+                    /* Forward the final data hop, then worker 0 owns shutdown. */
+                    sharkloop_data_message(&next_message, expected_sequence + 1U, next);
+                    status = ipc_send(thread, sharkloop_endpoints[next], &next_message);
+                    if (status != IPC_OK)
+                        sharkloop_fail_value("final data forward failed", worker, status);
+                    expected_sequence += SHARKLOOP_WORKERS;
+                    fifo_semaphore_wait(&sharkloop_final_hop_sem);
+                    sharkloop_stop_message(&next_message, next);
+                    status = ipc_send(thread, sharkloop_endpoints[next], &next_message);
+                    if (status != IPC_OK)
+                        sharkloop_fail_value("initial STOP send failed", worker, status);
+                    status = ipc_destroy(thread, endpoint);
+                    if (status != IPC_OK)
+                        sharkloop_fail_value("worker 0 endpoint destroy failed", worker, status);
+                    fifo_semaphore_post(&sharkloop_worker_done_sem);
+                    return;
+                }
+
+                if (worker != SHARKLOOP_WORKERS - 1U ||
+                    expected_sequence + 1U != SHARKLOOP_HOPS) {
+                    sharkloop_data_message(&next_message, expected_sequence + 1U, next);
+                    status = ipc_send(thread, sharkloop_endpoints[next], &next_message);
+                    if (status != IPC_OK)
+                        sharkloop_fail_value("data forward failed", worker, status);
+                }
+                expected_sequence += SHARKLOOP_WORKERS;
+
+                if (worker == SHARKLOOP_WORKERS - 1U &&
+                    (message.words[1] + 1U) % SHARKLOOP_PROGRESS_HOPS == 0) {
+                    uint64_t hops = message.words[1] + 1U;
+                    console_write("[SHARKLOOP] ");
+                    console_decimal(hops / SHARKLOOP_WORKERS);
+                    console_write(" laps / ");
+                    console_decimal(hops);
+                    console_write(" hops\n");
+                }
+            }
+}
+
 static void test_sharkloop(void* argument) {
+            thread_t *injector;
+            thread_t *workers[SHARKLOOP_WORKERS];
+            thread_create_params_t params;
+            ipc_message_t message;
+            ipc_status_t status;
+            unsigned i;
+
+            (void)argument;
+
+            injector = thread_current();
+            if (!injector)
+                sharkloop_fail("test has no current thread");
+            sharkloop_injector_id = injector->id;
+            fifo_semaphore_init(&sharkloop_endpoint_ready_sem, 0);
+            fifo_semaphore_init(&sharkloop_final_hop_sem, 0);
+            fifo_semaphore_init(&sharkloop_worker_done_sem, 0);
+
+            memset(&params, 0, sizeof(params));
+            params.entry_rip = (uintptr_t)sharkloop_worker;
+            params.kernel_stack_size = 64 * PAGE_SIZE;
+            params.priority = tskIDLE_PRIORITY + 2;
+            for (i = 0; i < SHARKLOOP_WORKERS; ++i) {
+                sharkloop_worker_indices[i] = i;
+                params.name = "sharkloop";
+                params.argument = &sharkloop_worker_indices[i];
+                workers[i] = thread_create_started(address_space_kernel(),
+                                                   THREAD_PRIVILEGE_KERNEL, &params);
+                if (!workers[i])
+                    sharkloop_fail_value("worker creation failed", i, 0);
+            }
+
+            for (i = 0; i < SHARKLOOP_WORKERS; ++i) {
+                fifo_semaphore_wait(&sharkloop_endpoint_ready_sem);
+                if (!sharkloop_endpoints[i] || !sharkloop_thread_ids[i])
+                    sharkloop_fail_value("endpoint publication failed", i,
+                                         sharkloop_endpoints[i]);
+            }
+
+            sharkloop_data_message(&message, 0, 0);
+            status = ipc_send(injector, sharkloop_endpoints[0], &message);
+            if (status != IPC_OK)
+                sharkloop_fail_value("initial data injection failed", 0, status);
+
+            for (i = 0; i < SHARKLOOP_WORKERS; ++i)
+                fifo_semaphore_wait(&sharkloop_worker_done_sem);
+
+            for (i = 0; i < SHARKLOOP_WORKERS; ++i) {
+                while (thread_get_state(sharkloop_thread_ids[i]) != THREAD_STATE_INVALID) {
+                    if (thread_delay_current(1) != 0)
+                        sharkloop_fail_value("worker reaping wait failed", i,
+                                             sharkloop_thread_ids[i]);
+                }
+            }
+
+            console_write("[SHARKLOOP] PASSED\n");
 }
 
 static void run_tests(void* argument) {
