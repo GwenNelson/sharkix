@@ -1,11 +1,14 @@
 #include "FreeRTOS.h"
 #include "startup.h"
 #include "thread.h"
+
 #include <sharkix/kernel/ipc.h>
 #include <sharkix/kernel/console.h>
+
 #include <libfifo/sync.h>
 
 #include <string.h>
+
 
 #define TEST_CHECK(condition, message) do { \
     if (!(condition)) { \
@@ -23,6 +26,7 @@
         return; \
     } \
 } while (0)
+
 
 static void test_single_thread(void *argument) {
             thread_t *thread;
@@ -57,15 +61,30 @@ static void test_single_thread(void *argument) {
 
             /*
              * Invalid endpoint.
+             *
+             * Blocking operations still return immediately here because
+             * there is nothing valid to block on.
              */
             memset(&message, 0, sizeof(message));
-            TEST_CHECK_STATUS(ipc_send(thread, UINT64_MAX, &message), IPC_ERR_NOT_FOUND, "send invalid endpoint");
-            TEST_CHECK_STATUS(ipc_recv(thread, UINT64_MAX, &received), IPC_ERR_NOT_FOUND, "recv invalid endpoint");
+
+            TEST_CHECK_STATUS(ipc_send(thread, UINT64_MAX, &message),
+                              IPC_ERR_NOT_FOUND,
+                              "send invalid endpoint");
+
+            TEST_CHECK_STATUS(ipc_recv(thread, UINT64_MAX, &received),
+                              IPC_ERR_NOT_FOUND,
+                              "recv invalid endpoint");
 
             /*
              * Empty queue.
+             *
+             * Normal ipc_recv() would correctly block here forever because
+             * this is a single-threaded test, so explicitly use the
+             * non-blocking form.
              */
-            TEST_CHECK_STATUS(ipc_recv(thread, a, &received), IPC_ERR_CANCELLED, "recv empty queue");
+            TEST_CHECK_STATUS(ipc_recv_nb(thread, a, &received),
+                              IPC_ERR_CANCELLED,
+                              "recv empty queue");
 
             /*
              * Exercise all five message words and sender metadata.
@@ -154,13 +173,17 @@ static void test_single_thread(void *argument) {
             }
 
             /*
-             * The 65th message must not silently disappear or overwrite
-             * an existing message.
+             * Normal ipc_send() would block here waiting for space.
+             *
+             * Use ipc_send_nb() to prove that a full queue does not silently
+             * discard or overwrite an existing message.
              */
             memset(&message, 0, sizeof(message));
             message.words[0] = 0xFFFFFFFF;
 
-            TEST_CHECK_STATUS(ipc_send(thread, a, &message), IPC_ERR_CANCELLED, "send to full queue");
+            TEST_CHECK_STATUS(ipc_send_nb(thread, a, &message),
+                              IPC_ERR_CANCELLED,
+                              "send to full queue");
 
             /*
              * Drain it and prove FIFO ordering plus complete payload
@@ -177,7 +200,9 @@ static void test_single_thread(void *argument) {
                 TEST_CHECK(received.sender_tid == thread->id, "queue sender TID corrupted");
             }
 
-            TEST_CHECK_STATUS(ipc_recv(thread, a, &received), IPC_ERR_CANCELLED, "queue not empty after drain");
+            TEST_CHECK_STATUS(ipc_recv_nb(thread, a, &received),
+                              IPC_ERR_CANCELLED,
+                              "queue not empty after drain");
 
             /*
              * Wrap the FIFO head/tail around several times without ever
@@ -186,6 +211,7 @@ static void test_single_thread(void *argument) {
             for (i = 0; i < IPC_QUEUE_CAPACITY / 2; i++) {
                 memset(&message, 0, sizeof(message));
                 message.words[0] = i;
+
                 TEST_CHECK_STATUS(ipc_send(thread, a, &message), IPC_OK, "wrap initial fill");
             }
 
@@ -195,6 +221,7 @@ static void test_single_thread(void *argument) {
 
                 memset(&message, 0, sizeof(message));
                 message.words[0] = i + (IPC_QUEUE_CAPACITY / 2);
+
                 TEST_CHECK_STATUS(ipc_send(thread, a, &message), IPC_OK, "wrap send");
             }
 
@@ -203,7 +230,9 @@ static void test_single_thread(void *argument) {
                 TEST_CHECK(received.words[0] == i, "wrap final order corrupted");
             }
 
-            TEST_CHECK_STATUS(ipc_recv(thread, a, &received), IPC_ERR_CANCELLED, "wrap queue not empty");
+            TEST_CHECK_STATUS(ipc_recv_nb(thread, a, &received),
+                              IPC_ERR_CANCELLED,
+                              "wrap queue not empty");
 
             /*
              * Destroy an endpoint containing messages. ipc_destroy must
@@ -213,13 +242,21 @@ static void test_single_thread(void *argument) {
 
             for (i = 0; i < 16; i++) {
                 message.words[0] = i;
-                TEST_CHECK_STATUS(ipc_send(thread, b, &message), IPC_OK, "populate endpoint before destroy");
+
+                TEST_CHECK_STATUS(ipc_send(thread, b, &message),
+                                  IPC_OK,
+                                  "populate endpoint before destroy");
             }
 
             TEST_CHECK_STATUS(ipc_destroy(thread, b), IPC_OK, "destroy populated endpoint");
 
-            TEST_CHECK_STATUS(ipc_send(thread, b, &message), IPC_ERR_NOT_FOUND, "send to destroyed endpoint");
-            TEST_CHECK_STATUS(ipc_recv(thread, b, &received), IPC_ERR_NOT_FOUND, "recv from destroyed endpoint");
+            TEST_CHECK_STATUS(ipc_send(thread, b, &message),
+                              IPC_ERR_NOT_FOUND,
+                              "send to destroyed endpoint");
+
+            TEST_CHECK_STATUS(ipc_recv(thread, b, &received),
+                              IPC_ERR_NOT_FOUND,
+                              "recv from destroyed endpoint");
 
             /*
              * Handles must never be reused.
@@ -274,15 +311,17 @@ static void test_single_thread(void *argument) {
                 ;
 }
 
+
+/*
+ * The producer only needs this semaphore because the consumer owns and
+ * creates the endpoint. Once the endpoint exists, IPC itself provides all
+ * producer/consumer synchronization.
+ */
 static ipc_handle_t threaded_endpoint;
 static fifo_semaphore_t endpoint_ready_sem;
-static fifo_semaphore_t producer_ready_sem;
 
-// anything more than this right now, and it immediately fails because we're not blocking yet
-#define THREADED_TEST_MESSAGES 100
+#define THREADED_TEST_MESSAGES 10000
 
-static void test_ipc_consumer(void* argument);
-static void test_ipc_consumer(void* argument);
 
 static void test_ipc_producer(void *argument) {
             thread_t *thread;
@@ -297,7 +336,11 @@ static void test_ipc_producer(void *argument) {
             console_decimal(thread->id);
             console_putc('\n');
 
-	    fifo_semaphore_wait(&endpoint_ready_sem);
+            /*
+             * Consumer creates the endpoint, so don't attempt to use the
+             * global handle until it has done so.
+             */
+            fifo_semaphore_wait(&endpoint_ready_sem);
 
             for (i = 0; i < THREADED_TEST_MESSAGES; i++) {
                 memset(&message, 0, sizeof(message));
@@ -308,9 +351,14 @@ static void test_ipc_producer(void *argument) {
                 message.words[3] = ~(uint64_t)i;
                 message.words[4] = i * 17;
 
-                TEST_CHECK_STATUS(ipc_send(thread, threaded_endpoint, &message), IPC_OK, "producer send");
-		fifo_semaphore_post(&producer_ready_sem);
-	    }
+                /*
+                 * This should naturally block whenever the consumer has
+                 * fallen more than IPC_QUEUE_CAPACITY messages behind.
+                 */
+                TEST_CHECK_STATUS(ipc_send(thread, threaded_endpoint, &message),
+                                  IPC_OK,
+                                  "producer send");
+            }
 
             console_write("IPC producer PASSED\n");
 
@@ -318,33 +366,47 @@ static void test_ipc_producer(void *argument) {
                 ;
 }
 
+
 static void test_ipc_consumer(void *argument) {
             thread_t *thread;
             ipc_message_t message;
+            ipc_status_t status;
             unsigned int i;
 
             (void)argument;
 
             thread = thread_current();
 
-	    ipc_status_t status;
-	    status = ipc_create(thread, &threaded_endpoint);
-	    if (status != IPC_OK) {
-        	console_write("FAIL: threaded endpoint create status=");
-	        console_decimal(status);
-        	console_putc('\n');
-	        for(;;);
+            status = ipc_create(thread, &threaded_endpoint);
+            if (status != IPC_OK) {
+                console_write("FAIL: threaded endpoint create status=");
+                console_decimal(status);
+                console_putc('\n');
+
+                for (;;)
+                    ;
             }
 
             console_write("IPC consumer running, tid=");
             console_decimal(thread->id);
             console_putc('\n');
 
-	    fifo_semaphore_post(&endpoint_ready_sem); // wake up the waiting producer
+            /*
+             * The endpoint is now fully created and published.
+             */
+            fifo_semaphore_post(&endpoint_ready_sem);
 
-	    fifo_semaphore_wait(&producer_ready_sem); // wait until it's ready
+            /*
+             * There is intentionally no "producer ready" semaphore anymore.
+             *
+             * If the producer has not sent anything yet, ipc_recv() should
+             * block. If the producer gets ahead, ipc_send() should block once
+             * the FIFO fills. That's exactly what we're testing.
+             */
             for (i = 0; i < THREADED_TEST_MESSAGES; i++) {
-                TEST_CHECK_STATUS(ipc_recv(thread, threaded_endpoint, &message), IPC_OK, "consumer recv");
+                TEST_CHECK_STATUS(ipc_recv(thread, threaded_endpoint, &message),
+                                  IPC_OK,
+                                  "consumer recv");
 
                 TEST_CHECK(message.words[0] == 0xAAAAAAAAAAAAAAAA, "consumer word 0");
                 TEST_CHECK(message.words[1] == i, "consumer FIFO order");
@@ -355,22 +417,41 @@ static void test_ipc_consumer(void *argument) {
 
             console_write("IPC consumer PASSED\n");
 
+            TEST_CHECK_STATUS(ipc_destroy(thread, threaded_endpoint),
+                              IPC_OK,
+                              "destroy threaded endpoint");
+
             for (;;)
                 ;
 }
 
-static void test_ipc_threads(void* argument) {
-	fifo_semaphore_init(&endpoint_ready_sem, 0);
-	fifo_semaphore_init(&producer_ready_sem, 0);
-	// start the consumer first, cos it needs to create the endpoint
- 	startup_kernel_thread(test_ipc_consumer, "ipc-consumer", tskIDLE_PRIORITY + 2);
-	startup_kernel_thread(test_ipc_producer, "ipc-producer", tskIDLE_PRIORITY + 2);
+
+static void test_ipc_threads(void *argument) {
+            (void)argument;
+
+            fifo_semaphore_init(&endpoint_ready_sem, 0);
+
+            /*
+             * Consumer owns the endpoint, so start it first.
+             */
+            startup_kernel_thread(test_ipc_consumer,
+                                  "ipc-consumer",
+                                  tskIDLE_PRIORITY + 2);
+
+            startup_kernel_thread(test_ipc_producer,
+                                  "ipc-producer",
+                                  tskIDLE_PRIORITY + 2);
 }
+
 
 void kernel_startup_profile(void) {
      ipc_init();
 
-     startup_kernel_thread(test_single_thread, "ipctest", tskIDLE_PRIORITY+2);
-     startup_kernel_thread(test_ipc_threads,"ipctest-threads",tskIDLE_PRIORITY+2);
-}
+     startup_kernel_thread(test_single_thread,
+                           "ipctest",
+                           tskIDLE_PRIORITY + 2);
 
+     startup_kernel_thread(test_ipc_threads,
+                           "ipctest-threads",
+                           tskIDLE_PRIORITY + 2);
+}

@@ -8,6 +8,8 @@
 #include "memory.h"
 #include "startup.h"
 
+#include <libfifo/sync.h>
+
 #define VGA_WIDTH 80
 #define VGA_HEIGHT 25
 #define VGA_PHYS 0xb8000ULL
@@ -55,6 +57,10 @@ void console_decimal(uint64_t value)
 void vApplicationMallocFailedHook(void) { for (;;) __asm__ volatile ("cli; hlt"); }
 void vApplicationStackOverflowHook(TaskHandle_t task, char *name) { (void)task; (void)name; for (;;) __asm__ volatile ("cli; hlt"); }
 
+static void sharkix_fifo_yield(void) {
+	taskYIELD();
+}
+
 void kernel_high_entry(uint32_t magic, uint32_t info)
 {
     (void)magic; (void)info;
@@ -68,6 +74,7 @@ void kernel_high_entry(uint32_t magic, uint32_t info)
     arch_init_syscalls();
     startup_common_init();
     if (virt_to_phys(phys_to_virt(VGA_PHYS)) == VGA_PHYS) console_write("physmap translation: ok\n");
+    fifo_set_yield_callback(sharkix_fifo_yield);
     kernel_startup_profile();
     console_write("starting FreeRTOS...\n");
     vTaskStartScheduler();
