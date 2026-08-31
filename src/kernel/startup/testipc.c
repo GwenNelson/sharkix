@@ -543,6 +543,15 @@ static void sharkloop_check_stop(const ipc_message_t *message, unsigned worker)
                 sharkloop_fail_value("invalid STOP token", worker, message->words[1]);
 }
 
+static inline uint64_t read_tsc(void) {
+                       uint32_t lo;
+                       uint32_t hi;
+
+                       __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
+
+                       return ((uint64_t)hi << 32) | lo;
+}
+
 static void sharkloop_worker(void *argument)
 {
             unsigned worker = *(unsigned *)argument;
@@ -649,7 +658,8 @@ static void sharkloop_worker(void *argument)
 }
 
 static void test_sharkloop(void* argument) {
-            thread_t *injector;
+            uint64_t start = read_tsc();
+	    thread_t *injector;
             thread_t *workers[SHARKLOOP_WORKERS];
             thread_create_params_t params;
             ipc_message_t message;
@@ -702,8 +712,10 @@ static void test_sharkloop(void* argument) {
                                              sharkloop_thread_ids[i]);
                 }
             }
-
+	    uint64_t end = read_tsc();
             console_write("[SHARKLOOP] PASSED\n");
+	    uint64_t cycles = end - start;
+	    console_write("Took "); console_decimal(cycles); console_write(" cycles!\n");
 }
 
 static void run_tests(void* argument) {
