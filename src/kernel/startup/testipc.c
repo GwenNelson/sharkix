@@ -443,6 +443,9 @@ static void test_ipc_threads(void *argument) {
                                   tskIDLE_PRIORITY + 2);
 }
 
+static void test_sharkloop(void* argument) {
+}
+
 static void run_tests(void* argument) {
        (void)argument;
 	test_single_thread(NULL);
@@ -450,6 +453,8 @@ static void run_tests(void* argument) {
 	// at some point we should implement a wait for task or something...
 	fifo_semaphore_wait(&producer_done_sem);
 	fifo_semaphore_wait(&consumer_done_sem);
+
+	test_sharkloop(NULL);
 
 	// TODO - spawn multiple threads that do a long chain of IPC and ensure it all works
 	console_write("ALL PASSED!\n");
@@ -461,11 +466,4 @@ void kernel_startup_profile(void) {
      // we need to be inside a thread to run these things
      startup_kernel_thread(run_tests,"testipc-run_tests",tskIDLE_PRIORITY+2);
 
-/*     startup_kernel_thread(test_single_thread,
-                           "ipctest",
-                           tskIDLE_PRIORITY + 2);
-
-     startup_kernel_thread(test_ipc_threads,
-                           "ipctest-threads",
-                           tskIDLE_PRIORITY + 2);*/
 }
