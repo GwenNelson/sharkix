@@ -136,11 +136,10 @@ ipc_status_t ipc_recv(thread_t *caller, ipc_handle_t handle, ipc_message_t *mess
                  goto out;
              }
 
-	     // we should be checking this in the syscall layer, not here
-/*             if (endpoint->owner != caller) {
+             if (endpoint->owner != caller) {
                  status = IPC_ERR_PERMISSION;
                  goto out;
-             }*/
+             }
 
              if (!fifo_pop(&endpoint->queue, (void **)&queued)) {
                  status = IPC_ERR_CANCELLED;

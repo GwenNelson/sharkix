@@ -3,6 +3,7 @@
 #include "thread.h"
 #include <sharkix/kernel/ipc.h>
 #include <sharkix/kernel/console.h>
+#include <libfifo/sync.h>
 
 #include <string.h>
 
@@ -274,11 +275,50 @@ static void test_single_thread(void *argument) {
 }
 
 static ipc_handle_t threaded_endpoint;
+static fifo_semaphore_t endpoint_ready_sem;
+static fifo_semaphore_t producer_ready_sem;
 
-#define THREADED_TEST_MESSAGES 10
+// anything more than this right now, and it immediately fails because we're not blocking yet
+#define THREADED_TEST_MESSAGES 64
 
 static void test_ipc_consumer(void* argument);
+static void test_ipc_consumer(void* argument);
+
 static void test_ipc_producer(void *argument) {
+            thread_t *thread;
+            ipc_message_t message;
+            unsigned int i;
+
+            (void)argument;
+
+            thread = thread_current();
+
+            console_write("IPC producer running, tid=");
+            console_decimal(thread->id);
+            console_putc('\n');
+
+	    fifo_semaphore_wait(&endpoint_ready_sem);
+
+            for (i = 0; i < THREADED_TEST_MESSAGES; i++) {
+                memset(&message, 0, sizeof(message));
+
+                message.words[0] = 0xAAAAAAAAAAAAAAAA;
+                message.words[1] = i;
+                message.words[2] = i ^ 0x55555555;
+                message.words[3] = ~(uint64_t)i;
+                message.words[4] = i * 17;
+
+                TEST_CHECK_STATUS(ipc_send(thread, threaded_endpoint, &message), IPC_OK, "producer send");
+		fifo_semaphore_post(&producer_ready_sem);
+	    }
+
+            console_write("IPC producer PASSED\n");
+
+            for (;;)
+                ;
+}
+
+static void test_ipc_consumer(void *argument) {
             thread_t *thread;
             ipc_message_t message;
             unsigned int i;
@@ -296,45 +336,13 @@ static void test_ipc_producer(void *argument) {
 	        for(;;);
             }
 
-
-            console_write("IPC producer running, tid=");
-            console_decimal(thread->id);
-            console_putc('\n');
-
-	    // now we can spawn the consumer thread, which should begin to receive these
-	    startup_kernel_thread(test_ipc_consumer, "ipc-consumer", tskIDLE_PRIORITY + 2);
-
-            for (i = 0; i < THREADED_TEST_MESSAGES; i++) {
-                memset(&message, 0, sizeof(message));
-
-                message.words[0] = 0xAAAAAAAAAAAAAAAA;
-                message.words[1] = i;
-                message.words[2] = i ^ 0x55555555;
-                message.words[3] = ~(uint64_t)i;
-                message.words[4] = i * 17;
-
-                TEST_CHECK_STATUS(ipc_send(thread, threaded_endpoint, &message), IPC_OK, "producer send");
-            }
-
-            console_write("IPC producer PASSED\n");
-
-            for (;;)
-                ;
-}
-
-static void test_ipc_consumer(void *argument) {
-            thread_t *thread;
-            ipc_message_t message;
-            unsigned int i;
-
-            (void)argument;
-
-            thread = thread_current();
-
             console_write("IPC consumer running, tid=");
             console_decimal(thread->id);
             console_putc('\n');
 
+	    fifo_semaphore_post(&endpoint_ready_sem); // wake up the waiting producer
+
+	    fifo_semaphore_wait(&producer_ready_sem); // wait until it's ready
             for (i = 0; i < THREADED_TEST_MESSAGES; i++) {
                 TEST_CHECK_STATUS(ipc_recv(thread, threaded_endpoint, &message), IPC_OK, "consumer recv");
 
@@ -352,7 +360,11 @@ static void test_ipc_consumer(void *argument) {
 }
 
 static void test_ipc_threads(void* argument) {
-       startup_kernel_thread(test_ipc_producer, "ipc-producer", tskIDLE_PRIORITY + 2);
+	fifo_semaphore_init(&endpoint_ready_sem, 0);
+	fifo_semaphore_init(&producer_ready_sem, 0);
+	// start the consumer first, cos it needs to create the endpoint
+ 	startup_kernel_thread(test_ipc_consumer, "ipc-consumer", tskIDLE_PRIORITY + 2);
+	startup_kernel_thread(test_ipc_producer, "ipc-producer", tskIDLE_PRIORITY + 2);
 }
 
 void kernel_startup_profile(void) {

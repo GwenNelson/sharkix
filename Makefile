@@ -12,7 +12,7 @@ USER_SRC_DIR := src/user
 KERNEL_BUILD_DIR := $(BUILD_DIR)/kernel
 USER_BUILD_DIR := $(BUILD_DIR)/user
 PROFILE ?= normal
-PROFILES := normal syscall exceptions vm lifecycle two_tasks_one_space syscall_block ipc preemption
+PROFILES := normal syscall exceptions vm lifecycle two_tasks_one_space syscall_block testipc preemption
 LIBFIFO_A := external/libfifo/build/libfifo.a
 
 ifeq ($(filter $(PROFILE),$(PROFILES)),)
