@@ -307,8 +307,6 @@ static void test_single_thread(void *argument) {
 
             console_write("IPC single-thread tests PASSED\n");
 
-            for (;;)
-                ;
 }
 
 
@@ -320,7 +318,7 @@ static void test_single_thread(void *argument) {
 static ipc_handle_t threaded_endpoint;
 static fifo_semaphore_t endpoint_ready_sem;
 
-#define THREADED_TEST_MESSAGES 10000
+#define THREADED_TEST_MESSAGES 100000
 
 
 static void test_ipc_producer(void *argument) {
@@ -362,8 +360,6 @@ static void test_ipc_producer(void *argument) {
 
             console_write("IPC producer PASSED\n");
 
-            for (;;)
-                ;
 }
 
 
@@ -403,7 +399,8 @@ static void test_ipc_consumer(void *argument) {
              * block. If the producer gets ahead, ipc_send() should block once
              * the FIFO fills. That's exactly what we're testing.
              */
-            for (i = 0; i < THREADED_TEST_MESSAGES; i++) {
+	    console_write("Receiving:");
+	    for (i = 0; i < THREADED_TEST_MESSAGES; i++) {
                 TEST_CHECK_STATUS(ipc_recv(thread, threaded_endpoint, &message),
                                   IPC_OK,
                                   "consumer recv");
@@ -413,16 +410,14 @@ static void test_ipc_consumer(void *argument) {
                 TEST_CHECK(message.words[2] == (i ^ 0x55555555), "consumer word 2");
                 TEST_CHECK(message.words[3] == ~(uint64_t)i, "consumer word 3");
                 TEST_CHECK(message.words[4] == (i * 17), "consumer word 4");
-            }
+	    }
 
-            console_write("IPC consumer PASSED\n");
+            console_write("\nIPC consumer PASSED\n");
 
             TEST_CHECK_STATUS(ipc_destroy(thread, threaded_endpoint),
                               IPC_OK,
                               "destroy threaded endpoint");
 
-            for (;;)
-                ;
 }
 
 
