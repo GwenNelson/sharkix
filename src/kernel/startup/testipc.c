@@ -279,7 +279,7 @@ static fifo_semaphore_t endpoint_ready_sem;
 static fifo_semaphore_t producer_ready_sem;
 
 // anything more than this right now, and it immediately fails because we're not blocking yet
-#define THREADED_TEST_MESSAGES 64
+#define THREADED_TEST_MESSAGES 100
 
 static void test_ipc_consumer(void* argument);
 static void test_ipc_consumer(void* argument);

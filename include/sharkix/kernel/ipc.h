@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdbool.h>
 
 #include <libfifo/fifo.h>
 
@@ -35,6 +36,37 @@ typedef struct ipc_endpoint_t {
 	fifo_t queue;
 	void *queue_storage[IPC_QUEUE_CAPACITY];
 
+	/*
+	 * Protects endpoint state below and serialises queue-state decisions.
+	 */
+	fifo_mutex_t lock;
+
+	/*
+	 * Used to wake blocked senders/receivers.
+	 */
+	fifo_semaphore_t sender_sem;
+	fifo_semaphore_t receiver_sem;
+
+	/*
+	 * Endpoint lifetime.
+	 *
+	 * Starts at one while present in the global endpoint registry.
+	 */
+	size_t references;
+
+	/*
+	 * Set before removal from the registry.
+	 *
+	 * Existing blocked operations wake and return
+	 * IPC_ERR_ENDPOINT_CLOSED.
+	 */
+	bool is_shutting_down;
+
+	size_t waiting_senders;
+	size_t waiting_receivers;
+	
+
+
 	UT_hash_handle hh;
 } ipc_endpoint_t;
 
@@ -51,8 +83,12 @@ void ipc_init(void);
 ipc_status_t ipc_create(thread_t* caller, ipc_handle_t *handle);
 ipc_status_t ipc_destroy(thread_t* caller, ipc_handle_t handle);
 
-ipc_status_t ipc_send(thread_t* caller, ipc_handle_t handle, const ipc_message_t *message);
-
-ipc_status_t ipc_recv(thread_t* caller, ipc_handle_t handle, ipc_message_t *message);
 
 ipc_status_t ipc_call(thread_t* caller, ipc_handle_t handle, const ipc_message_t *request, ipc_message_t *reply);
+
+
+ipc_status_t ipc_send(thread_t *caller, ipc_handle_t handle, const ipc_message_t *message);
+ipc_status_t ipc_send_nb(thread_t *caller, ipc_handle_t handle, const ipc_message_t *message);
+
+ipc_status_t ipc_recv(thread_t *caller, ipc_handle_t handle, ipc_message_t *message);
+ipc_status_t ipc_recv_nb(thread_t *caller, ipc_handle_t handle, ipc_message_t *message);
