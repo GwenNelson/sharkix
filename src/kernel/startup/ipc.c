@@ -277,6 +277,7 @@ static ipc_handle_t threaded_endpoint;
 
 #define THREADED_TEST_MESSAGES 10000
 
+static void test_ipc_consumer(void* argument);
 static void test_ipc_producer(void *argument) {
             thread_t *thread;
             ipc_message_t message;
@@ -285,6 +286,18 @@ static void test_ipc_producer(void *argument) {
             (void)argument;
 
             thread = thread_current();
+
+	    ipc_status_t status;
+	    status = ipc_create(thread, &threaded_endpoint);
+	    if (status != IPC_OK) {
+        	console_write("FAIL: threaded endpoint create status=");
+	        console_decimal(status);
+        	console_putc('\n');
+	        for(;;);
+            }
+
+	    // now we can spawn the consumer thread
+	    startup_kernel_thread(test_ipc_producer, "ipc-producer", tskIDLE_PRIORITY + 2);
 
             console_write("IPC producer running, tid=");
             console_decimal(thread->id);
@@ -338,24 +351,10 @@ static void test_ipc_consumer(void *argument) {
 }
 
 static void test_ipc_threads(void* argument) {
-	ipc_status_t status;
-	thread_t *thread;
-	thread = thread_current();
-	status = ipc_create(thread, &threaded_endpoint);
-    	if (status != IPC_OK) {
-        	console_write("FAIL: threaded endpoint create status=");
-	        console_decimal(status);
-        	console_putc('\n');
-	        for(;;);
-        }
-
-	startup_kernel_thread(test_ipc_consumer, "ipc-consumer", tskIDLE_PRIORITY + 2);
-	startup_kernel_thread(test_ipc_producer, "ipc-producer", tskIDLE_PRIORITY + 2);
+       startup_kernel_thread(test_ipc_consumer, "ipc-consumer", tskIDLE_PRIORITY + 2);
 }
 
 void kernel_startup_profile(void) {
-     thread_t *thread;
-
      ipc_init();
 
      startup_kernel_thread(test_single_thread, "ipctest", tskIDLE_PRIORITY+2);
