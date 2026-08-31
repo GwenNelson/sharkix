@@ -310,6 +310,9 @@ static void test_single_thread(void *argument) {
 }
 
 
+static fifo_semaphore_t producer_done_sem;
+static fifo_semaphore_t consumer_done_sem;
+
 /*
  * The producer only needs this semaphore because the consumer owns and
  * creates the endpoint. Once the endpoint exists, IPC itself provides all
@@ -359,7 +362,7 @@ static void test_ipc_producer(void *argument) {
             }
 
             console_write("IPC producer PASSED\n");
-
+	    fifo_semaphore_post(&producer_done_sem);
 }
 
 
@@ -399,7 +402,6 @@ static void test_ipc_consumer(void *argument) {
              * block. If the producer gets ahead, ipc_send() should block once
              * the FIFO fills. That's exactly what we're testing.
              */
-	    console_write("Receiving:");
 	    for (i = 0; i < THREADED_TEST_MESSAGES; i++) {
                 TEST_CHECK_STATUS(ipc_recv(thread, threaded_endpoint, &message),
                                   IPC_OK,
@@ -412,12 +414,13 @@ static void test_ipc_consumer(void *argument) {
                 TEST_CHECK(message.words[4] == (i * 17), "consumer word 4");
 	    }
 
-            console_write("\nIPC consumer PASSED\n");
+            console_write("IPC consumer PASSED\n");
 
             TEST_CHECK_STATUS(ipc_destroy(thread, threaded_endpoint),
                               IPC_OK,
                               "destroy threaded endpoint");
 
+	    fifo_semaphore_post(&consumer_done_sem);
 }
 
 
@@ -425,6 +428,8 @@ static void test_ipc_threads(void *argument) {
             (void)argument;
 
             fifo_semaphore_init(&endpoint_ready_sem, 0);
+	    fifo_semaphore_init(&producer_done_sem,  0);
+	    fifo_semaphore_init(&consumer_done_sem,  0);
 
             /*
              * Consumer owns the endpoint, so start it first.
@@ -438,15 +443,29 @@ static void test_ipc_threads(void *argument) {
                                   tskIDLE_PRIORITY + 2);
 }
 
+static void run_tests(void* argument) {
+       (void)argument;
+	test_single_thread(NULL);
+	test_ipc_threads(NULL);
+	// at some point we should implement a wait for task or something...
+	fifo_semaphore_wait(&producer_done_sem);
+	fifo_semaphore_wait(&consumer_done_sem);
+
+	// TODO - spawn multiple threads that do a long chain of IPC and ensure it all works
+	console_write("ALL PASSED!\n");
+}
 
 void kernel_startup_profile(void) {
      ipc_init();
 
-     startup_kernel_thread(test_single_thread,
+     // we need to be inside a thread to run these things
+     startup_kernel_thread(run_tests,"testipc-run_tests",tskIDLE_PRIORITY+2);
+
+/*     startup_kernel_thread(test_single_thread,
                            "ipctest",
                            tskIDLE_PRIORITY + 2);
 
      startup_kernel_thread(test_ipc_threads,
                            "ipctest-threads",
-                           tskIDLE_PRIORITY + 2);
+                           tskIDLE_PRIORITY + 2);*/
 }
