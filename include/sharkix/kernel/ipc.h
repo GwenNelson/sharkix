@@ -10,6 +10,8 @@
 
 typedef uint64_t ipc_handle_t;
 
+#define IPC_INVALID_HANDLE ((ipc_handle_t)UINT64_MAX)
+
 // this might change on other platforms, but for now we only really support x86-64
 // DO NOT change this blindly, the ABI depends on it and stuff WILL break
 #define IPC_MESSAGE_WORDS 5

@@ -4,6 +4,7 @@
 #include "thread.h"
 #include "syscall.h"
 #include "errno.h"
+#include "ipc.h"
 
 static uint64_t announced_a;
 static uint64_t announced_b;
@@ -32,6 +33,15 @@ static syscall_result_t syscall_block(syscall_ctx_t ctx)
 }
 
 SHARKIX_SYSCALL_IMPL(IPC_CREATE) {
+	thread_t* caller = thread_current();
+	ipc_handle_t handle;
+	ipc_status_t status = ipc_create(caller,&handle);
+	ctx.rax = (uint64_t)status; // shove the IPC error code into rax
+	if(status==IPC_OK) {
+		ctx.rdi = (uint64_t)handle;
+	} else {
+		ctx.rdi = (uint64_t)IPC_INVALID_HANDLE;
+	}
 	return syscall_return(ctx);
 }
 
