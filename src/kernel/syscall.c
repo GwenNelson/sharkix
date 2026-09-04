@@ -124,7 +124,7 @@ SHARKIX_SYSCALL_IMPL(TEST_WRITE) {
     if (caller->id != announced_a && caller->id != announced_b) {
         if (!announced_a) announced_a = caller->id;
         else announced_b = caller->id;
-        console_write("syscall caller thread "); console_decimal(caller->id); console_write("\n");
+//        console_write("syscall caller thread "); console_decimal(caller->id); console_write("\n");
     }
     console_putc((char)ctx.rdi);
     ctx.rax = caller->id;
