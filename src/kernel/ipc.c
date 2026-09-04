@@ -149,7 +149,7 @@ ipc_status_t ipc_destroy(thread_t *caller, ipc_handle_t handle) {
 
              fifo_mutex_lock(&endpoint->lock);
 
-             if (endpoint->owner != caller) {
+             if ((endpoint->owner->address_space != caller->address_space) && (endpoint->owner->privilege != caller->privilege)) {
                  fifo_mutex_unlock(&endpoint->lock);
                  fifo_mutex_unlock(&endpoints_lock);
                  return IPC_ERR_PERMISSION;
@@ -361,7 +361,7 @@ ipc_status_t ipc_recv(thread_t *caller, ipc_handle_t handle, ipc_message_t *mess
              for (;;) {
                  fifo_mutex_lock(&endpoint->lock);
 
-                 if (endpoint->owner->address_space != caller->address_space) {
+                 if ((endpoint->owner->address_space != caller->address_space) && (endpoint->owner->privilege != caller->privilege)) {
                      fifo_mutex_unlock(&endpoint->lock);
                      ipc_release(endpoint);
 
@@ -425,7 +425,7 @@ ipc_status_t ipc_recv_nb(thread_t *caller, ipc_handle_t handle, ipc_message_t *m
 
              fifo_mutex_lock(&endpoint->lock);
 
-             if (endpoint->owner->address_space != caller->address_space) {
+             if ((endpoint->owner->address_space != caller->address_space) && (endpoint->owner->privilege == caller->privilege)) {
                  fifo_mutex_unlock(&endpoint->lock);
                  ipc_release(endpoint);
 
