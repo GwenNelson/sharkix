@@ -92,7 +92,7 @@ $(eval $(call EMBED_RULE,ipc_producer,task_IPC_producer,ipc_producer))
 bootstub32/bootstub32:
 	$(MAKE) -C bootstub32
 run: kernel.elf bootstub32/bootstub32
-	@$(QEMU) $(QEMU_ACCEL_FLAGS) -m 512M -kernel ./bootstub32/bootstub32 -initrd kernel.elf -serial stdio -display none -no-reboot; \
+	$(QEMU) $(QEMU_ACCEL_FLAGS) -m 512M -kernel ./bootstub32/bootstub32 -initrd kernel.elf -serial stdio -display none -no-reboot; \
 	status=$$?; \
 	echo; \
 	echo "QEMU exit status: $$status"; \
