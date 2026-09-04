@@ -42,10 +42,10 @@ static void lifecycle_task(void *argument)
         address_space_release(held_as);
     }
     console_write("lifecycle pages "); console_decimal(before); console_putc(' '); console_decimal(phys_pages_in_use()); console_write("\n");
-    if (!startup_kernel_thread(lifecycle_spinner_task, "lifecycle-spin", tskIDLE_PRIORITY + 1)) {
+/*    if (!startup_kernel_thread(lifecycle_spinner_task, "lifecycle-spin", tskIDLE_PRIORITY + 1)) {
         console_write(" lifecycle spinner failed\n");
         for (;;) __asm__ volatile ("cli; hlt");
-    }
+    }*/
     thread_exit_current();
 }
 void kernel_startup_profile(void)
