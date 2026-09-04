@@ -4,11 +4,11 @@
 
 
 // standard syscall enum
-#define SYSCALL(name, number) SYSCALL_##name = number,
+#define SHARKIX_SYSCALL(name, number) SYSCALL_##name = number,
 typedef enum syscall_enum_t {
 #include "syscalls.inc"
 } syscall_enum_t;
-#undef SYSCALL
+#undef SHARKIX_SYSCALL
 
 
 /* The SharkKernel register syscall ABI only.  User return RIP/RSP/RFLAGS are

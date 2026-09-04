@@ -11,6 +11,14 @@ static uint64_t block_test_thread_id;
 static uint64_t block_test_invocation_count;
 static uint64_t block_test_wake_count;
 
+#define SHARKIX_SYSCALL_DECL(name) static syscall_result_t syscall_##name(syscall_ctx_t ctx)
+
+#define SHARKIX_SYSCALL(name,num) SHARKIX_SYSCALL_DECL(name);
+#include <sharkix/kernel/syscalls.inc>
+#undef SHARKIX_SYSCALL
+
+#define SHARKIX_SYSCALL_IMPL(name) SHARKIX_SYSCALL_DECL(name)
+
 static syscall_result_t syscall_return(syscall_ctx_t ctx)
 {
     syscall_result_t result = { .disposition = SYSCALL_DISPOSITION_RETURN, .ctx = ctx };
@@ -23,10 +31,49 @@ static syscall_result_t syscall_block(syscall_ctx_t ctx)
     return result;
 }
 
+SHARKIX_SYSCALL_IMPL(IPC_CREATE) {
+	return syscall_return(ctx);
+}
+
+SHARKIX_SYSCALL_IMPL(IPC_SEND) {
+	return syscall_return(ctx);
+}
+
+SHARKIX_SYSCALL_IMPL(IPC_RECV) {
+	return syscall_return(ctx);
+}
+
+SHARKIX_SYSCALL_IMPL(IPC_CALL) {
+	return syscall_return(ctx);
+}
+
+SHARKIX_SYSCALL_IMPL(IPC_REPLY) {
+	return syscall_return(ctx);
+}
+
+SHARKIX_SYSCALL_IMPL(VM_MAP) {
+	return syscall_return(ctx);
+}
+
+SHARKIX_SYSCALL_IMPL(VM_UNMAP) {
+	return syscall_return(ctx);
+}
+
+SHARKIX_SYSCALL_IMPL(VM_GRANT) {
+	return syscall_return(ctx);
+}
+
+SHARKIX_SYSCALL_IMPL(VM_REVOKE) {
+	return syscall_return(ctx);
+}
+
+SHARKIX_SYSCALL_IMPL(VM_DESTROY) {
+	return syscall_return(ctx);
+}
+
 /* Existing observable syscall 0: write one character and return the trusted
  * caller's SharkKernel ID in RAX. */
-static syscall_result_t sys_test(syscall_ctx_t ctx)
-{
+SHARKIX_SYSCALL_IMPL(TEST_WRITE) {
     thread_t *caller = thread_current();
     if (!caller) { ctx.rax = UINT64_MAX; return syscall_return(ctx); }
     if (caller->id != announced_a && caller->id != announced_b) {
@@ -41,8 +88,7 @@ static syscall_result_t sys_test(syscall_ctx_t ctx)
 
 /* Temporary test only: retain no policy or wait queue.  The assembly entry
  * performs the generic block after this returns BLOCK. */
-static syscall_result_t sys_test_block(syscall_ctx_t ctx)
-{
+SHARKIX_SYSCALL_IMPL(TEST_BLOCK) {
     thread_t *caller = thread_current();
     if (!caller || block_test_thread_id) { ctx.rax = UINT64_MAX; return syscall_return(ctx); }
     block_test_thread_id = caller->id;
@@ -52,8 +98,7 @@ static syscall_result_t sys_test_block(syscall_ctx_t ctx)
 
 /* Temporary test only: provide every eventual register result through the
  * blocked caller's one authoritative syscall-frame context, then wake it. */
-static syscall_result_t sys_test_wake(syscall_ctx_t ctx)
-{
+SHARKIX_SYSCALL_IMPL(TEST_WAKE) {
     thread_t *blocked = thread_lookup(block_test_thread_id);
     syscall_ctx_t *result;
     if (!blocked || thread_get_state(block_test_thread_id) != THREAD_STATE_BLOCKED ||
@@ -75,10 +120,22 @@ static syscall_result_t sys_test_wake(syscall_ctx_t ctx)
     return syscall_return(ctx);
 }
 
+SHARKIX_SYSCALL_IMPL(TEST_EXIT) {
+	thread_exit_current();
+	syscall_return(ctx); // pointless, but keeps the compiler happy
+}
+
 syscall_result_t dispatch_syscall(syscall_ctx_t ctx)
 {
     switch (ctx.rax) {
-    case SYSCALL_TEST_WRITE: 
+#define SHARKIX_SYSCALL(name,num) case SYSCALL_##name: \
+	    return syscall_##name(ctx); \
+	    break;
+#include <sharkix/kernel/syscalls.inc>
+#undef SHARKIX_SYSCALL
+
+	
+/*    case SYSCALL_TEST_WRITE: 
 	 return sys_test(ctx);
 	 break;
     case SYSCALL_TEST_EXIT:
@@ -88,7 +145,7 @@ syscall_result_t dispatch_syscall(syscall_ctx_t ctx)
 	 return sys_test_block(ctx);
     case SYSCALL_TEST_WAKE:
 	 return sys_test_wake(ctx);
-	 break;
+	 break;*/
     default:
         ctx.rax = UINT64_MAX;
         return syscall_return(ctx);
