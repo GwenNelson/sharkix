@@ -12,7 +12,7 @@ USER_SRC_DIR := src/user
 KERNEL_BUILD_DIR := $(BUILD_DIR)/kernel
 USER_BUILD_DIR := $(BUILD_DIR)/user
 PROFILE ?= normal
-PROFILES := normal syscall exceptions vm lifecycle two_tasks_one_space syscall_block testipc preemption
+PROFILES := normal syscall exceptions vm lifecycle two_tasks_one_space syscall_block testipc preemption user_ipc
 LIBFIFO_A := external/libfifo/build/libfifo.a
 
 ifeq ($(filter $(PROFILE),$(PROFILES)),)
@@ -32,10 +32,10 @@ INCLUDES := -I$(INCLUDE_DIR) -I$(INCLUDE_DIR)/sharkix/kernel/freertos \
  -I$(INCLUDE_DIR)/sharkix/kernel/arch/x86_64 -I$(INCLUDE_DIR)/sharkix/kernel \
  -Iexternal/libfifo/include
 LDFLAGS := -m elf_x86_64 -T $(KERNEL_SRC_DIR)/linker.ld -nostdlib
-USER_TASKS := taskA taskB tests/ud tests/pagefault tests/kernel_access tests/exit tests/syscall_blocker tests/syscall_waker
+USER_TASKS := taskA taskB tests/ud tests/pagefault tests/kernel_access tests/exit tests/syscall_blocker tests/syscall_waker task_IPC_consumer task_IPC_producer
 USER_ASM_OBJS := $(addprefix $(USER_BUILD_DIR)/,$(addsuffix .o,$(USER_TASKS)))
 USER_ELFS := $(addprefix $(USER_BUILD_DIR)/,$(addsuffix .elf,$(USER_TASKS)))
-USER_OBJS := $(KERNEL_BUILD_DIR)/user_taskA.o $(KERNEL_BUILD_DIR)/user_taskB.o $(KERNEL_BUILD_DIR)/user_ud.o $(KERNEL_BUILD_DIR)/user_pagefault.o $(KERNEL_BUILD_DIR)/user_kernel_access.o $(KERNEL_BUILD_DIR)/user_exit.o $(KERNEL_BUILD_DIR)/user_syscall_blocker.o $(KERNEL_BUILD_DIR)/user_syscall_waker.o
+USER_OBJS := $(KERNEL_BUILD_DIR)/user_taskA.o $(KERNEL_BUILD_DIR)/user_taskB.o $(KERNEL_BUILD_DIR)/user_ud.o $(KERNEL_BUILD_DIR)/user_pagefault.o $(KERNEL_BUILD_DIR)/user_kernel_access.o $(KERNEL_BUILD_DIR)/user_exit.o $(KERNEL_BUILD_DIR)/user_syscall_blocker.o $(KERNEL_BUILD_DIR)/user_syscall_waker.o $(KERNEL_BUILD_DIR)/user_ipc_consumer.o $(KERNEL_BUILD_DIR)/user_ipc_producer.o
 KERNEL_OBJS := $(KERNEL_BUILD_DIR)/boot.o $(KERNEL_BUILD_DIR)/main.o $(KERNEL_BUILD_DIR)/libc.o $(KERNEL_BUILD_DIR)/memory.o $(KERNEL_BUILD_DIR)/thread.o $(KERNEL_BUILD_DIR)/program.o $(KERNEL_BUILD_DIR)/syscall.o \
  $(KERNEL_BUILD_DIR)/startup/common.o $(KERNEL_BUILD_DIR)/startup/$(PROFILE).o $(USER_OBJS) \
  $(KERNEL_BUILD_DIR)/freertos/tasks.o $(KERNEL_BUILD_DIR)/freertos/queue.o $(KERNEL_BUILD_DIR)/freertos/list.o \
@@ -86,6 +86,8 @@ $(eval $(call EMBED_RULE,kernel_access,tests/kernel_access,kernel_access))
 $(eval $(call EMBED_RULE,exit,tests/exit,exit))
 $(eval $(call EMBED_RULE,syscall_blocker,tests/syscall_blocker,syscall_blocker))
 $(eval $(call EMBED_RULE,syscall_waker,tests/syscall_waker,syscall_waker))
+$(eval $(call EMBED_RULE,ipc_consumer,task_IPC_consumer,ipc_consumer))
+$(eval $(call EMBED_RULE,ipc_producer,task_IPC_producer,ipc_producer))
 
 bootstub32/bootstub32:
 	$(MAKE) -C bootstub32
