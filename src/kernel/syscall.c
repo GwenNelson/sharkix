@@ -46,12 +46,47 @@ SHARKIX_SYSCALL_IMPL(IPC_CREATE) {
 }
 
 SHARKIX_SYSCALL_IMPL(IPC_SEND) {
+	thread_t* caller = thread_current();
+	ipc_message_t msg;
+
+	msg.type       = IPC_MSGTYPE_SEND;
+	msg.sender_tid = caller->id;
+	msg.words[0]   = ctx.rsi;
+	msg.words[1]   = ctx.rdx;
+	msg.words[2]   = ctx.r10;
+	msg.words[3]   = ctx.r8;
+	msg.words[4]   = ctx.r9;
+
+	ipc_handle_t dest_handle = (ipc_handle_t)ctx.rdi;
+	ipc_status_t status      = ipc_send(caller,dest_handle,&msg);
+
+	ctx.rax = (uint64_t)status;
 	return syscall_return(ctx);
 }
 
 SHARKIX_SYSCALL_IMPL(IPC_RECV) {
+	thread_t* caller = thread_current();
+	ipc_message_t msg;
+
+	ipc_handle_t endpoint = (ipc_handle_t)ctx.rdi;
+	ipc_status_t status   = ipc_recv(caller,endpoint,&msg);
+
+	if(status == IPC_OK) {
+		ctx.rax = (uint64_t)msg.type;
+		ctx.rdi = (uint64_t)msg.sender_tid;
+		ctx.rsi = (uint64_t)msg.words[0];
+		ctx.rdx = (uint64_t)msg.words[1];
+		ctx.r10 = (uint64_t)msg.words[2];
+		ctx.r8  = (uint64_t)msg.words[3];
+		ctx.r9  = (uint64_t)msg.words[4];
+	} else {
+		ctx.rax = (uint64_t)status;
+	}
 	return syscall_return(ctx);
 }
+
+// still need to implement the below
+// should also look at how to integrate the scheduler properly - wake up the other thread and switch to it when something is sent to a thread that's currently blocked on a receive
 
 SHARKIX_SYSCALL_IMPL(IPC_CALL) {
 	return syscall_return(ctx);
