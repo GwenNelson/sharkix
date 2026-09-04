@@ -71,7 +71,7 @@ typedef struct ipc_endpoint_t {
 } ipc_endpoint_t;
 
 typedef enum ipc_status_t {
-#define SHARKIX_ERRNO(name,value) name = value,
+#define SHARKIX_ERRNO(name,value,msg) name = value,
 #include <sharkix/kernel/ipc_errno.inc>
 #undef SHARKIX_ERRNO
 } ipc_status_t;
