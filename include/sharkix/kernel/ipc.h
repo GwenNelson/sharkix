@@ -81,16 +81,15 @@ typedef enum ipc_status_t {
 // must be called by the kernel before userspace runs, otherwise sycalls depending on IPC will fail!
 void ipc_init(void);
 
-// these take a caller param so we can enforce rules about who can do what on IPC queues
-ipc_status_t ipc_create(thread_t* caller, ipc_handle_t *handle);
-ipc_status_t ipc_destroy(thread_t* caller, ipc_handle_t handle);
+ipc_status_t ipc_create(ipc_handle_t *handle);
+ipc_status_t ipc_destroy(ipc_handle_t handle);
 
 
 ipc_status_t ipc_call(thread_t* caller, ipc_handle_t handle, const ipc_message_t *request, ipc_message_t *reply);
 
 
-ipc_status_t ipc_send(thread_t *caller, ipc_handle_t handle, const ipc_message_t *message);
-ipc_status_t ipc_send_nb(thread_t *caller, ipc_handle_t handle, const ipc_message_t *message);
+ipc_status_t ipc_send(thread_t* caller, ipc_handle_t handle, const ipc_message_t *message);
+ipc_status_t ipc_send_nb(thread_t* caller, ipc_handle_t handle, const ipc_message_t *message);
 
-ipc_status_t ipc_recv(thread_t *caller, ipc_handle_t handle, ipc_message_t *message);
-ipc_status_t ipc_recv_nb(thread_t *caller, ipc_handle_t handle, ipc_message_t *message);
+ipc_status_t ipc_recv(ipc_handle_t handle, ipc_message_t *message);
+ipc_status_t ipc_recv_nb(ipc_handle_t handle, ipc_message_t *message);

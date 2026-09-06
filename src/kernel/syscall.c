@@ -5,6 +5,7 @@
 #include "syscall.h"
 #include "errno.h"
 #include "ipc.h"
+#include "caps.h"
 
 static uint64_t announced_a;
 static uint64_t announced_b;
@@ -34,11 +35,35 @@ static syscall_result_t syscall_block(syscall_ctx_t ctx)
 
 SHARKIX_SYSCALL_IMPL(IPC_CREATE) {
 	thread_t* caller = thread_current();
-	ipc_handle_t handle;
-	ipc_status_t status = ipc_create(caller,&handle);
+	ipc_handle_t endpoint;
+	cap_handle_t cap;
+	ipc_status_t status = ipc_create(&endpoint);
 	ctx.rax = (uint64_t)status; // shove the IPC error code into rax
+	if(status != IPC_OK) {
+	   ctx.rdi = (uint64_t)IPC_INVALID_HANDLE;
+	   return syscall_return(ctx);
+	}
+
+	if(kcap_create((kobject_handle_t)endpoint,
+		         CAP_TYPE_IPC_ENDPOINT,
+			 CAP_IPC_VALID_RIGHTS,
+			 &cap) != 0) {
+		ipc_destroy(endpoint);
+		ctx.rax = IPC_ERR_FAILED_CAP_CREATE;
+		ctx.rdi = (uint64_t)IPC_INVALID_HANDLE;
+		return syscall_return(ctx);
+	}
+
+	if(kcapset_addcap(caller->address_space->capset, cap) != 0) {
+		ipc_destroy(endpoint);
+		kcap_destroy(cap);
+		ctx.rax = IPC_ERR_FAILED_CAP_CREATE;
+		ctx.rdi = (uint64_t)IPC_INVALID_HANDLE;
+		return syscall_return(ctx);
+	}
+
 	if(status==IPC_OK) {
-		ctx.rdi = (uint64_t)handle;
+		ctx.rdi = (uint64_t)cap;
 	} else {
 		ctx.rdi = (uint64_t)IPC_INVALID_HANDLE;
 	}
@@ -57,8 +82,20 @@ SHARKIX_SYSCALL_IMPL(IPC_SEND) {
 	msg.words[3]   = ctx.r8;
 	msg.words[4]   = ctx.r9;
 
-	ipc_handle_t dest_handle = (ipc_handle_t)ctx.rdi;
-	ipc_status_t status      = ipc_send(caller,dest_handle,&msg);
+	cap_handle_t dest_cap = (cap_handle_t)ctx.rdi;
+	kobject_handle_t obj_handle;
+
+	if (kcapset_resolve_handle(thread_current()->address_space->capset,
+				   dest_cap,
+				   CAP_TYPE_IPC_ENDPOINT,
+				   CAP_RIGHT_IPC_SEND,
+				   &obj_handle) != 0) {
+		ctx.rax = IPC_ERR_PERMISSION;
+		return syscall_return(ctx);
+	}
+
+	ipc_handle_t dest_endpoint = (ipc_handle_t)obj_handle;
+	ipc_status_t status      = ipc_send(caller,dest_endpoint,&msg);
 
 	ctx.rax = (uint64_t)status;
 	return syscall_return(ctx);
@@ -68,8 +105,20 @@ SHARKIX_SYSCALL_IMPL(IPC_RECV) {
 	thread_t* caller = thread_current();
 	ipc_message_t msg;
 
-	ipc_handle_t endpoint = (ipc_handle_t)ctx.rdi;
-	ipc_status_t status   = ipc_recv(caller,endpoint,&msg);
+	cap_handle_t src_cap = (cap_handle_t)ctx.rdi;
+	kobject_handle_t obj_handle;
+
+	if (kcapset_resolve_handle(caller->address_space->capset,
+				   src_cap,
+				   CAP_TYPE_IPC_ENDPOINT,
+				   CAP_RIGHT_IPC_RECV,
+				   &obj_handle) != 0) {
+		ctx.rax = IPC_ERR_PERMISSION;
+		return syscall_return(ctx);
+	}
+
+	ipc_handle_t endpoint = (ipc_handle_t)obj_handle;
+	ipc_status_t status   = ipc_recv(endpoint,&msg);
 
 	if(status == IPC_OK) {
 		ctx.rax = (uint64_t)msg.type;

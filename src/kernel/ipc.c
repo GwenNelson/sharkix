@@ -83,10 +83,10 @@ void ipc_init(void) {
 }
 
 
-ipc_status_t ipc_create(thread_t *caller, ipc_handle_t *handle) {
+ipc_status_t ipc_create(ipc_handle_t *handle) {
              ipc_endpoint_t *endpoint;
 
-             if (!caller || !handle)
+             if (!handle)
                  return IPC_ERR_INVALID;
 
              endpoint = kmalloc(sizeof(*endpoint));
@@ -94,8 +94,6 @@ ipc_status_t ipc_create(thread_t *caller, ipc_handle_t *handle) {
                  return IPC_ERR_NO_MEMORY;
 
              memset(endpoint, 0, sizeof(*endpoint));
-
-             endpoint->owner = caller;
 
              fifo_init(&endpoint->queue, endpoint->queue_storage, IPC_QUEUE_CAPACITY);
 
@@ -124,13 +122,13 @@ ipc_status_t ipc_create(thread_t *caller, ipc_handle_t *handle) {
 }
 
 
-ipc_status_t ipc_destroy(thread_t *caller, ipc_handle_t handle) {
+ipc_status_t ipc_destroy(ipc_handle_t handle) {
              ipc_endpoint_t *endpoint;
              size_t wake_senders;
              size_t wake_receivers;
              size_t i;
 
-             if (!caller || !handle)
+             if (!handle)
                  return IPC_ERR_INVALID;
 
              /*
@@ -149,11 +147,6 @@ ipc_status_t ipc_destroy(thread_t *caller, ipc_handle_t handle) {
 
              fifo_mutex_lock(&endpoint->lock);
 
-             if ((endpoint->owner->address_space != caller->address_space) && (endpoint->owner->privilege != caller->privilege)) {
-                 fifo_mutex_unlock(&endpoint->lock);
-                 fifo_mutex_unlock(&endpoints_lock);
-                 return IPC_ERR_PERMISSION;
-             }
 
              /*
               * From this point onward no operation should begin or continue.
@@ -345,13 +338,12 @@ ipc_status_t ipc_send_nb(thread_t *caller, ipc_handle_t handle, const ipc_messag
 /*
  * Blocking receive.
  *
- * Only the owner of an endpoint may receive from it.
  */
-ipc_status_t ipc_recv(thread_t *caller, ipc_handle_t handle, ipc_message_t *message) {
+ipc_status_t ipc_recv(ipc_handle_t handle, ipc_message_t *message) {
              ipc_endpoint_t *endpoint;
              ipc_message_t *queued;
 
-             if (!caller || !handle || !message)
+             if ( !handle || !message)
                  return IPC_ERR_INVALID;
 
              endpoint = ipc_acquire(handle);
@@ -361,12 +353,6 @@ ipc_status_t ipc_recv(thread_t *caller, ipc_handle_t handle, ipc_message_t *mess
              for (;;) {
                  fifo_mutex_lock(&endpoint->lock);
 
-                 if ((endpoint->owner->address_space != caller->address_space) && (endpoint->owner->privilege != caller->privilege)) {
-                     fifo_mutex_unlock(&endpoint->lock);
-                     ipc_release(endpoint);
-
-                     return IPC_ERR_PERMISSION;
-                 }
 
                  if (endpoint->is_shutting_down) {
                      fifo_mutex_unlock(&endpoint->lock);
@@ -412,11 +398,11 @@ ipc_status_t ipc_recv(thread_t *caller, ipc_handle_t handle, ipc_message_t *mess
  *
  * Empty queue returns IPC_ERR_CANCELLED.
  */
-ipc_status_t ipc_recv_nb(thread_t *caller, ipc_handle_t handle, ipc_message_t *message) {
+ipc_status_t ipc_recv_nb(ipc_handle_t handle, ipc_message_t *message) {
              ipc_endpoint_t *endpoint;
              ipc_message_t *queued;
 
-             if (!caller || !handle || !message)
+             if (!handle || !message)
                  return IPC_ERR_INVALID;
 
              endpoint = ipc_acquire(handle);
@@ -424,13 +410,6 @@ ipc_status_t ipc_recv_nb(thread_t *caller, ipc_handle_t handle, ipc_message_t *m
                  return IPC_ERR_NOT_FOUND;
 
              fifo_mutex_lock(&endpoint->lock);
-
-             if ((endpoint->owner->address_space != caller->address_space) && (endpoint->owner->privilege == caller->privilege)) {
-                 fifo_mutex_unlock(&endpoint->lock);
-                 ipc_release(endpoint);
-
-                 return IPC_ERR_PERMISSION;
-             }
 
              if (endpoint->is_shutting_down) {
                  fifo_mutex_unlock(&endpoint->lock);
