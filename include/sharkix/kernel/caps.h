@@ -144,8 +144,8 @@ int  kcap_merge(cap_handle_t a, cap_handle_t b, cap_handle_t *new_cap);
 // check if a cap exists in the global caps table
 bool kcap_cap_exists(cap_handle_t cap);
 
-// try and get the actual cap itself from the global table - or rather, a pointer to it
-int kcap_getcap(cap_handle_t handle, cap_t **cap);
+// get a copy of a cap's descriptive data from the global table
+int kcap_getcap(cap_handle_t handle, cap_t *out);
 
 // allocate and create a new capset
 int  kcapset_new(capset_handle_t *new_set);

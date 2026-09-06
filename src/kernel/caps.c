@@ -494,13 +494,18 @@ int kcapset_resolve_cap(capset_handle_t set_handle,
 {
     capset_t *set;
     capset_entry_t *entry, *tmp;
-    cap_t *cap;
+    cap_t cap;
 
-    /*
-     * Resolve set_handle -> set here.
-     */
-    if (kcapset_get(set_handle, &set) < 0)
+    fifo_mutex_lock(&global_capsets_table_lock);
+
+    set = kcapset_find_locked(set_handle);
+
+    if (!set) {
+        fifo_mutex_unlock(&global_capsets_table_lock);
         return -1;
+    }
+
+    fifo_mutex_unlock(&global_capsets_table_lock);
 
     fifo_spinlock_lock(&set->spinlock);
 
@@ -508,17 +513,17 @@ int kcapset_resolve_cap(capset_handle_t set_handle,
         if (kcap_getcap(entry->cap_handle, &cap) < 0)
             continue;
 
-        if (!CAP_IS_TYPE(cap, req_type))
+        if (!CAP_IS_TYPE(&cap, req_type))
             continue;
 
-        if (!CAP_HAS_ALL(cap, req_rights))
+        if (!CAP_HAS_ALL(&cap, req_rights))
             continue;
 
         if (out) {
-            out->cap_handle = cap->cap_handle;
-            out->type       = cap->type;
-            out->obj_handle = cap->obj_handle;
-            out->rights     = cap->rights;
+            out->cap_handle = cap.cap_handle;
+            out->type       = cap.type;
+            out->obj_handle = cap.obj_handle;
+            out->rights     = cap.rights;
         }
 
         fifo_spinlock_unlock(&set->spinlock);
