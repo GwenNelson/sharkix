@@ -154,5 +154,9 @@ bool kcapset_hascap(capset_handle_t set, cap_handle_t cap);
 // if so, return it in *out
 int kcapset_resolve_cap(capset_handle_t set, cap_type_t req_type, cap_rights_t req_rights, cap_t *out);
 
+// check if a capset has this exact cap, of this exact type, with these required rights
+// if so, return the object handle it points to in *out, otherwise *out is left unaltered
+int kcapset_resolve_handle(capset_handle_t set, cap_handle_t cap, cap_type_t required_type, cap_rights_t required_rights, kobject_handle_t *out);
+
 // check if a capset has any caps allowing the specified operations on a particular type, without actually obtaining it
 int kcapset_check_perms(capset_handle_t set, cap_type_t req_type, cap_rights_t req_rights);

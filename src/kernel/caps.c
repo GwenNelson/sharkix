@@ -535,6 +535,50 @@ int kcapset_resolve_cap(capset_handle_t set_handle,
     return -1;
 }
 
+int kcapset_resolve_handle(capset_handle_t set_handle,
+                           cap_handle_t cap_handle,
+                           cap_type_t required_type,
+                           cap_rights_t required_rights,
+                           kobject_handle_t *out)
+{
+    capset_t *set;
+    capset_entry_t *entry = NULL;
+    cap_t cap;
+
+    if (!out)
+        return -1;
+
+    fifo_mutex_lock(&global_capsets_table_lock);
+
+    set = kcapset_find_locked(set_handle);
+    if (!set) {
+        fifo_mutex_unlock(&global_capsets_table_lock);
+        return -1;
+    }
+
+    fifo_mutex_unlock(&global_capsets_table_lock);
+
+    fifo_spinlock_lock(&set->spinlock);
+
+    HASH_FIND(hh,
+              set->caps,
+              &cap_handle,
+              sizeof(cap_handle),
+              entry);
+
+    if (!entry || kcap_getcap(cap_handle, &cap) != 0 ||
+        !CAP_IS_TYPE(&cap, required_type) ||
+        !CAP_HAS_ALL(&cap, required_rights)) {
+        fifo_spinlock_unlock(&set->spinlock);
+        return -1;
+    }
+
+    *out = cap.obj_handle;
+
+    fifo_spinlock_unlock(&set->spinlock);
+    return 0;
+}
+
 int kcapset_check_perms(capset_handle_t set,
                         cap_type_t req_type,
                         cap_rights_t req_rights)
