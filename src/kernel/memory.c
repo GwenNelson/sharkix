@@ -748,7 +748,7 @@ address_space_t *address_space_create(uint32_t flags)
     capset_handle_t as_capset;
 
     vPortEnterCritical();
-    if(!kcapset_new(&as_capset)) {
+    if(kcapset_new(&as_capset) != 0) {
        vPortExitCritical();
        return NULL;
     }	    
