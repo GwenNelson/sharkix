@@ -1,4 +1,5 @@
 #include <sharkix/kernel/caps.h>
+#include <sharkix/kernel/memory.h>
 #include <stdint.h>
 #include <stdbool.h>
  
@@ -46,6 +47,10 @@ void kinit_caps(void)
 
     fifo_mutex_init(&global_caps_table_lock);
     fifo_mutex_init(&global_capsets_table_lock);
+
+    // we have to do this here, cos it can't be done before the memory system is live
+    kcapset_new(&(address_space_kernel()->capset));
+    // yes, we should probably verify that it worked, and then panic - i need to implement a proper kpanic first!
 }
 
 int kcap_create(kobject_handle_t obj_handle,
@@ -66,8 +71,6 @@ int kcap_create(kobject_handle_t obj_handle,
         return -1;
 
     memset(cap, 0, sizeof(*cap));
-
-    fifo_spinlock_init(&cap->spinlock);
 
     cap->type       = cap_type;
     cap->obj_handle = obj_handle;
@@ -144,7 +147,6 @@ int kcap_derive(cap_handle_t source,
         return -1;
 
     memset(derived, 0, sizeof(*derived));
-    fifo_spinlock_init(&derived->spinlock);
 
     fifo_mutex_lock(&global_caps_table_lock);
 
@@ -199,7 +201,6 @@ int kcap_clone(cap_handle_t source, cap_handle_t *new_cap)
         return -1;
 
     memset(clone, 0, sizeof(*clone));
-    fifo_spinlock_init(&clone->spinlock);
 
     fifo_mutex_lock(&global_caps_table_lock);
 
@@ -248,7 +249,6 @@ int kcap_merge(cap_handle_t a,
         return -1;
 
     memset(merged, 0, sizeof(*merged));
-    fifo_spinlock_init(&merged->spinlock);
 
     fifo_mutex_lock(&global_caps_table_lock);
 

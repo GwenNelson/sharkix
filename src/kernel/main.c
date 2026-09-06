@@ -7,6 +7,7 @@
 #include "console.h"
 #include "memory.h"
 #include "startup.h"
+#include "caps.h"
 
 #include <libfifo/sync.h>
 
@@ -118,7 +119,7 @@ void kernel_high_entry(uint32_t magic, uint32_t info)
     if (virt_to_phys(phys_to_virt(VGA_PHYS)) == VGA_PHYS) console_write("physmap translation: ok\n");
     fifo_set_yield_callback(sharkix_fifo_yield);
     kernel_startup_profile();
-    console_write("starting FreeRTOS...\n");
+    kinit_caps();
     vTaskStartScheduler();
     for (;;) __asm__ volatile ("cli; hlt");
 }

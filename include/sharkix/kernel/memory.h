@@ -5,6 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <sharkix/kernel/caps.h>
+
 #define PHYSMAP_BASE 0xffff800000000000ULL
 #define KHEAP_BASE 0xffffc00000000000ULL
 #define KERNEL_BASE 0xffffffff80000000ULL
@@ -36,6 +38,7 @@ typedef struct address_space {
     uint32_t references;
     uint32_t live_threads;
     uint32_t permanent;
+    capset_handle_t capset;
 } address_space_t;
 
 void *phys_to_virt(uint64_t physical_address);

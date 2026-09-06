@@ -5,7 +5,6 @@
 
 #include <libfifo/sync.h>
 
-#include <sharkix/kernel/uthash.h>
 
 
 // handle for one individual cap within the global table
@@ -20,6 +19,8 @@ typedef uint64_t capset_handle_t;
 // a bitmask/bitmap for rights granted to a cap
 typedef uint64_t cap_rights_t;
 
+
+#include <sharkix/kernel/uthash.h>
 
 // standard perms (used on all object types)
 #define CAP_RIGHT_NONE		 UINT64_C(0)	    /* No rights at all                      */
@@ -95,7 +96,6 @@ typedef struct cap_t {
 	kobject_handle_t obj_handle; // handle for the underlying object
 	cap_rights_t     rights;     // bitmap of rights held to that underlying object
 
-	fifo_spinlock_t  spinlock;   // used for critical updates (duh)
         UT_hash_handle   hh;	     // uthash stuff
 } cap_t;
 
@@ -112,15 +112,6 @@ typedef struct capset_t {
     fifo_spinlock_t spinlock;
     UT_hash_handle  hh;
 } capset_t;
-
-
-/*// represents a set of caps, such as those held by a particular task
-typedef struct capset_t {
-	capset_handle_t	capset_handle;  // handle for this set
-	cap_handle_t*	cap_handles;    // the actual caps inside it, or at least their handles
-	fifo_spinlock_t spinlock;	// duh
-	UT_hash_handle  hh;		// duh
-} capset_t;*/
 
 // setup the global caps table
 void kinit_caps(void);

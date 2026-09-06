@@ -745,8 +745,14 @@ address_space_t *address_space_create(uint32_t flags)
     uint64_t pml4_phys;
     uint64_t *destination;
     uint64_t *kernel_pml4;
+    capset_handle_t as_capset;
 
     vPortEnterCritical();
+    if(!kcapset_new(&as_capset)) {
+       vPortExitCritical();
+       return NULL;
+    }	    
+
     if (!phys_alloc_page(&pml4_phys)) {
         vPortExitCritical();
         return NULL;
@@ -762,12 +768,13 @@ address_space_t *address_space_create(uint32_t flags)
     for (unsigned i = 0; i < 512; ++i) destination[i] = 0;
     for (unsigned i = 256; i < 512; ++i) destination[i] = kernel_pml4[i];
 
-    address_space->pml4_phys = pml4_phys;
-    address_space->mappings = NULL;
-    address_space->flags = flags;
-    address_space->references = 1;
+    address_space->pml4_phys    = pml4_phys;
+    address_space->mappings     = NULL;
+    address_space->flags        = flags;
+    address_space->references   = 1;
     address_space->live_threads = 0;
-    address_space->permanent = 0;
+    address_space->permanent    = 0;
+    address_space->capset       = as_capset;
     vPortExitCritical();
     return address_space;
 }
@@ -1034,6 +1041,7 @@ void memory_init(uint32_t multiboot_magic, uint32_t multiboot_info_phys)
     kernel_address_space.references = UINT32_MAX;
     kernel_address_space.live_threads = 0;
     kernel_address_space.permanent = 1;
+    kernel_address_space.capset = 0;
 
     parse_multiboot_memory_map(mbi);
     bootstrap_bytes = bootstrap_bytes_required(tracked_phys_limit);
