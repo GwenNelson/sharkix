@@ -1,3 +1,11 @@
+IMPORTANT:
+    Caps are all handled by the kernel
+    They exist as both global objects with their own handle, and one capset per address space
+        We do NOT allow threads within the same address space to have a different set of caps - because if you don't trust code running in your address space, don't run it there!
+    Where below we talk about transferring caps to a thread, note that it's a convenient way of saying "to that thread's address space"
+    Tasks use the global handle, and this handle is checked against their local capset
+        Might redesign this later so that the local capset is a different namespace, but for now let's keep it simple
+
 Basic idea:
     Kernel manages these resources:
     Physical memory pages / regions
@@ -20,6 +28,7 @@ Basic idea:
                 events_handled_mask is a bitmap of whatever it's just handled, the kernel will do "pending_events &= ~events_handled"
                 if not all pending events are handled, the next call might immediately return, or another thread might pick it up
         IRQs can be bound by doing:
+            note that acknowledging an IRQ is a different syscall entirely from acknowledging the event it generated
             bind_irq(notification_handle,irq,bitmask)
                 when the IRQ occurs, the bitmask is then ORed into the pending_events field in the notification object, and anything waiting on those bits gets unblocked and scheduled
                 the kernel does NOT guarantee that only one thread will be unblocked, it's up to the process to handle thread safety
@@ -49,6 +58,18 @@ Basic idea:
             sys.services.filesystem
             sys.services.network
             sys.services.process
+
+        Caps are created for either one exact object in the registry, or for all child nodes of that object
+            for example:
+                sys.hw.bus.pci.* is a cap to "all the PCI devices"
+                sys.hw.bus.pci.00.02.0 is a cap to "the PCI device at address 00.02.0"
+                
+                    in the above example above, sys.hw.bus.pci.* ultimately becomes a capset for all the PCI devices available at delegation time
+                    sys.hw.bus.usb.* would also become a capset for all the USB devices available at delegation time
+                    sys.hw.bus.usb would become a single cap for the actual sys.hw.bus.usb node
+                    nodes have verbs allowing to access the child nodes below them, including leaf nodes
+
+                    this is an API convenience in the library - using a wildcard is equivalent to saying "gimme a capset for all your child nodes" or iterating through all the child nodes and grabbing the caps
 
         By default sys.* is highly privileged/restricted at startup and intended for system services, drivers and hardware
 
