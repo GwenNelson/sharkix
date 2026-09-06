@@ -111,7 +111,7 @@ typedef struct capset_t {
 void kinit_caps(void);
 
 // create a new cap
-int  kcap_create(kobject_handle_t, cap_rights_t init_rights, cap_handle_t* new_cap);
+int  kcap_create(kobject_handle_t, cap_rights_t* type, cap_rights_t init_rights, cap_handle_t* new_cap);
 
 // destroy a cap - this is NOT the same thing as destroying the underlying object, which must be implemented by the underlying subsystem
 int  kcap_destroy(cap_handle_t cap);
