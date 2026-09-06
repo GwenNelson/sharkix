@@ -48,9 +48,9 @@ static void test_single_thread(void *argument) {
             /*
              * Endpoint creation and monotonically increasing handles.
              */
-            TEST_CHECK_STATUS(ipc_create(thread, &a), IPC_OK, "create A");
-            TEST_CHECK_STATUS(ipc_create(thread, &b), IPC_OK, "create B");
-            TEST_CHECK_STATUS(ipc_create(thread, &c), IPC_OK, "create C");
+            TEST_CHECK_STATUS(ipc_create(&a), IPC_OK, "create A");
+            TEST_CHECK_STATUS(ipc_create(&b), IPC_OK, "create B");
+            TEST_CHECK_STATUS(ipc_create(&c), IPC_OK, "create C");
 
             TEST_CHECK(a != 0, "endpoint A is zero");
             TEST_CHECK(b != 0, "endpoint B is zero");
@@ -67,11 +67,11 @@ static void test_single_thread(void *argument) {
              */
             memset(&message, 0, sizeof(message));
 
-            TEST_CHECK_STATUS(ipc_send(thread, UINT64_MAX, &message),
+            TEST_CHECK_STATUS(ipc_send(thread,UINT64_MAX, &message),
                               IPC_ERR_NOT_FOUND,
                               "send invalid endpoint");
 
-            TEST_CHECK_STATUS(ipc_recv(thread, UINT64_MAX, &received),
+            TEST_CHECK_STATUS(ipc_recv(UINT64_MAX, &received),
                               IPC_ERR_NOT_FOUND,
                               "recv invalid endpoint");
 
@@ -82,7 +82,7 @@ static void test_single_thread(void *argument) {
              * this is a single-threaded test, so explicitly use the
              * non-blocking form.
              */
-            TEST_CHECK_STATUS(ipc_recv_nb(thread, a, &received),
+            TEST_CHECK_STATUS(ipc_recv_nb(a, &received),
                               IPC_ERR_CANCELLED,
                               "recv empty queue");
 
@@ -98,7 +98,7 @@ static void test_single_thread(void *argument) {
             message.words[4] = 0x5555555555555555;
 
             TEST_CHECK_STATUS(ipc_send(thread, a, &message), IPC_OK, "send five-word message");
-            TEST_CHECK_STATUS(ipc_recv(thread, a, &received), IPC_OK, "recv five-word message");
+            TEST_CHECK_STATUS(ipc_recv(a, &received), IPC_OK, "recv five-word message");
 
             TEST_CHECK(received.words[0] == 0x1111111111111111, "word 0 corrupted");
             TEST_CHECK(received.words[1] == 0x2222222222222222, "word 1 corrupted");
@@ -118,7 +118,7 @@ static void test_single_thread(void *argument) {
 
             message.words[0] = 0xBADBADBAD;
 
-            TEST_CHECK_STATUS(ipc_recv(thread, a, &received), IPC_OK, "recv copy test");
+            TEST_CHECK_STATUS(ipc_recv(a, &received), IPC_OK, "recv copy test");
             TEST_CHECK(received.words[0] == 0xDEADBEEF, "message was not copied");
 
             /*
@@ -142,19 +142,19 @@ static void test_single_thread(void *argument) {
             message.words[0] = 0xB2;
             TEST_CHECK_STATUS(ipc_send(thread, b, &message), IPC_OK, "send B2");
 
-            TEST_CHECK_STATUS(ipc_recv(thread, b, &received), IPC_OK, "recv B1");
+            TEST_CHECK_STATUS(ipc_recv(b, &received), IPC_OK, "recv B1");
             TEST_CHECK(received.words[0] == 0xB1, "B1 wrong");
 
-            TEST_CHECK_STATUS(ipc_recv(thread, a, &received), IPC_OK, "recv A1");
+            TEST_CHECK_STATUS(ipc_recv(a, &received), IPC_OK, "recv A1");
             TEST_CHECK(received.words[0] == 0xA1, "A1 wrong");
 
-            TEST_CHECK_STATUS(ipc_recv(thread, c, &received), IPC_OK, "recv C1");
+            TEST_CHECK_STATUS(ipc_recv(c, &received), IPC_OK, "recv C1");
             TEST_CHECK(received.words[0] == 0xC1, "C1 wrong");
 
-            TEST_CHECK_STATUS(ipc_recv(thread, a, &received), IPC_OK, "recv A2");
+            TEST_CHECK_STATUS(ipc_recv(a, &received), IPC_OK, "recv A2");
             TEST_CHECK(received.words[0] == 0xA2, "A2 wrong");
 
-            TEST_CHECK_STATUS(ipc_recv(thread, b, &received), IPC_OK, "recv B2");
+            TEST_CHECK_STATUS(ipc_recv(b, &received), IPC_OK, "recv B2");
             TEST_CHECK(received.words[0] == 0xB2, "B2 wrong");
 
             /*
@@ -190,7 +190,7 @@ static void test_single_thread(void *argument) {
              * integrity for every entry.
              */
             for (i = 0; i < IPC_QUEUE_CAPACITY; i++) {
-                TEST_CHECK_STATUS(ipc_recv(thread, a, &received), IPC_OK, "drain queue");
+                TEST_CHECK_STATUS(ipc_recv(a, &received), IPC_OK, "drain queue");
 
                 TEST_CHECK(received.words[0] == i, "queue FIFO order corrupted");
                 TEST_CHECK(received.words[1] == (i ^ 0x55555555), "queue word 1 corrupted");
@@ -200,7 +200,7 @@ static void test_single_thread(void *argument) {
                 TEST_CHECK(received.sender_tid == thread->id, "queue sender TID corrupted");
             }
 
-            TEST_CHECK_STATUS(ipc_recv_nb(thread, a, &received),
+            TEST_CHECK_STATUS(ipc_recv_nb(a, &received),
                               IPC_ERR_CANCELLED,
                               "queue not empty after drain");
 
@@ -216,7 +216,7 @@ static void test_single_thread(void *argument) {
             }
 
             for (i = 0; i < 512; i++) {
-                TEST_CHECK_STATUS(ipc_recv(thread, a, &received), IPC_OK, "wrap recv");
+                TEST_CHECK_STATUS(ipc_recv(a, &received), IPC_OK, "wrap recv");
                 TEST_CHECK(received.words[0] == i, "wrap FIFO order corrupted");
 
                 memset(&message, 0, sizeof(message));
@@ -226,11 +226,11 @@ static void test_single_thread(void *argument) {
             }
 
             for (i = 512; i < 512 + (IPC_QUEUE_CAPACITY / 2); i++) {
-                TEST_CHECK_STATUS(ipc_recv(thread, a, &received), IPC_OK, "wrap final drain");
+                TEST_CHECK_STATUS(ipc_recv(a, &received), IPC_OK, "wrap final drain");
                 TEST_CHECK(received.words[0] == i, "wrap final order corrupted");
             }
 
-            TEST_CHECK_STATUS(ipc_recv_nb(thread, a, &received),
+            TEST_CHECK_STATUS(ipc_recv_nb(a, &received),
                               IPC_ERR_CANCELLED,
                               "wrap queue not empty");
 
@@ -248,20 +248,20 @@ static void test_single_thread(void *argument) {
                                   "populate endpoint before destroy");
             }
 
-            TEST_CHECK_STATUS(ipc_destroy(thread, b), IPC_OK, "destroy populated endpoint");
+            TEST_CHECK_STATUS(ipc_destroy(b), IPC_OK, "destroy populated endpoint");
 
             TEST_CHECK_STATUS(ipc_send(thread, b, &message),
                               IPC_ERR_NOT_FOUND,
                               "send to destroyed endpoint");
 
-            TEST_CHECK_STATUS(ipc_recv(thread, b, &received),
+            TEST_CHECK_STATUS(ipc_recv(b, &received),
                               IPC_ERR_NOT_FOUND,
                               "recv from destroyed endpoint");
 
             /*
              * Handles must never be reused.
              */
-            TEST_CHECK_STATUS(ipc_create(thread, &d), IPC_OK, "create after destroy");
+            TEST_CHECK_STATUS(ipc_create(&d), IPC_OK, "create after destroy");
             TEST_CHECK(d > c, "destroyed endpoint handle was reused");
             TEST_CHECK(d != b, "destroyed handle reused");
 
@@ -272,17 +272,17 @@ static void test_single_thread(void *argument) {
             for (i = 0; i < 256; i++) {
                 ipc_handle_t temporary;
 
-                TEST_CHECK_STATUS(ipc_create(thread, &temporary), IPC_OK, "repeated create");
+                TEST_CHECK_STATUS(ipc_create(&temporary), IPC_OK, "repeated create");
                 TEST_CHECK(temporary > d, "handles stopped increasing");
 
                 memset(&message, 0, sizeof(message));
                 message.words[0] = i;
 
                 TEST_CHECK_STATUS(ipc_send(thread, temporary, &message), IPC_OK, "repeated send");
-                TEST_CHECK_STATUS(ipc_recv(thread, temporary, &received), IPC_OK, "repeated recv");
+                TEST_CHECK_STATUS(ipc_recv(temporary, &received), IPC_OK, "repeated recv");
                 TEST_CHECK(received.words[0] == i, "repeated message corrupted");
 
-                TEST_CHECK_STATUS(ipc_destroy(thread, temporary), IPC_OK, "repeated destroy");
+                TEST_CHECK_STATUS(ipc_destroy(temporary), IPC_OK, "repeated destroy");
 
                 d = temporary;
             }
@@ -295,15 +295,15 @@ static void test_single_thread(void *argument) {
             message.words[0] = 0xAAAAAAAAAAAAAAAA;
 
             TEST_CHECK_STATUS(ipc_send(thread, a, &message), IPC_OK, "send A after churn");
-            TEST_CHECK_STATUS(ipc_recv(thread, a, &received), IPC_OK, "recv A after churn");
+            TEST_CHECK_STATUS(ipc_recv(a, &received), IPC_OK, "recv A after churn");
             TEST_CHECK(received.words[0] == 0xAAAAAAAAAAAAAAAA, "A corrupted after churn");
 
             TEST_CHECK_STATUS(ipc_send(thread, c, &message), IPC_OK, "send C after churn");
-            TEST_CHECK_STATUS(ipc_recv(thread, c, &received), IPC_OK, "recv C after churn");
+            TEST_CHECK_STATUS(ipc_recv(c, &received), IPC_OK, "recv C after churn");
             TEST_CHECK(received.words[0] == 0xAAAAAAAAAAAAAAAA, "C corrupted after churn");
 
-            TEST_CHECK_STATUS(ipc_destroy(thread, a), IPC_OK, "destroy A");
-            TEST_CHECK_STATUS(ipc_destroy(thread, c), IPC_OK, "destroy C");
+            TEST_CHECK_STATUS(ipc_destroy(a), IPC_OK, "destroy A");
+            TEST_CHECK_STATUS(ipc_destroy(c), IPC_OK, "destroy C");
 
             console_write("IPC single-thread tests PASSED\n");
 
@@ -376,7 +376,7 @@ static void test_ipc_consumer(void *argument) {
 
             thread = thread_current();
 
-            status = ipc_create(thread, &threaded_endpoint);
+            status = ipc_create( &threaded_endpoint);
             if (status != IPC_OK) {
                 console_write("FAIL: threaded endpoint create status=");
                 console_decimal(status);
@@ -403,7 +403,7 @@ static void test_ipc_consumer(void *argument) {
              * the FIFO fills. That's exactly what we're testing.
              */
 	    for (i = 0; i < THREADED_TEST_MESSAGES; i++) {
-                TEST_CHECK_STATUS(ipc_recv(thread, threaded_endpoint, &message),
+                TEST_CHECK_STATUS(ipc_recv(threaded_endpoint, &message),
                                   IPC_OK,
                                   "consumer recv");
 
@@ -416,7 +416,7 @@ static void test_ipc_consumer(void *argument) {
 
             console_write("IPC consumer PASSED\n");
 
-            TEST_CHECK_STATUS(ipc_destroy(thread, threaded_endpoint),
+            TEST_CHECK_STATUS(ipc_destroy(threaded_endpoint),
                               IPC_OK,
                               "destroy threaded endpoint");
 
@@ -567,7 +567,7 @@ static void sharkloop_worker(void *argument)
             if (!thread || worker >= SHARKLOOP_WORKERS)
                 sharkloop_fail("worker started with invalid state");
 
-            status = ipc_create(thread, &endpoint);
+            status = ipc_create( &endpoint);
             if (status != IPC_OK)
                 sharkloop_fail_value("worker endpoint create failed", worker, status);
 
@@ -576,7 +576,7 @@ static void sharkloop_worker(void *argument)
             fifo_semaphore_post(&sharkloop_endpoint_ready_sem);
 
             for (;;) {
-                status = ipc_recv(thread, endpoint, &message);
+                status = ipc_recv(endpoint, &message);
                 if (status != IPC_OK)
                     sharkloop_fail_value("worker receive failed", worker, status);
 
@@ -596,7 +596,7 @@ static void sharkloop_worker(void *argument)
                             sharkloop_fail_value("STOP forward failed", worker, status);
                     }
 
-                    status = ipc_destroy(thread, endpoint);
+                    status = ipc_destroy(endpoint);
                     if (status != IPC_OK)
                         sharkloop_fail_value("worker endpoint destroy failed", worker, status);
                     fifo_semaphore_post(&sharkloop_worker_done_sem);
@@ -629,7 +629,7 @@ static void sharkloop_worker(void *argument)
                     status = ipc_send(thread, sharkloop_endpoints[next], &next_message);
                     if (status != IPC_OK)
                         sharkloop_fail_value("initial STOP send failed", worker, status);
-                    status = ipc_destroy(thread, endpoint);
+                    status = ipc_destroy(endpoint);
                     if (status != IPC_OK)
                         sharkloop_fail_value("worker 0 endpoint destroy failed", worker, status);
                     fifo_semaphore_post(&sharkloop_worker_done_sem);
