@@ -1,4 +1,54 @@
-#pragma once
+#include <sharkix/kernel/caps.h>
+#include <stdint.h>
+#include <stdbool.h>
+ 
+#include <libfifo/sync.h>
+#include <sharkix/kernel/uthash.h>
+ 
+static cap_handle_t next_cap_handle = 0;
+static cap_t*       global_caps_table = NULL;
+static fifo_mutex_t global_caps_table_lock;
+
+// setup the global caps table
+void kinit_caps(void) {
+     global_caps_table = NULL;
+     next_cap_handle = 1;
+     fifo_mutex_init(&global_caps_table_lock);
+}
+
+// create a new cap
+int kcap_create(kobject_handle_t obj_handle, cap_type_t cap_type, cap_rights_t init_rights, cap_handle_t* new_cap) {
+    cap_t* cap;
+
+    if(!new_cap) return -1;
+    // TODO - find a cleaner way to handle this too
+    switch(cap_type) {
+ 	case CAP_TYPE_IPC_ENDPOINT:
+	     if(init_rights & ~CAP_IPC_VALID_RIGHTS) {  // at least one right being requested is invalid, so don't allow it!
+		return -1;
+	     }
+	break;
+	default:
+		return -1;
+	break;
+    }
+
+    cap = kmalloc(sizeof(*cap));
+    if(!cap) return -1; // TODO - add the proper errno stuff
+
+    memset(cap, 0, sizeof(*cap));
+
+    fifo_spinlock_init(&cap->spinlock);
+    cap->cap_handle = next_cap_handle++;
+    cap->type       = cap_type;
+    cap->obj_handle = obj_handle;
+    cap->rights     = init_rights;
+
+    fifo_mutex_lock(&global_caps_table_lock);
+    HASH_ADD(hh, global_caps_table, cap_handle, sizeof(cap->cap_handle), cap);
+    fifo_mutex_unlock(&global_caps_table_lock);
+    *new_cap = cap->handle;
+}
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -111,7 +161,7 @@ typedef struct capset_t {
 void kinit_caps(void);
 
 // create a new cap
-int  kcap_create(kobject_handle_t obj_handle, cap_type_t cap_type, cap_rights_t init_rights, cap_handle_t* new_cap);
+int  kcap_create(kobject_handle_t, cap_rights_t init_rights, cap_handle_t* new_cap);
 
 // destroy a cap - this is NOT the same thing as destroying the underlying object, which must be implemented by the underlying subsystem
 int  kcap_destroy(cap_handle_t cap);
