@@ -99,13 +99,28 @@ typedef struct cap_t {
         UT_hash_handle   hh;	     // uthash stuff
 } cap_t;
 
-// represents a set of caps, such as those held by a particular task
+
+typedef struct capset_entry_t {
+    cap_handle_t   cap_handle;
+    UT_hash_handle hh;
+} capset_entry_t;
+
+typedef struct capset_t {
+    capset_handle_t capset_handle;
+    capset_entry_t *caps;
+
+    fifo_spinlock_t spinlock;
+    UT_hash_handle  hh;
+} capset_t;
+
+
+/*// represents a set of caps, such as those held by a particular task
 typedef struct capset_t {
 	capset_handle_t	capset_handle;  // handle for this set
 	cap_handle_t*	cap_handles;    // the actual caps inside it, or at least their handles
 	fifo_spinlock_t spinlock;	// duh
 	UT_hash_handle  hh;		// duh
-} capset_t;
+} capset_t;*/
 
 // setup the global caps table
 void kinit_caps(void);
