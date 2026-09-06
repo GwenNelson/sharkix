@@ -118,8 +118,8 @@ void kernel_high_entry(uint32_t magic, uint32_t info)
     startup_common_init();
     if (virt_to_phys(phys_to_virt(VGA_PHYS)) == VGA_PHYS) console_write("physmap translation: ok\n");
     fifo_set_yield_callback(sharkix_fifo_yield);
-    kernel_startup_profile();
     kinit_caps();
+    kernel_startup_profile();
     vTaskStartScheduler();
     for (;;) __asm__ volatile ("cli; hlt");
 }

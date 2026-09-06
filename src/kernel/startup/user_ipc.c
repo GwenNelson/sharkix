@@ -2,6 +2,7 @@
 #include <stdint.h>
 
 #include "FreeRTOS.h"
+#include "caps.h"
 #include "console.h"
 #include "ipc.h"
 #include "memory.h"
@@ -64,7 +65,7 @@ create_user_task(const program_image_t *image,
         goto failed;
 
     /*
-     * Reserve the top word of the stack for the IPC endpoint handle passed
+     * Reserve the top word of the stack for the IPC capability handle passed
      * to the test program.  Translate it now so the kernel can fill it in
      * after the endpoint has been created.
      */
@@ -169,12 +170,18 @@ void kernel_startup_profile(void)
     uint64_t *producer_handle_slot = NULL;
 
     ipc_handle_t endpoint = IPC_INVALID_HANDLE;
+    cap_handle_t consumer_cap = 0;
+    cap_handle_t producer_cap = 0;
+    unsigned consumer_cap_created = 0;
+    unsigned consumer_cap_installed = 0;
+    unsigned producer_cap_created = 0;
+    unsigned producer_cap_installed = 0;
 
     ipc_init();
 
     /*
-     * Create the consumer first because it owns the endpoint used by this
-     * test.
+     * Create the consumer first because it receives from the endpoint used
+     * by this test.
      */
     if (create_user_task(&consumer_image,
                          "ipc-consumer",
@@ -183,12 +190,23 @@ void kernel_startup_profile(void)
                          &consumer_handle_slot) != 0)
         goto failed;
 
-    if (ipc_create(consumer, &endpoint) != IPC_OK)
+    if (ipc_create(&endpoint) != IPC_OK)
         goto failed;
 
+    if (kcap_create((kobject_handle_t)endpoint,
+                    CAP_TYPE_IPC_ENDPOINT,
+                    CAP_RIGHT_IPC_RECV,
+                    &consumer_cap) != 0)
+        goto failed;
+    consumer_cap_created = 1;
+
+    if (kcapset_addcap(consumer_as->capset, consumer_cap) != 0)
+        goto failed;
+    consumer_cap_installed = 1;
+
     /*
-     * The producer gets its own address space, but receives a handle to the
-     * consumer's endpoint.
+     * The producer gets its own address space and a distinct send-only cap
+     * for the consumer endpoint.
      */
     if (create_user_task(&producer_image,
                          "ipc-producer",
@@ -196,6 +214,17 @@ void kernel_startup_profile(void)
                          &producer,
                          &producer_handle_slot) != 0)
         goto failed;
+
+    if (kcap_create((kobject_handle_t)endpoint,
+                    CAP_TYPE_IPC_ENDPOINT,
+                    CAP_RIGHT_IPC_SEND,
+                    &producer_cap) != 0)
+        goto failed;
+    producer_cap_created = 1;
+
+    if (kcapset_addcap(producer_as->capset, producer_cap) != 0)
+        goto failed;
+    producer_cap_installed = 1;
 
     /*
      * Sanity-check that the test really is exercising IPC between isolated
@@ -206,11 +235,11 @@ void kernel_startup_profile(void)
         goto failed;
 
     /*
-     * Pass the endpoint handle to both programs through the word reserved
-     * at the top of their initial user stacks.
+     * Pass only the capability handles to userspace through the words
+     * reserved at the tops of their initial user stacks.
      */
-    *consumer_handle_slot = endpoint;
-    *producer_handle_slot = endpoint;
+    *consumer_handle_slot = consumer_cap;
+    *producer_handle_slot = producer_cap;
 
     if (thread_start(consumer) != 0)
         goto failed;
@@ -237,8 +266,20 @@ failed:
      * Only unstarted (READY) threads can be destroyed here.  If startup
      * progressed further than that, normal thread teardown owns them.
      */
-    if (endpoint != IPC_INVALID_HANDLE && consumer)
-        (void)ipc_destroy(consumer, endpoint);
+    if (producer_cap_installed)
+        (void)kcapset_delcap(producer_as->capset, producer_cap);
+
+    if (producer_cap_created)
+        (void)kcap_destroy(producer_cap);
+
+    if (consumer_cap_installed)
+        (void)kcapset_delcap(consumer_as->capset, consumer_cap);
+
+    if (consumer_cap_created)
+        (void)kcap_destroy(consumer_cap);
+
+    if (endpoint != IPC_INVALID_HANDLE)
+        (void)ipc_destroy(endpoint);
 
     if (consumer && consumer->state == THREAD_STATE_READY)
         thread_destroy_unstarted(consumer);
