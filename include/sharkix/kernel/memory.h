@@ -27,7 +27,7 @@
 typedef struct address_space_mapping {
     struct address_space_mapping *next;
     uintptr_t virtual_address;
-    uint64_t physical;
+    uintptr_t physical;
     unsigned owned;
 } address_space_mapping_t;
 
