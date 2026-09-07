@@ -58,6 +58,23 @@ typedef uint64_t cap_rights_t;
 				 CAP_RIGHT_IPC_CALL | \
 				 CAP_RIGHT_IPC_RECV)
 
+// physical-memory specific perms
+#define CAP_RIGHT_PMEM_MAP	(UINT64_C(1) << 10)
+#define CAP_RIGHT_PMEM_READ	(UINT64_C(1) << 11)
+#define CAP_RIGHT_PMEM_WRITE	(UINT64_C(1) << 12)
+#define CAP_RIGHT_PMEM_EXEC	(UINT64_C(1) << 13)
+#define CAP_RIGHT_PMEM_SPLIT	(UINT64_C(1) << 14)
+#define CAP_RIGHT_PMEM_MERGE	(UINT64_C(1) << 15)
+
+// all rights that make sense for a physical memory region
+#define CAP_PMEM_VALID_RIGHTS	(CAP_GENERIC_VALID_RIGHTS | \
+				 CAP_RIGHT_PMEM_MAP | \
+				 CAP_RIGHT_PMEM_READ | \
+				 CAP_RIGHT_PMEM_WRITE | \
+				 CAP_RIGHT_PMEM_EXEC | \
+				 CAP_RIGHT_PMEM_SPLIT | \
+				 CAP_RIGHT_PMEM_MERGE)
+
 // helpers
 #define CAP_HAS_ALL(cap, required) \
     ((((cap)->rights) & (required)) == (required))
@@ -89,9 +106,9 @@ typedef uint64_t cap_rights_t;
 #define CAPS_SAME_OBJECT(a, b) \
     ((a)->obj_handle == (b)->obj_handle)
 
-// eventually this will have all the different kernel object types, but for now it's only about IPC endpoints
 typedef enum cap_type_t {
 	CAP_TYPE_IPC_ENDPOINT = 1,
+	CAP_TYPE_PMEM         = 2,
 } cap_type_t;
 
 // represents an inividual cap
