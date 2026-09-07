@@ -63,7 +63,7 @@ typedef uint64_t cap_rights_t;
 #define CAP_RIGHT_PMEM_READ	(UINT64_C(1) << 11)
 #define CAP_RIGHT_PMEM_WRITE	(UINT64_C(1) << 12)
 #define CAP_RIGHT_PMEM_EXEC	(UINT64_C(1) << 13)
-#define CAP_RIGHT_PMEM_SPLIT	(UINT64_C(1) << 14)
+#define CAP_RIGHT_PMEM_DERIVE	(UINT64_C(1) << 14)
 #define CAP_RIGHT_PMEM_MERGE	(UINT64_C(1) << 15)
 
 // all rights that make sense for a physical memory region
@@ -72,7 +72,7 @@ typedef uint64_t cap_rights_t;
 				 CAP_RIGHT_PMEM_READ | \
 				 CAP_RIGHT_PMEM_WRITE | \
 				 CAP_RIGHT_PMEM_EXEC | \
-				 CAP_RIGHT_PMEM_SPLIT | \
+				 CAP_RIGHT_PMEM_DERIVE | \
 				 CAP_RIGHT_PMEM_MERGE)
 
 // helpers
