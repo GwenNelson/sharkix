@@ -4,6 +4,7 @@
 #include "FreeRTOS.h"
 #include "console.h"
 #include "memory.h"
+#include "sharkix/kernel/sync.h"
 #include "sharkix/kernel/boot/multiboot1.h"
 
 #define BOOTSTRAP_PHYS_WINDOW_LIMIT   0x40000000ULL
@@ -75,6 +76,12 @@ static uint64_t next_kernel_stack_base = KSTACK_BASE + PAGE_SIZE;
 static uint8_t *alloc_bitmap;
 static uint32_t *page_refcounts;
 static kmalloc_chunk_t *kmalloc_head;
+
+/*
+ * SMP: these global allocator, address-space, heap, and stack-allocation
+ * structures are currently protected only by kcritical(), which is local CPU
+ * exclusion.  Introduce scoped irqsave locks before making these paths SMP.
+ */
 
 static void memory_halt(void) __attribute__((noreturn));
 static void memory_halt(void)
@@ -467,11 +474,11 @@ bool phys_alloc_pages(size_t count, uint64_t *out_page)
 {
     bool allocated;
 
-    vPortEnterCritical();
+    kcritical_enter();
     allocated = out_page && count != 0 &&
         alloc_run_from_interval(general_pool_floor_page, tracked_page_count(),
                                 &general_search_hint, count, out_page);
-    vPortExitCritical();
+    kcritical_exit();
     return allocated;
 }
 
@@ -488,9 +495,9 @@ bool phys_alloc_pages_below(size_t count, uint64_t max_phys_addr, uint64_t *out_
     if (!out_page || count == 0 || max_phys_addr <= PAGE_SIZE) return false;
     end_page = align_up_u64(max_phys_addr, PAGE_SIZE) / PAGE_SIZE;
     if (end_page > tracked_page_count()) end_page = tracked_page_count();
-    vPortEnterCritical();
+    kcritical_enter();
     allocated = alloc_run_from_interval(1, end_page, &constrained_search_hint, count, out_page);
-    vPortExitCritical();
+    kcritical_exit();
     return allocated;
 }
 
@@ -503,7 +510,7 @@ void phys_page_get(uint64_t page)
 {
     uint64_t index;
 
-    vPortEnterCritical();
+    kcritical_enter();
     if (!phys_page_aligned(page)) memory_panic("phys_page_get unaligned");
     if (!phys_page_is_managed(page)) memory_panic("phys_page_get unmanaged");
     index = phys_to_page_index(page);
@@ -511,14 +518,14 @@ void phys_page_get(uint64_t page)
     if (page_refcounts[index] == UINT32_MAX) memory_panic("phys_page_get reserved page");
     if (page_refcounts[index] == UINT32_MAX - 1U) memory_panic("phys_page_get overflow");
     ++page_refcounts[index];
-    vPortExitCritical();
+    kcritical_exit();
 }
 
 void phys_page_put(uint64_t page)
 {
     uint64_t index;
 
-    vPortEnterCritical();
+    kcritical_enter();
     if (!phys_page_aligned(page)) memory_panic("phys_page_put unaligned");
     if (!phys_page_is_managed(page)) memory_panic("phys_page_put unmanaged");
     index = phys_to_page_index(page);
@@ -531,7 +538,7 @@ void phys_page_put(uint64_t page)
         uint64_t *words = (uint64_t *)phys_to_virt(page);
         for (size_t i = 0; i < PAGE_SIZE / sizeof(*words); ++i) words[i] = 0;
     }
-    vPortExitCritical();
+    kcritical_exit();
 }
 
 static bool page_walk_present(uint64_t entry)
@@ -701,17 +708,17 @@ uint32_t address_space_references(const address_space_t *address_space)
 {
     uint32_t references;
 
-    vPortEnterCritical();
+    kcritical_enter();
     references = address_space ? address_space->references : 0;
-    vPortExitCritical();
+    kcritical_exit();
     return references;
 }
 
 void address_space_retain(address_space_t *address_space)
 {
-    vPortEnterCritical();
+    kcritical_enter();
     if (address_space && !address_space->permanent) ++address_space->references;
-    vPortExitCritical();
+    kcritical_exit();
 }
 
 static void address_space_destroy(address_space_t *address_space)
@@ -726,17 +733,17 @@ static void address_space_destroy(address_space_t *address_space)
 
 void address_space_release(address_space_t *address_space)
 {
-    vPortEnterCritical();
+    kcritical_enter();
     if (!address_space || address_space->permanent) {
-        vPortExitCritical();
+        kcritical_exit();
         return;
     }
     if (!address_space->references) {
-        vPortExitCritical();
+        kcritical_exit();
         return;
     }
     if (--address_space->references == 0) address_space_destroy(address_space);
-    vPortExitCritical();
+    kcritical_exit();
 }
 
 address_space_t *address_space_create(uint32_t flags)
@@ -747,20 +754,20 @@ address_space_t *address_space_create(uint32_t flags)
     uint64_t *kernel_pml4;
     capset_handle_t as_capset;
 
-    vPortEnterCritical();
+    kcritical_enter();
     if(kcapset_new(&as_capset) != 0) {
-       vPortExitCritical();
+       kcritical_exit();
        return NULL;
     }	    
 
     if (!phys_alloc_page(&pml4_phys)) {
-        vPortExitCritical();
+        kcritical_exit();
         return NULL;
     }
     address_space = kmalloc(sizeof(*address_space));
     if (!address_space) {
         phys_page_put(pml4_phys);
-        vPortExitCritical();
+        kcritical_exit();
         return NULL;
     }
     destination = page_table(pml4_phys);
@@ -775,25 +782,25 @@ address_space_t *address_space_create(uint32_t flags)
     address_space->live_threads = 0;
     address_space->permanent    = 0;
     address_space->capset       = as_capset;
-    vPortExitCritical();
+    kcritical_exit();
     return address_space;
 }
 
 int address_space_map_page(address_space_t *address_space, uintptr_t va, uint64_t pa, uint64_t flags)
 {
     int result;
-    vPortEnterCritical();
+    kcritical_enter();
     result = map_page_internal(address_space, va, pa, flags, false, true);
-    vPortExitCritical();
+    kcritical_exit();
     return result;
 }
 
 int address_space_unmap_page(address_space_t *address_space, uintptr_t va)
 {
     int result;
-    vPortEnterCritical();
+    kcritical_enter();
     result = unmap_page_internal(address_space, va, false, true);
-    vPortExitCritical();
+    kcritical_exit();
     return result;
 }
 
@@ -802,11 +809,11 @@ uint64_t address_space_translate(address_space_t *address_space, uintptr_t va)
     page_walk_t walk;
     uint64_t physical = UINT64_MAX;
 
-    vPortEnterCritical();
+    kcritical_enter();
     if (address_space && walk_to_pte(address_space->pml4_phys, va, &walk) &&
         (walk.pt[walk.pt_index] & PAGE_PRESENT))
         physical = (walk.pt[walk.pt_index] & PAGE_ADDR_MASK) | (va & (PAGE_SIZE - 1ULL));
-    vPortExitCritical();
+    kcritical_exit();
     return physical;
 }
 
@@ -832,7 +839,7 @@ void *ksbrk(ptrdiff_t increment)
     uint64_t new_break;
     void *result;
 
-    vPortEnterCritical();
+    kcritical_enter();
     old_break = heap_break_value;
     if (increment == 0) {
         result = (void *)(uintptr_t)old_break;
@@ -886,7 +893,7 @@ void *ksbrk(ptrdiff_t increment)
     heap_mapped_break = unmap_start;
     result = (void *)(uintptr_t)old_break;
 out:
-    vPortExitCritical();
+    kcritical_exit();
     return result;
 }
 
@@ -902,7 +909,7 @@ void *kmalloc(size_t size)
     void *result = NULL;
 
     if (!size) return NULL;
-    vPortEnterCritical();
+    kcritical_enter();
     wanted = kmalloc_align(size);
 
     for (chunk = kmalloc_head; chunk; chunk = chunk->next) {
@@ -947,7 +954,7 @@ void *kmalloc(size_t size)
     }
     result = chunk + 1;
 out:
-    vPortExitCritical();
+    kcritical_exit();
     return result;
 }
 
@@ -956,7 +963,7 @@ void kfree(void *pointer)
     kmalloc_chunk_t *chunk;
 
     if (!pointer) return;
-    vPortEnterCritical();
+    kcritical_enter();
     chunk = (kmalloc_chunk_t *)pointer - 1;
     if (chunk->free) memory_panic("kfree double free");
     chunk->free = 1;
@@ -971,7 +978,7 @@ void kfree(void *pointer)
         chunk->prev->next = chunk->next;
         if (chunk->next) chunk->next->prev = chunk->prev;
     }
-    vPortExitCritical();
+    kcritical_exit();
 }
 
 void *kernel_stack_alloc(size_t size)
@@ -979,11 +986,11 @@ void *kernel_stack_alloc(size_t size)
     size_t rounded = (size + PAGE_SIZE - 1U) & ~(size_t)(PAGE_SIZE - 1U);
     uintptr_t base;
 
-    vPortEnterCritical();
+    kcritical_enter();
     if (!rounded) rounded = PAGE_SIZE;
     base = (uintptr_t)next_kernel_stack_base;
     if (base + rounded + PAGE_SIZE > KSTACK_LIMIT) {
-        vPortExitCritical();
+        kcritical_exit();
         return NULL;
     }
 
@@ -994,7 +1001,7 @@ void *kernel_stack_alloc(size_t size)
                 offset -= PAGE_SIZE;
                 (void)kernel_unmap_page(base + offset);
             }
-            vPortExitCritical();
+            kcritical_exit();
             return NULL;
         }
         if (kernel_map_page(base + offset, page, PAGE_WRITABLE | PAGE_NX, true) != 0) {
@@ -1003,13 +1010,13 @@ void *kernel_stack_alloc(size_t size)
                 offset -= PAGE_SIZE;
                 (void)kernel_unmap_page(base + offset);
             }
-            vPortExitCritical();
+            kcritical_exit();
             return NULL;
         }
     }
 
     next_kernel_stack_base = base + rounded + PAGE_SIZE;
-    vPortExitCritical();
+    kcritical_exit();
     return (void *)base;
 }
 
@@ -1019,10 +1026,10 @@ void kernel_stack_free(void *base_pointer, size_t size)
     size_t rounded = (size + PAGE_SIZE - 1U) & ~(size_t)(PAGE_SIZE - 1U);
 
     if (!base || !rounded) return;
-    vPortEnterCritical();
+    kcritical_enter();
     for (size_t offset = 0; offset < rounded; offset += PAGE_SIZE)
         (void)kernel_unmap_page(base + offset);
-    vPortExitCritical();
+    kcritical_exit();
 }
 
 void memory_init(uint32_t multiboot_magic, uint32_t multiboot_info_phys)

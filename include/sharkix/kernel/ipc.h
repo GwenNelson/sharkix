@@ -5,6 +5,7 @@
 
 #include <libfifo/fifo.h>
 
+#include <sharkix/kernel/sync.h>
 #include <sharkix/kernel/thread.h>
 #include <sharkix/kernel/uthash.h>
 
@@ -41,13 +42,13 @@ typedef struct ipc_endpoint_t {
 	/*
 	 * Protects endpoint state below and serialises queue-state decisions.
 	 */
-	fifo_mutex_t lock;
+    kmutex_t lock;
 
 	/*
 	 * Used to wake blocked senders/receivers.
 	 */
-	fifo_semaphore_t sender_sem;
-	fifo_semaphore_t receiver_sem;
+    ksemaphore_t sender_sem;
+    ksemaphore_t receiver_sem;
 
 	/*
 	 * Endpoint lifetime.

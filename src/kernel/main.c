@@ -8,8 +8,7 @@
 #include "memory.h"
 #include "startup.h"
 #include "caps.h"
-
-#include <libfifo/sync.h>
+#include "sync.h"
 
 #define VGA_WIDTH 80
 #define VGA_HEIGHT 25
@@ -61,7 +60,7 @@ void console_init(void)
 }
 void console_putc(char c)
 {
-    vPortEnterCritical();
+    kcritical_enter();
     while ((inb(0x3fd) & 0x20) == 0) {}
     if (c == '\n') {
         outb(0x3f8, '\r'); outb(0x3f8, '\n');
@@ -69,7 +68,7 @@ void console_putc(char c)
         ++vga_y;
         vga_scroll_if_needed();
         vga_set_cursor();
-        vPortExitCritical();
+        kcritical_exit();
         return;
     }
     outb(0x3f8, (uint8_t)c);
@@ -80,7 +79,7 @@ void console_putc(char c)
         vga_scroll_if_needed();
     }
     vga_set_cursor();
-    vPortExitCritical();
+    kcritical_exit();
 }
 void console_write(const char *text) { while (*text) console_putc(*text++); }
 void console_hex(uint64_t value)
@@ -100,10 +99,6 @@ void console_decimal(uint64_t value)
 void vApplicationMallocFailedHook(void) { for (;;) __asm__ volatile ("cli; hlt"); }
 void vApplicationStackOverflowHook(TaskHandle_t task, char *name) { (void)task; (void)name; for (;;) __asm__ volatile ("cli; hlt"); }
 
-static void sharkix_fifo_yield(void) {
-	taskYIELD();
-}
-
 void kernel_high_entry(uint32_t magic, uint32_t info)
 {
     (void)magic; (void)info;
@@ -117,7 +112,7 @@ void kernel_high_entry(uint32_t magic, uint32_t info)
     arch_init_syscalls();
     startup_common_init();
     if (virt_to_phys(phys_to_virt(VGA_PHYS)) == VGA_PHYS) console_write("physmap translation: ok\n");
-    fifo_set_yield_callback(sharkix_fifo_yield);
+    ksync_init();
     kinit_caps();
     kernel_startup_profile();
     vTaskStartScheduler();

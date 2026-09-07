@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include <libfifo/sync.h>
+#include <sharkix/kernel/sync.h>
 
 
 
@@ -18,6 +18,11 @@ typedef uint64_t capset_handle_t;
 
 // a bitmask/bitmap for rights granted to a cap
 typedef uint64_t cap_rights_t;
+
+// standard handles
+
+#define CAP_INVALID_HANDLE ((cap_handle_t)UINT64_MAX) /* invalid handle                     */
+#define CAPSET_HANDLE_SELF 0                          /* the capset for the current process */
 
 
 #include <sharkix/kernel/uthash.h>
@@ -109,7 +114,7 @@ typedef struct capset_t {
     capset_handle_t capset_handle;
     capset_entry_t *caps;
 
-    fifo_spinlock_t spinlock;
+    kspinlock_t spinlock;
     UT_hash_handle  hh;
 } capset_t;
 

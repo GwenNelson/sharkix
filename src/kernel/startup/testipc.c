@@ -5,7 +5,7 @@
 #include <sharkix/kernel/ipc.h>
 #include <sharkix/kernel/console.h>
 
-#include <libfifo/sync.h>
+#include <sharkix/kernel/sync.h>
 
 #include <string.h>
 
@@ -310,8 +310,8 @@ static void test_single_thread(void *argument) {
 }
 
 
-static fifo_semaphore_t producer_done_sem;
-static fifo_semaphore_t consumer_done_sem;
+static ksemaphore_t producer_done_sem;
+static ksemaphore_t consumer_done_sem;
 
 /*
  * The producer only needs this semaphore because the consumer owns and
@@ -319,7 +319,7 @@ static fifo_semaphore_t consumer_done_sem;
  * producer/consumer synchronization.
  */
 static ipc_handle_t threaded_endpoint;
-static fifo_semaphore_t endpoint_ready_sem;
+static ksemaphore_t endpoint_ready_sem;
 
 #define THREADED_TEST_MESSAGES 100000
 
@@ -341,7 +341,7 @@ static void test_ipc_producer(void *argument) {
              * Consumer creates the endpoint, so don't attempt to use the
              * global handle until it has done so.
              */
-            fifo_semaphore_wait(&endpoint_ready_sem);
+            ksem_wait(&endpoint_ready_sem);
 
             for (i = 0; i < THREADED_TEST_MESSAGES; i++) {
                 memset(&message, 0, sizeof(message));
@@ -362,7 +362,7 @@ static void test_ipc_producer(void *argument) {
             }
 
             console_write("IPC producer PASSED\n");
-	    fifo_semaphore_post(&producer_done_sem);
+	    ksem_post(&producer_done_sem);
 }
 
 
@@ -393,7 +393,7 @@ static void test_ipc_consumer(void *argument) {
             /*
              * The endpoint is now fully created and published.
              */
-            fifo_semaphore_post(&endpoint_ready_sem);
+            ksem_post(&endpoint_ready_sem);
 
             /*
              * There is intentionally no "producer ready" semaphore anymore.
@@ -420,16 +420,16 @@ static void test_ipc_consumer(void *argument) {
                               IPC_OK,
                               "destroy threaded endpoint");
 
-	    fifo_semaphore_post(&consumer_done_sem);
+	    ksem_post(&consumer_done_sem);
 }
 
 
 static void test_ipc_threads(void *argument) {
             (void)argument;
 
-            fifo_semaphore_init(&endpoint_ready_sem, 0);
-	    fifo_semaphore_init(&producer_done_sem,  0);
-	    fifo_semaphore_init(&consumer_done_sem,  0);
+            ksem_init(&endpoint_ready_sem, 0);
+	    ksem_init(&producer_done_sem,  0);
+	    ksem_init(&consumer_done_sem,  0);
 
             /*
              * Consumer owns the endpoint, so start it first.
@@ -458,9 +458,9 @@ static void test_ipc_threads(void *argument) {
 static ipc_handle_t sharkloop_endpoints[SHARKLOOP_WORKERS];
 static uint64_t sharkloop_thread_ids[SHARKLOOP_WORKERS];
 static unsigned sharkloop_worker_indices[SHARKLOOP_WORKERS];
-static fifo_semaphore_t sharkloop_endpoint_ready_sem;
-static fifo_semaphore_t sharkloop_final_hop_sem;
-static fifo_semaphore_t sharkloop_worker_done_sem;
+static ksemaphore_t sharkloop_endpoint_ready_sem;
+static ksemaphore_t sharkloop_final_hop_sem;
+static ksemaphore_t sharkloop_worker_done_sem;
 static uint64_t sharkloop_injector_id;
 
 static void sharkloop_fail(const char *message) __attribute__((noreturn));
@@ -573,7 +573,7 @@ static void sharkloop_worker(void *argument)
 
             sharkloop_thread_ids[worker] = thread->id;
             sharkloop_endpoints[worker] = endpoint;
-            fifo_semaphore_post(&sharkloop_endpoint_ready_sem);
+            ksem_post(&sharkloop_endpoint_ready_sem);
 
             for (;;) {
                 status = ipc_recv(endpoint, &message);
@@ -599,7 +599,7 @@ static void sharkloop_worker(void *argument)
                     status = ipc_destroy(endpoint);
                     if (status != IPC_OK)
                         sharkloop_fail_value("worker endpoint destroy failed", worker, status);
-                    fifo_semaphore_post(&sharkloop_worker_done_sem);
+                    ksem_post(&sharkloop_worker_done_sem);
                     return;
                 }
 
@@ -614,7 +614,7 @@ static void sharkloop_worker(void *argument)
 
                 if (worker == SHARKLOOP_WORKERS - 1U &&
                     expected_sequence + 1U == SHARKLOOP_HOPS)
-                    fifo_semaphore_post(&sharkloop_final_hop_sem);
+                    ksem_post(&sharkloop_final_hop_sem);
 
                 if (worker == 0 &&
                     expected_sequence + SHARKLOOP_WORKERS == SHARKLOOP_HOPS) {
@@ -624,7 +624,7 @@ static void sharkloop_worker(void *argument)
                     if (status != IPC_OK)
                         sharkloop_fail_value("final data forward failed", worker, status);
                     expected_sequence += SHARKLOOP_WORKERS;
-                    fifo_semaphore_wait(&sharkloop_final_hop_sem);
+                    ksem_wait(&sharkloop_final_hop_sem);
                     sharkloop_stop_message(&next_message, next);
                     status = ipc_send(thread, sharkloop_endpoints[next], &next_message);
                     if (status != IPC_OK)
@@ -632,7 +632,7 @@ static void sharkloop_worker(void *argument)
                     status = ipc_destroy(endpoint);
                     if (status != IPC_OK)
                         sharkloop_fail_value("worker 0 endpoint destroy failed", worker, status);
-                    fifo_semaphore_post(&sharkloop_worker_done_sem);
+                    ksem_post(&sharkloop_worker_done_sem);
                     return;
                 }
 
@@ -672,9 +672,9 @@ static void test_sharkloop(void* argument) {
             if (!injector)
                 sharkloop_fail("test has no current thread");
             sharkloop_injector_id = injector->id;
-            fifo_semaphore_init(&sharkloop_endpoint_ready_sem, 0);
-            fifo_semaphore_init(&sharkloop_final_hop_sem, 0);
-            fifo_semaphore_init(&sharkloop_worker_done_sem, 0);
+            ksem_init(&sharkloop_endpoint_ready_sem, 0);
+            ksem_init(&sharkloop_final_hop_sem, 0);
+            ksem_init(&sharkloop_worker_done_sem, 0);
 
             memset(&params, 0, sizeof(params));
             params.entry_rip = (uintptr_t)sharkloop_worker;
@@ -691,7 +691,7 @@ static void test_sharkloop(void* argument) {
             }
 
             for (i = 0; i < SHARKLOOP_WORKERS; ++i) {
-                fifo_semaphore_wait(&sharkloop_endpoint_ready_sem);
+                ksem_wait(&sharkloop_endpoint_ready_sem);
                 if (!sharkloop_endpoints[i] || !sharkloop_thread_ids[i])
                     sharkloop_fail_value("endpoint publication failed", i,
                                          sharkloop_endpoints[i]);
@@ -703,7 +703,7 @@ static void test_sharkloop(void* argument) {
                 sharkloop_fail_value("initial data injection failed", 0, status);
 
             for (i = 0; i < SHARKLOOP_WORKERS; ++i)
-                fifo_semaphore_wait(&sharkloop_worker_done_sem);
+                ksem_wait(&sharkloop_worker_done_sem);
 
             for (i = 0; i < SHARKLOOP_WORKERS; ++i) {
                 while (thread_get_state(sharkloop_thread_ids[i]) != THREAD_STATE_INVALID) {
@@ -723,8 +723,8 @@ static void run_tests(void* argument) {
 	test_single_thread(NULL);
 	test_ipc_threads(NULL);
 	// at some point we should implement a wait for task or something...
-	fifo_semaphore_wait(&producer_done_sem);
-	fifo_semaphore_wait(&consumer_done_sem);
+	ksem_wait(&producer_done_sem);
+	ksem_wait(&consumer_done_sem);
 
 	test_sharkloop(NULL);
 

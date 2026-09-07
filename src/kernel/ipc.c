@@ -6,11 +6,9 @@
 #include <sharkix/kernel/memory.h>
 
 #include <libfifo/fifo.h>
-#include <libfifo/sync.h>
-
 static ipc_endpoint_t *endpoints;
 static ipc_handle_t next_handle;
-static fifo_mutex_t endpoints_lock;
+static kmutex_t endpoints_lock;
 
 
 /*
@@ -22,14 +20,14 @@ static fifo_mutex_t endpoints_lock;
 static ipc_endpoint_t *ipc_acquire(ipc_handle_t handle) {
                        ipc_endpoint_t *endpoint;
 
-                       fifo_mutex_lock(&endpoints_lock);
+                       kmutex_lock(&endpoints_lock);
 
                        HASH_FIND(hh, endpoints, &handle, sizeof(handle), endpoint);
 
                        if (endpoint)
                            endpoint->references++;
 
-                       fifo_mutex_unlock(&endpoints_lock);
+                       kmutex_unlock(&endpoints_lock);
 
                        return endpoint;
 }
@@ -61,14 +59,14 @@ static void ipc_endpoint_free(ipc_endpoint_t *endpoint) {
 static void ipc_release(ipc_endpoint_t *endpoint) {
             bool free_endpoint = false;
 
-            fifo_mutex_lock(&endpoints_lock);
+            kmutex_lock(&endpoints_lock);
 
             endpoint->references--;
 
             if (endpoint->is_shutting_down && endpoint->references == 0)
                 free_endpoint = true;
 
-            fifo_mutex_unlock(&endpoints_lock);
+            kmutex_unlock(&endpoints_lock);
 
             if (free_endpoint)
                 ipc_endpoint_free(endpoint);
@@ -79,7 +77,7 @@ void ipc_init(void) {
      endpoints = NULL;
      next_handle = 1;
 
-     fifo_mutex_init(&endpoints_lock);
+     kmutex_init(&endpoints_lock);
 }
 
 
@@ -97,9 +95,9 @@ ipc_status_t ipc_create(ipc_handle_t *handle) {
 
              fifo_init(&endpoint->queue, endpoint->queue_storage, IPC_QUEUE_CAPACITY);
 
-             fifo_mutex_init(&endpoint->lock);
-             fifo_semaphore_init(&endpoint->sender_sem, 0);
-             fifo_semaphore_init(&endpoint->receiver_sem, 0);
+             kmutex_init(&endpoint->lock);
+             ksem_init(&endpoint->sender_sem, 0);
+             ksem_init(&endpoint->receiver_sem, 0);
 
              /*
               * The registry owns one reference.
@@ -109,12 +107,12 @@ ipc_status_t ipc_create(ipc_handle_t *handle) {
              endpoint->waiting_senders = 0;
              endpoint->waiting_receivers = 0;
 
-             fifo_mutex_lock(&endpoints_lock);
+             kmutex_lock(&endpoints_lock);
 
              endpoint->handle = next_handle++;
              HASH_ADD(hh, endpoints, handle, sizeof(endpoint->handle), endpoint);
 
-             fifo_mutex_unlock(&endpoints_lock);
+             kmutex_unlock(&endpoints_lock);
 
              *handle = endpoint->handle;
 
@@ -136,16 +134,16 @@ ipc_status_t ipc_destroy(ipc_handle_t handle) {
               * ipc_acquire(), because removal from the registry must be
               * atomic with respect to new acquisitions.
               */
-             fifo_mutex_lock(&endpoints_lock);
+             kmutex_lock(&endpoints_lock);
 
              HASH_FIND(hh, endpoints, &handle, sizeof(handle), endpoint);
 
              if (!endpoint) {
-                 fifo_mutex_unlock(&endpoints_lock);
+                 kmutex_unlock(&endpoints_lock);
                  return IPC_ERR_NOT_FOUND;
              }
 
-             fifo_mutex_lock(&endpoint->lock);
+             kmutex_lock(&endpoint->lock);
 
 
              /*
@@ -168,8 +166,8 @@ ipc_status_t ipc_destroy(ipc_handle_t handle) {
              endpoint->waiting_senders = 0;
              endpoint->waiting_receivers = 0;
 
-             fifo_mutex_unlock(&endpoint->lock);
-             fifo_mutex_unlock(&endpoints_lock);
+             kmutex_unlock(&endpoint->lock);
+             kmutex_unlock(&endpoints_lock);
 
              /*
               * Wake everyone blocked waiting for queue state to change.
@@ -177,10 +175,10 @@ ipc_status_t ipc_destroy(ipc_handle_t handle) {
               * and return IPC_ERR_ENDPOINT_CLOSED.
               */
              for (i = 0; i < wake_senders; i++)
-                 fifo_semaphore_post(&endpoint->sender_sem);
+                 ksem_post(&endpoint->sender_sem);
 
              for (i = 0; i < wake_receivers; i++)
-                 fifo_semaphore_post(&endpoint->receiver_sem);
+                 ksem_post(&endpoint->receiver_sem);
 
              /*
               * Drop the reference which belonged to the registry.
@@ -221,10 +219,10 @@ ipc_status_t ipc_send(thread_t *caller, ipc_handle_t handle, const ipc_message_t
              queued->sender_tid = caller->id;
 
              for (;;) {
-                 fifo_mutex_lock(&endpoint->lock);
+                 kmutex_lock(&endpoint->lock);
 
                  if (endpoint->is_shutting_down) {
-                     fifo_mutex_unlock(&endpoint->lock);
+                     kmutex_unlock(&endpoint->lock);
 
                      kfree(queued);
                      ipc_release(endpoint);
@@ -242,10 +240,10 @@ ipc_status_t ipc_send(thread_t *caller, ipc_handle_t handle, const ipc_message_t
                       */
                      if (endpoint->waiting_receivers) {
                          endpoint->waiting_receivers--;
-                         fifo_semaphore_post(&endpoint->receiver_sem);
+                         ksem_post(&endpoint->receiver_sem);
                      }
 
-                     fifo_mutex_unlock(&endpoint->lock);
+                     kmutex_unlock(&endpoint->lock);
 
                      ipc_release(endpoint);
                      return IPC_OK;
@@ -260,9 +258,9 @@ ipc_status_t ipc_send(thread_t *caller, ipc_handle_t handle, const ipc_message_t
                   */
                  endpoint->waiting_senders++;
 
-                 fifo_mutex_unlock(&endpoint->lock);
+                 kmutex_unlock(&endpoint->lock);
 
-                 fifo_semaphore_wait(&endpoint->sender_sem);
+                 ksem_wait(&endpoint->sender_sem);
 
                  /*
                   * Either:
@@ -302,10 +300,10 @@ ipc_status_t ipc_send_nb(thread_t *caller, ipc_handle_t handle, const ipc_messag
              memcpy(queued, message, sizeof(*queued));
              queued->sender_tid = caller->id;
 
-             fifo_mutex_lock(&endpoint->lock);
+             kmutex_lock(&endpoint->lock);
 
              if (endpoint->is_shutting_down) {
-                 fifo_mutex_unlock(&endpoint->lock);
+                 kmutex_unlock(&endpoint->lock);
 
                  kfree(queued);
                  ipc_release(endpoint);
@@ -314,7 +312,7 @@ ipc_status_t ipc_send_nb(thread_t *caller, ipc_handle_t handle, const ipc_messag
              }
 
              if (!fifo_push(&endpoint->queue, queued)) {
-                 fifo_mutex_unlock(&endpoint->lock);
+                 kmutex_unlock(&endpoint->lock);
 
                  kfree(queued);
                  ipc_release(endpoint);
@@ -324,10 +322,10 @@ ipc_status_t ipc_send_nb(thread_t *caller, ipc_handle_t handle, const ipc_messag
 
              if (endpoint->waiting_receivers) {
                  endpoint->waiting_receivers--;
-                 fifo_semaphore_post(&endpoint->receiver_sem);
+                 ksem_post(&endpoint->receiver_sem);
              }
 
-             fifo_mutex_unlock(&endpoint->lock);
+             kmutex_unlock(&endpoint->lock);
 
              ipc_release(endpoint);
 
@@ -351,11 +349,11 @@ ipc_status_t ipc_recv(ipc_handle_t handle, ipc_message_t *message) {
                  return IPC_ERR_NOT_FOUND;
 
              for (;;) {
-                 fifo_mutex_lock(&endpoint->lock);
+                 kmutex_lock(&endpoint->lock);
 
 
                  if (endpoint->is_shutting_down) {
-                     fifo_mutex_unlock(&endpoint->lock);
+                     kmutex_unlock(&endpoint->lock);
                      ipc_release(endpoint);
 
                      return IPC_ERR_ENDPOINT_CLOSED;
@@ -367,10 +365,10 @@ ipc_status_t ipc_recv(ipc_handle_t handle, ipc_message_t *message) {
                       */
                      if (endpoint->waiting_senders) {
                          endpoint->waiting_senders--;
-                         fifo_semaphore_post(&endpoint->sender_sem);
+                         ksem_post(&endpoint->sender_sem);
                      }
 
-                     fifo_mutex_unlock(&endpoint->lock);
+                     kmutex_unlock(&endpoint->lock);
 
                      memcpy(message, queued, sizeof(*message));
                      kfree(queued);
@@ -386,9 +384,9 @@ ipc_status_t ipc_recv(ipc_handle_t handle, ipc_message_t *message) {
                   */
                  endpoint->waiting_receivers++;
 
-                 fifo_mutex_unlock(&endpoint->lock);
+                 kmutex_unlock(&endpoint->lock);
 
-                 fifo_semaphore_wait(&endpoint->receiver_sem);
+                 ksem_wait(&endpoint->receiver_sem);
              }
 }
 
@@ -409,17 +407,17 @@ ipc_status_t ipc_recv_nb(ipc_handle_t handle, ipc_message_t *message) {
              if (!endpoint)
                  return IPC_ERR_NOT_FOUND;
 
-             fifo_mutex_lock(&endpoint->lock);
+             kmutex_lock(&endpoint->lock);
 
              if (endpoint->is_shutting_down) {
-                 fifo_mutex_unlock(&endpoint->lock);
+                 kmutex_unlock(&endpoint->lock);
                  ipc_release(endpoint);
 
                  return IPC_ERR_ENDPOINT_CLOSED;
              }
 
              if (!fifo_pop(&endpoint->queue, (void **)&queued)) {
-                 fifo_mutex_unlock(&endpoint->lock);
+                 kmutex_unlock(&endpoint->lock);
                  ipc_release(endpoint);
 
                  return IPC_ERR_CANCELLED;
@@ -427,10 +425,10 @@ ipc_status_t ipc_recv_nb(ipc_handle_t handle, ipc_message_t *message) {
 
              if (endpoint->waiting_senders) {
                  endpoint->waiting_senders--;
-                 fifo_semaphore_post(&endpoint->sender_sem);
+                 ksem_post(&endpoint->sender_sem);
              }
 
-             fifo_mutex_unlock(&endpoint->lock);
+             kmutex_unlock(&endpoint->lock);
 
              memcpy(message, queued, sizeof(*message));
              kfree(queued);

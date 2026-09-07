@@ -4,6 +4,7 @@
 #include "task.h"
 #include "arch.h"
 #include "console.h"
+#include "sync.h"
 #include "thread.h"
 
 cpu_local_t cpu0;
@@ -12,6 +13,9 @@ static thread_t *dead_threads;
 static thread_t *final_dead_threads;
 static thread_t *thread_registry;
 static uint64_t reaped_threads;
+
+/* SMP: kcritical() protects these only on the local CPU.  Thread registry and
+ * reaper state require real shared locks before threads can run on multiple CPUs. */
 
 thread_t *thread_current(void) { return cpu0.current_thread; }
 uint64_t thread_current_id(void) { return cpu0.current_thread ? cpu0.current_thread->id : 0; }
@@ -22,12 +26,12 @@ static thread_t *thread_allocate(void)
     if (!thread) return NULL;
     uint8_t *bytes = (uint8_t *)thread;
     for (size_t i = 0; i < sizeof(*thread); ++i) bytes[i] = 0;
-    vPortEnterCritical();
+    kcritical_enter();
     thread->id = next_thread_id++;
     thread->state = THREAD_STATE_NEW;
     thread->registry_next = thread_registry;
     thread_registry = thread;
-    vPortExitCritical();
+    kcritical_exit();
     return thread;
 }
 
@@ -35,14 +39,14 @@ thread_t *thread_lookup(uint64_t id)
 {
     thread_t *result = NULL;
 
-    vPortEnterCritical();
+    kcritical_enter();
     for (thread_t *t = thread_registry; t; t = t->registry_next) {
         if (t->id == id) {
             result = t;
             break;
         }
     }
-    vPortExitCritical();
+    kcritical_exit();
     return result;
 }
 
@@ -50,36 +54,36 @@ thread_state_t thread_get_state(uint64_t id)
 {
     thread_state_t state = THREAD_STATE_INVALID;
 
-    vPortEnterCritical();
+    kcritical_enter();
     for (thread_t *thread = thread_registry; thread; thread = thread->registry_next) {
         if (thread->id == id) {
             state = thread->state;
             break;
         }
     }
-    vPortExitCritical();
+    kcritical_exit();
     return state;
 }
 
 static void thread_unlink(thread_t *thread)
 {
-    vPortEnterCritical();
+    kcritical_enter();
     thread_t **link = &thread_registry;
     while (*link && *link != thread) link = &(*link)->registry_next;
     if (*link) *link = thread->registry_next;
-    vPortExitCritical();
+    kcritical_exit();
 }
 
 static int thread_transition(thread_t *thread, thread_state_t from, thread_state_t to)
 {
     int result = -1;
 
-    vPortEnterCritical();
+    kcritical_enter();
     if (thread && thread->state == from) {
         thread->state = to;
         result = 0;
     }
-    vPortExitCritical();
+    kcritical_exit();
     return result;
 }
 
@@ -87,11 +91,11 @@ void thread_scheduler_task_ready(void *association)
 {
     thread_t *thread = association;
 
-    vPortEnterCritical();
+    kcritical_enter();
     if (thread && thread->state == THREAD_STATE_BLOCKED &&
         thread_transition(thread, THREAD_STATE_BLOCKED, THREAD_STATE_RUNNABLE) != 0)
         for (;;) __asm__ volatile ("cli; hlt");
-    vPortExitCritical();
+    kcritical_exit();
 }
 
 static StackType_t *user_initial_stack(thread_t *thread, uintptr_t entry, uintptr_t user_stack)
@@ -109,11 +113,11 @@ static StackType_t *user_initial_stack(thread_t *thread, uintptr_t entry, uintpt
 static void thread_release_address_space(thread_t *thread)
 {
     if (!thread->address_space) return;
-    vPortEnterCritical();
+    kcritical_enter();
     if (thread->address_space->live_threads) --thread->address_space->live_threads;
     address_space_release(thread->address_space);
     thread->address_space = NULL;
-    vPortExitCritical();
+    kcritical_exit();
 }
 
 static void thread_release_kernel_resources(thread_t *thread)
@@ -153,10 +157,10 @@ thread_t *thread_create(address_space_t *address_space, thread_privilege_t privi
     if (!thread) return NULL;
     thread->privilege = privilege;
     thread->address_space = address_space;
-    vPortEnterCritical();
+    kcritical_enter();
     address_space_retain(address_space);
     ++address_space->live_threads;
-    vPortExitCritical();
+    kcritical_exit();
 
     stack_base = kernel_stack_alloc(stack_words * sizeof(StackType_t));
     if (!stack_base) {
@@ -175,13 +179,13 @@ thread_t *thread_create(address_space_t *address_space, thread_privilege_t privi
     }
     /* Do not let the tick handler observe a task between FreeRTOS creation
      * and installation of its SharkKernel association/initial frame. */
-    vPortEnterCritical();
+    kcritical_enter();
     task = xTaskCreateStaticSuspended((TaskFunction_t)(uintptr_t)params->entry_rip,
                                       params->name ? params->name : "thread", stack_words,
                                       params->argument, params->priority,
                                       (StackType_t *)stack_base, task_buffer);
     if (!task) {
-        vPortExitCritical();
+        kcritical_exit();
         kfree(task_buffer);
         kernel_stack_free(stack_base, stack_words * sizeof(StackType_t));
         thread_release_address_space(thread);
@@ -201,29 +205,29 @@ thread_t *thread_create(address_space_t *address_space, thread_privilege_t privi
     }
     if (thread_transition(thread, THREAD_STATE_NEW, THREAD_STATE_READY) != 0)
         for (;;) __asm__ volatile ("cli; hlt");
-    vPortExitCritical();
+    kcritical_exit();
     return thread;
 }
 
 int thread_start(thread_t *thread)
 {
-    uint32_t interrupt_mask = ulPortSetInterruptMask();
+    kirq_flags_t interrupt_mask = kirq_save();
 
     if (!thread || thread->state != THREAD_STATE_READY || !thread->freertos_task ||
         thread_transition(thread, THREAD_STATE_READY, THREAD_STATE_RUNNABLE) != 0) {
-        vPortClearInterruptMask(interrupt_mask);
+        kirq_restore(interrupt_mask);
         return -1;
     }
     vTaskStartSuspended(thread->freertos_task);
-    vPortClearInterruptMask(interrupt_mask);
+    kirq_restore(interrupt_mask);
     return 0;
 }
 
 void thread_destroy_unstarted(thread_t *thread)
 {
-    vPortEnterCritical();
+    kcritical_enter();
     if (!thread || thread->state != THREAD_STATE_READY) {
-        vPortExitCritical();
+        kcritical_exit();
         return;
     }
     vTaskSetSharkThread(thread->freertos_task, NULL);
@@ -232,7 +236,7 @@ void thread_destroy_unstarted(thread_t *thread)
     thread_release_address_space(thread);
     thread_unlink(thread);
     kfree(thread);
-    vPortExitCritical();
+    kcritical_exit();
 }
 
 thread_t *thread_create_started(address_space_t *address_space, thread_privilege_t privilege,
@@ -250,18 +254,18 @@ thread_t *thread_create_started(address_space_t *address_space, thread_privilege
 int thread_delay_current(TickType_t ticks)
 {
     thread_t *thread = thread_current();
-    uint32_t interrupt_mask;
+    kirq_flags_t interrupt_mask;
 
     if (!thread || ticks == 0) return -1;
-    interrupt_mask = ulPortSetInterruptMask();
+    interrupt_mask = kirq_save();
     if (thread_transition(thread, THREAD_STATE_RUNNING, THREAD_STATE_BLOCKED) != 0) {
-        vPortClearInterruptMask(interrupt_mask);
+        kirq_restore(interrupt_mask);
         return -1;
     }
     vTaskDelay(ticks);
     if (thread->state != THREAD_STATE_RUNNING)
         for (;;) __asm__ volatile ("cli; hlt");
-    vPortClearInterruptMask(interrupt_mask);
+    kirq_restore(interrupt_mask);
     return 0;
 }
 
@@ -312,36 +316,36 @@ void thread_reap(void)
     /* Keep DEAD objects registered for one reaper interval.  This makes
      * THREAD_STATE_DEAD observable before the ID becomes INVALID. */
     while (final_dead_threads) {
-        vPortEnterCritical();
+        kcritical_enter();
         thread_t *thread = final_dead_threads;
         final_dead_threads = thread->reap_next;
         thread_unlink(thread);
-        vPortExitCritical();
+        kcritical_exit();
         thread_release_kernel_resources(thread);
         thread_release_address_space(thread);
         kfree(thread);
-        vPortEnterCritical();
+        kcritical_enter();
         ++reaped_threads;
-        vPortExitCritical();
+        kcritical_exit();
     }
     while (dead_threads) {
-        vPortEnterCritical();
+        kcritical_enter();
         thread_t *thread = dead_threads;
         dead_threads = thread->reap_next;
         if (thread_transition(thread, THREAD_STATE_TERMINATING, THREAD_STATE_DEAD) != 0)
             for (;;) __asm__ volatile ("cli; hlt");
         thread->reap_next = final_dead_threads;
         final_dead_threads = thread;
-        vPortExitCritical();
+        kcritical_exit();
     }
 }
 
 uint64_t thread_reaped_count(void)
 {
     uint64_t count;
-    vPortEnterCritical();
+    kcritical_enter();
     count = reaped_threads;
-    vPortExitCritical();
+    kcritical_exit();
     return count;
 }
 
@@ -363,23 +367,23 @@ int thread_block_current(syscall_ctx_t *context)
 }
 int thread_wake(thread_t *thread)
 {
-    uint32_t interrupt_mask = ulPortSetInterruptMask();
+    kirq_flags_t interrupt_mask = kirq_save();
 
     if (!thread || thread->state != THREAD_STATE_BLOCKED || !thread->freertos_task ||
         thread_transition(thread, THREAD_STATE_BLOCKED, THREAD_STATE_RUNNABLE) != 0) {
-        vPortClearInterruptMask(interrupt_mask);
+        kirq_restore(interrupt_mask);
         return -1;
     }
     vTaskResume(thread->freertos_task);
-    vPortClearInterruptMask(interrupt_mask);
+    kirq_restore(interrupt_mask);
     return 0;
 }
 syscall_ctx_t *thread_get_blocked_syscall_context(thread_t *thread)
 {
     syscall_ctx_t *context;
-    vPortEnterCritical();
+    kcritical_enter();
     context = thread && thread->state == THREAD_STATE_BLOCKED ? thread->blocked_syscall_ctx : NULL;
-    vPortExitCritical();
+    kcritical_exit();
     return context;
 }
 

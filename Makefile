@@ -21,5 +21,5 @@ include $(KERNEL_SRC_ROOT)/module.mk
 include $(KERNEL_SRC_ROOT)/arch/x86_64/module.mk
 include $(KERNEL_SRC_ROOT)/freertos/module.mk
 include $(USER_SRC_ROOT)/module.mk
-include $(EXTERNAL_ROOT)/libfifo/module.mk
+include $(MK_ROOT)/libfifo.mk
 include $(MK_ROOT)/rules.mk

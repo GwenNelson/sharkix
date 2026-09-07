@@ -3,16 +3,15 @@
 #include <stdint.h>
 #include <stdbool.h>
  
-#include <libfifo/sync.h>
 #include <sharkix/kernel/uthash.h>
  
 static cap_handle_t next_cap_handle = 0;
 static cap_t*       global_caps_table = NULL;
-static fifo_mutex_t global_caps_table_lock;
+static kmutex_t global_caps_table_lock;
 
 static capset_handle_t next_capset_handle = 1;
 static capset_t       *global_capsets_table = NULL;
-static fifo_mutex_t    global_capsets_table_lock;
+static kmutex_t    global_capsets_table_lock;
 
 static int kcap_validate_rights(cap_type_t type, cap_rights_t rights) {
     switch (type) {
@@ -37,6 +36,14 @@ static capset_t *kcapset_find_locked(capset_handle_t handle)
     return set;
 }
 
+static cap_t *kcap_find_locked(cap_handle_t handle)
+{
+    cap_t *cap = NULL;
+
+    HASH_FIND(hh, global_caps_table, &handle, sizeof(handle), cap);
+    return cap;
+}
+
 void kinit_caps(void)
 {
     global_caps_table    = NULL;
@@ -45,8 +52,8 @@ void kinit_caps(void)
     next_cap_handle    = 1;
     next_capset_handle = 1;
 
-    fifo_mutex_init(&global_caps_table_lock);
-    fifo_mutex_init(&global_capsets_table_lock);
+    kmutex_init(&global_caps_table_lock);
+    kmutex_init(&global_capsets_table_lock);
 
     // we have to do this here, cos it can't be done before the memory system is live
     kcapset_new(&(address_space_kernel()->capset));
@@ -76,7 +83,7 @@ int kcap_create(kobject_handle_t obj_handle,
     cap->obj_handle = obj_handle;
     cap->rights     = init_rights;
 
-    fifo_mutex_lock(&global_caps_table_lock);
+    kmutex_lock(&global_caps_table_lock);
 
     cap->cap_handle = next_cap_handle++;
 
@@ -86,7 +93,7 @@ int kcap_create(kobject_handle_t obj_handle,
              sizeof(cap->cap_handle),
              cap);
 
-    fifo_mutex_unlock(&global_caps_table_lock);
+    kmutex_unlock(&global_caps_table_lock);
 
     *new_cap = cap->cap_handle;
     return 0;
@@ -95,7 +102,7 @@ int kcap_create(kobject_handle_t obj_handle,
 bool kcap_cap_exists(cap_handle_t handle) {
     cap_t *found = NULL;
 
-    fifo_mutex_lock(&global_caps_table_lock);
+    kmutex_lock(&global_caps_table_lock);
 
     HASH_FIND(hh,
               global_caps_table,
@@ -103,7 +110,7 @@ bool kcap_cap_exists(cap_handle_t handle) {
               sizeof(handle),
               found);
 
-    fifo_mutex_unlock(&global_caps_table_lock);
+    kmutex_unlock(&global_caps_table_lock);
 
     return found != NULL;
 }
@@ -111,7 +118,7 @@ bool kcap_cap_exists(cap_handle_t handle) {
 int kcap_destroy(cap_handle_t handle) {
     cap_t *found = NULL;
 
-    fifo_mutex_lock(&global_caps_table_lock);
+    kmutex_lock(&global_caps_table_lock);
 
     HASH_FIND(hh,
               global_caps_table,
@@ -120,13 +127,13 @@ int kcap_destroy(cap_handle_t handle) {
               found);
 
     if (!found) {
-        fifo_mutex_unlock(&global_caps_table_lock);
+        kmutex_unlock(&global_caps_table_lock);
         return -1;
     }
 
     HASH_DEL(global_caps_table, found);
 
-    fifo_mutex_unlock(&global_caps_table_lock);
+    kmutex_unlock(&global_caps_table_lock);
 
     kfree(found);
     return 0;
@@ -148,7 +155,7 @@ int kcap_derive(cap_handle_t source,
 
     memset(derived, 0, sizeof(*derived));
 
-    fifo_mutex_lock(&global_caps_table_lock);
+    kmutex_lock(&global_caps_table_lock);
 
     HASH_FIND(hh,
               global_caps_table,
@@ -157,7 +164,7 @@ int kcap_derive(cap_handle_t source,
               src);
 
     if (!src) {
-        fifo_mutex_unlock(&global_caps_table_lock);
+        kmutex_unlock(&global_caps_table_lock);
         kfree(derived);
         return -1;
     }
@@ -166,7 +173,7 @@ int kcap_derive(cap_handle_t source,
      * Requested rights must be a subset of the source rights.
      */
     if ((new_rights & src->rights) != new_rights) {
-        fifo_mutex_unlock(&global_caps_table_lock);
+        kmutex_unlock(&global_caps_table_lock);
         kfree(derived);
         return -1;
     }
@@ -182,7 +189,7 @@ int kcap_derive(cap_handle_t source,
              sizeof(derived->cap_handle),
              derived);
 
-    fifo_mutex_unlock(&global_caps_table_lock);
+    kmutex_unlock(&global_caps_table_lock);
 
     *new_cap = derived->cap_handle;
     return 0;
@@ -202,7 +209,7 @@ int kcap_clone(cap_handle_t source, cap_handle_t *new_cap)
 
     memset(clone, 0, sizeof(*clone));
 
-    fifo_mutex_lock(&global_caps_table_lock);
+    kmutex_lock(&global_caps_table_lock);
 
     HASH_FIND(hh,
               global_caps_table,
@@ -211,7 +218,7 @@ int kcap_clone(cap_handle_t source, cap_handle_t *new_cap)
               src);
 
     if (!src) {
-        fifo_mutex_unlock(&global_caps_table_lock);
+        kmutex_unlock(&global_caps_table_lock);
         kfree(clone);
         return -1;
     }
@@ -227,7 +234,7 @@ int kcap_clone(cap_handle_t source, cap_handle_t *new_cap)
              sizeof(clone->cap_handle),
              clone);
 
-    fifo_mutex_unlock(&global_caps_table_lock);
+    kmutex_unlock(&global_caps_table_lock);
 
     *new_cap = clone->cap_handle;
     return 0;
@@ -250,7 +257,7 @@ int kcap_merge(cap_handle_t a,
 
     memset(merged, 0, sizeof(*merged));
 
-    fifo_mutex_lock(&global_caps_table_lock);
+    kmutex_lock(&global_caps_table_lock);
 
     HASH_FIND(hh,
               global_caps_table,
@@ -265,14 +272,14 @@ int kcap_merge(cap_handle_t a,
               cap_b);
 
     if (!cap_a || !cap_b) {
-        fifo_mutex_unlock(&global_caps_table_lock);
+        kmutex_unlock(&global_caps_table_lock);
         kfree(merged);
         return -1;
     }
 
     if (!CAPS_SAME_OBJECT(cap_a, cap_b) ||
         !CAP_IS_TYPE(cap_a, cap_b->type)) {
-        fifo_mutex_unlock(&global_caps_table_lock);
+        kmutex_unlock(&global_caps_table_lock);
         kfree(merged);
         return -1;
     }
@@ -287,7 +294,7 @@ int kcap_merge(cap_handle_t a,
      * source caps were valid for this type.
      */
     if (kcap_validate_rights(merged->type, merged->rights) < 0) {
-        fifo_mutex_unlock(&global_caps_table_lock);
+        kmutex_unlock(&global_caps_table_lock);
         kfree(merged);
         return -1;
     }
@@ -298,7 +305,7 @@ int kcap_merge(cap_handle_t a,
              sizeof(merged->cap_handle),
              merged);
 
-    fifo_mutex_unlock(&global_caps_table_lock);
+    kmutex_unlock(&global_caps_table_lock);
 
     *new_cap = merged->cap_handle;
     return 0;
@@ -310,7 +317,7 @@ int kcap_getcap(cap_handle_t handle, cap_t *out) {
     if (!out)
         return -1;
 
-    fifo_mutex_lock(&global_caps_table_lock);
+    kmutex_lock(&global_caps_table_lock);
 
     HASH_FIND(hh,
               global_caps_table,
@@ -319,7 +326,7 @@ int kcap_getcap(cap_handle_t handle, cap_t *out) {
               found);
 
     if (!found) {
-        fifo_mutex_unlock(&global_caps_table_lock);
+        kmutex_unlock(&global_caps_table_lock);
         return -1;
     }
 
@@ -332,7 +339,7 @@ int kcap_getcap(cap_handle_t handle, cap_t *out) {
     out->obj_handle = found->obj_handle;
     out->rights     = found->rights;
 
-    fifo_mutex_unlock(&global_caps_table_lock);
+    kmutex_unlock(&global_caps_table_lock);
 
     return 0;
 }
@@ -349,9 +356,9 @@ int kcapset_new(capset_handle_t *new_set)
         return -1;
 
     memset(set, 0, sizeof(*set));
-    fifo_spinlock_init(&set->spinlock);
+    kspin_init(&set->spinlock);
 
-    fifo_mutex_lock(&global_capsets_table_lock);
+    kmutex_lock(&global_capsets_table_lock);
 
     set->capset_handle = next_capset_handle++;
 
@@ -361,7 +368,7 @@ int kcapset_new(capset_handle_t *new_set)
              sizeof(set->capset_handle),
              set);
 
-    fifo_mutex_unlock(&global_capsets_table_lock);
+    kmutex_unlock(&global_capsets_table_lock);
 
     *new_set = set->capset_handle;
     return 0;
@@ -373,9 +380,6 @@ int kcapset_addcap(capset_handle_t set_handle, cap_handle_t cap_handle)
     capset_entry_t *existing = NULL;
     capset_entry_t *entry;
 
-    if (!kcap_cap_exists(cap_handle))
-        return -1;
-
     entry = kmalloc(sizeof(*entry));
     if (!entry)
         return -1;
@@ -383,22 +387,24 @@ int kcapset_addcap(capset_handle_t set_handle, cap_handle_t cap_handle)
     memset(entry, 0, sizeof(*entry));
     entry->cap_handle = cap_handle;
 
-    fifo_mutex_lock(&global_capsets_table_lock);
-
-    set = kcapset_find_locked(set_handle);
-    if (!set) {
-        fifo_mutex_unlock(&global_capsets_table_lock);
+    kmutex_lock(&global_caps_table_lock);
+    if (!kcap_find_locked(cap_handle)) {
+        kmutex_unlock(&global_caps_table_lock);
         kfree(entry);
         return -1;
     }
 
-    /*
-     * If capsets cannot yet be destroyed, dropping this mutex here is
-     * okay because `set` stays alive.
-     */
-    fifo_mutex_unlock(&global_capsets_table_lock);
+    kmutex_lock(&global_capsets_table_lock);
 
-    fifo_spinlock_lock(&set->spinlock);
+    set = kcapset_find_locked(set_handle);
+    if (!set) {
+        kmutex_unlock(&global_capsets_table_lock);
+        kmutex_unlock(&global_caps_table_lock);
+        kfree(entry);
+        return -1;
+    }
+
+    kspin_lock(&set->spinlock);
 
     HASH_FIND(hh,
               set->caps,
@@ -407,7 +413,9 @@ int kcapset_addcap(capset_handle_t set_handle, cap_handle_t cap_handle)
               existing);
 
     if (existing) {
-        fifo_spinlock_unlock(&set->spinlock);
+        kspin_unlock(&set->spinlock);
+        kmutex_unlock(&global_capsets_table_lock);
+        kmutex_unlock(&global_caps_table_lock);
         kfree(entry);
         return -1;
     }
@@ -418,7 +426,9 @@ int kcapset_addcap(capset_handle_t set_handle, cap_handle_t cap_handle)
              sizeof(entry->cap_handle),
              entry);
 
-    fifo_spinlock_unlock(&set->spinlock);
+    kspin_unlock(&set->spinlock);
+    kmutex_unlock(&global_capsets_table_lock);
+    kmutex_unlock(&global_caps_table_lock);
 
     return 0;
 }
@@ -428,17 +438,15 @@ int kcapset_delcap(capset_handle_t set_handle, cap_handle_t cap_handle)
     capset_t *set;
     capset_entry_t *entry = NULL;
 
-    fifo_mutex_lock(&global_capsets_table_lock);
+    kmutex_lock(&global_capsets_table_lock);
 
     set = kcapset_find_locked(set_handle);
     if (!set) {
-        fifo_mutex_unlock(&global_capsets_table_lock);
+        kmutex_unlock(&global_capsets_table_lock);
         return -1;
     }
 
-    fifo_mutex_unlock(&global_capsets_table_lock);
-
-    fifo_spinlock_lock(&set->spinlock);
+    kspin_lock(&set->spinlock);
 
     HASH_FIND(hh,
               set->caps,
@@ -447,13 +455,15 @@ int kcapset_delcap(capset_handle_t set_handle, cap_handle_t cap_handle)
               entry);
 
     if (!entry) {
-        fifo_spinlock_unlock(&set->spinlock);
+        kspin_unlock(&set->spinlock);
+        kmutex_unlock(&global_capsets_table_lock);
         return -1;
     }
 
     HASH_DEL(set->caps, entry);
 
-    fifo_spinlock_unlock(&set->spinlock);
+    kspin_unlock(&set->spinlock);
+    kmutex_unlock(&global_capsets_table_lock);
 
     kfree(entry);
     return 0;
@@ -464,17 +474,15 @@ bool kcapset_hascap(capset_handle_t set_handle, cap_handle_t cap_handle)
     capset_t *set;
     capset_entry_t *entry = NULL;
 
-    fifo_mutex_lock(&global_capsets_table_lock);
+    kmutex_lock(&global_capsets_table_lock);
 
     set = kcapset_find_locked(set_handle);
     if (!set) {
-        fifo_mutex_unlock(&global_capsets_table_lock);
+        kmutex_unlock(&global_capsets_table_lock);
         return false;
     }
 
-    fifo_mutex_unlock(&global_capsets_table_lock);
-
-    fifo_spinlock_lock(&set->spinlock);
+    kspin_lock(&set->spinlock);
 
     HASH_FIND(hh,
               set->caps,
@@ -482,7 +490,8 @@ bool kcapset_hascap(capset_handle_t set_handle, cap_handle_t cap_handle)
               sizeof(cap_handle),
               entry);
 
-    fifo_spinlock_unlock(&set->spinlock);
+    kspin_unlock(&set->spinlock);
+    kmutex_unlock(&global_capsets_table_lock);
 
     return entry != NULL;
 }
@@ -496,22 +505,28 @@ int kcapset_resolve_cap(capset_handle_t set_handle,
     capset_entry_t *entry, *tmp;
     cap_t cap;
 
-    fifo_mutex_lock(&global_capsets_table_lock);
+    kmutex_lock(&global_caps_table_lock);
+    kmutex_lock(&global_capsets_table_lock);
 
     set = kcapset_find_locked(set_handle);
 
     if (!set) {
-        fifo_mutex_unlock(&global_capsets_table_lock);
+        kmutex_unlock(&global_capsets_table_lock);
+        kmutex_unlock(&global_caps_table_lock);
         return -1;
     }
 
-    fifo_mutex_unlock(&global_capsets_table_lock);
-
-    fifo_spinlock_lock(&set->spinlock);
+    kspin_lock(&set->spinlock);
 
     HASH_ITER(hh, set->caps, entry, tmp) {
-        if (kcap_getcap(entry->cap_handle, &cap) < 0)
+        cap_t *found = kcap_find_locked(entry->cap_handle);
+        if (!found)
             continue;
+
+        cap.cap_handle = found->cap_handle;
+        cap.type = found->type;
+        cap.obj_handle = found->obj_handle;
+        cap.rights = found->rights;
 
         if (!CAP_IS_TYPE(&cap, req_type))
             continue;
@@ -526,11 +541,15 @@ int kcapset_resolve_cap(capset_handle_t set_handle,
             out->rights     = cap.rights;
         }
 
-        fifo_spinlock_unlock(&set->spinlock);
+        kspin_unlock(&set->spinlock);
+        kmutex_unlock(&global_capsets_table_lock);
+        kmutex_unlock(&global_caps_table_lock);
         return 0;
     }
 
-    fifo_spinlock_unlock(&set->spinlock);
+    kspin_unlock(&set->spinlock);
+    kmutex_unlock(&global_capsets_table_lock);
+    kmutex_unlock(&global_caps_table_lock);
 
     return -1;
 }
@@ -548,17 +567,17 @@ int kcapset_resolve_handle(capset_handle_t set_handle,
     if (!out)
         return -1;
 
-    fifo_mutex_lock(&global_capsets_table_lock);
+    kmutex_lock(&global_caps_table_lock);
+    kmutex_lock(&global_capsets_table_lock);
 
     set = kcapset_find_locked(set_handle);
     if (!set) {
-        fifo_mutex_unlock(&global_capsets_table_lock);
+        kmutex_unlock(&global_capsets_table_lock);
+        kmutex_unlock(&global_caps_table_lock);
         return -1;
     }
 
-    fifo_mutex_unlock(&global_capsets_table_lock);
-
-    fifo_spinlock_lock(&set->spinlock);
+    kspin_lock(&set->spinlock);
 
     HASH_FIND(hh,
               set->caps,
@@ -566,16 +585,32 @@ int kcapset_resolve_handle(capset_handle_t set_handle,
               sizeof(cap_handle),
               entry);
 
-    if (!entry || kcap_getcap(cap_handle, &cap) != 0 ||
-        !CAP_IS_TYPE(&cap, required_type) ||
+    cap_t *found = entry ? kcap_find_locked(cap_handle) : NULL;
+    if (!found) {
+        kspin_unlock(&set->spinlock);
+        kmutex_unlock(&global_capsets_table_lock);
+        kmutex_unlock(&global_caps_table_lock);
+        return -1;
+    }
+
+    cap.cap_handle = found->cap_handle;
+    cap.type = found->type;
+    cap.obj_handle = found->obj_handle;
+    cap.rights = found->rights;
+
+    if (!CAP_IS_TYPE(&cap, required_type) ||
         !CAP_HAS_ALL(&cap, required_rights)) {
-        fifo_spinlock_unlock(&set->spinlock);
+        kspin_unlock(&set->spinlock);
+        kmutex_unlock(&global_capsets_table_lock);
+        kmutex_unlock(&global_caps_table_lock);
         return -1;
     }
 
     *out = cap.obj_handle;
 
-    fifo_spinlock_unlock(&set->spinlock);
+    kspin_unlock(&set->spinlock);
+    kmutex_unlock(&global_capsets_table_lock);
+    kmutex_unlock(&global_caps_table_lock);
     return 0;
 }
 
