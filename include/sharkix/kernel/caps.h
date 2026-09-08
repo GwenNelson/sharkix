@@ -28,20 +28,36 @@ typedef uint64_t cap_rights_t;
 #include <sharkix/kernel/uthash.h>
 
 // standard perms (used on all object types)
-#define CAP_RIGHT_NONE		 UINT64_C(0)	    /* No rights at all                      */
-#define CAP_RIGHT_TRANSFER	(UINT64_C(1) << 0)  /* Can transfer this cap to another task */
-#define CAP_RIGHT_DERIVE	(UINT64_C(1) << 1)  /* Can derive another cap from this cap  */
-#define CAP_RIGHT_DESTROY	(UINT64_C(1) << 2)  /* Can destroy the underlying object     */
+//
+// FUTURE GWEN, FUTURE DEVS, AI AGENTS, READ THIS CAREFULLY:
+//
+// NOTE - the address space is the security domain, not threads
+//        threads in the same address space can fuck with each other
+//        THERE IS NO SUCH THING AS A CAPSET THAT IS UNIQUE TO ONE THREAD
+//        IF ONE THREAD IN AN ADDRESS SPACE CAN DO SOMETHING, SO CAN ALL OTHERS
+//        EVEN IF A THREAD SOMEHOW ACQUIRES A LOCAL CAPSET, OTHER THREADS IN THE SAME ADDRESS SPACE CAN JUST STEAL IT
+//        THE KERNEL ENFORCES AT ADDRESS SPACE LEVEL, NOT THE THREAD LEVEL OR THE CAPSET LEVEL
+//        BY CONVENTION, EVERY ADDRESS SPACE GETS ONE CAPSET
+//        WE MIGHT LATER ALLOW CONSTRUCTING CAPSETS IN USERSPACE, BUT THEY WILL BE UNIQUE kobject OBJECTS
+//        AND THEY WILL ALSO BE TRANSFERRABLE
+//
+//
+#define CAP_RIGHT_NONE		 UINT64_C(0)	    /* No rights at all                                      */
+#define CAP_RIGHT_TRANSFER	(UINT64_C(1) << 0)  /* Can transfer this cap to another task's capset        */
+#define CAP_RIGHT_FORWARD	(UINT64_C(1) << 1)  /* Can forward this cap as-is OR use it locally not both */
+#define CAP_RIGHT_DERIVE	(UINT64_C(1) << 2)  /* Can derive another cap from this cap                  */
+#define CAP_RIGHT_DESTROY	(UINT64_C(1) << 3)  /* Can destroy the underlying object                     */
+#define CAP_RIGHT_REMOVE	(UINT64_C(1) << 4)  /* Can remove the cap - this removes it globally         */
 
 // mask defining all valid rights for any generic object
 // this should be updated if any reserved bits get used
 #define CAP_GENERIC_VALID_RIGHTS	(CAP_RIGHT_TRANSFER | \
+					 CAP_RIGHT_FORWARD | \
 					 CAP_RIGHT_DERIVE | \
-					 CAP_RIGHT_DESTROY)
+					 CAP_RIGHT_DESTROY | \
+					 CAP_RIGHT_REMOVE)
 
 // reserved for future standard perms
-#define CAP_RIGHT_RESV3		(UINT64_C(1) << 3)
-#define CAP_RIGHT_RESV4		(UINT64_C(1) << 4)
 #define CAP_RIGHT_RESV5		(UINT64_C(1) << 5)
 #define CAP_RIGHT_RESV6		(UINT64_C(1) << 6)
 #define CAP_RIGHT_RESV7		(UINT64_C(1) << 7)
