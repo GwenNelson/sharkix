@@ -566,11 +566,29 @@ static bool walk_to_pte(uint64_t pml4_phys, uintptr_t va, page_walk_t *walk)
     return true;
 }
 
+
 static bool allocate_page_table(uint64_t *out_phys)
+{
+    uint64_t *table;
+
+    if (!out_phys)
+        return false;
+
+    if (!phys_alloc_page(out_phys))
+        return false;
+
+    table = page_table(*out_phys);
+
+    for (size_t i = 0; i < PAGE_SIZE / sizeof(*table); ++i)
+        table[i] = 0;
+
+    return true;
+}
+/*static bool allocate_page_table(uint64_t *out_phys)
 {
     if (!phys_alloc_page(out_phys)) return false;
     return true;
-}
+}*/
 
 static bool ensure_page_table(uint64_t pml4_phys, uintptr_t va, bool user, page_walk_t *walk)
 {
