@@ -13,7 +13,8 @@
 #define VGA_ATTRIBUTE 0x0f00U
 #define VGA_CRTC_INDEX 0x3d4
 #define VGA_CRTC_DATA 0x3d5
-static volatile uint16_t *const vga = (volatile uint16_t *)(PHYSMAP_BASE + VGA_PHYS);
+//static volatile uint16_t *const vga = (volatile uint16_t *)(PHYSMAP_BASE + VGA_PHYS);
+static volatile uint16_t *vga = NULL;
 
 static uintptr_t vga_va;
 static uint8_t vga_x, vga_y;
@@ -50,20 +51,39 @@ static void vga_scroll_if_needed(void)
     vga_y = VGA_HEIGHT - 1;
 }
 
-void console_vga_init(void)
-{
-    if (kpmem_create(&vga_pmem, 0xB8000, 0x8000) != 0)
-        return;
-
-    if (kvalloc(0x8000, &vga_va) != 0) {
+void console_vga_init(void) {
+     // start off by allocating the physical memory region object
+     if (kpmem_create(&vga_pmem, 0xB8000, 0x8000) != 0) {
+         return;
+     }
+     
+     // allocate a virtual address space for it
+     if (kvalloc(0x8000, &vga_va) != 0) {
         console_write("console-vga.c:console_vga_init() - failed kvalloc() of VRAM!\n");
-    }
+        return;
+     }
 
-    uint16_t position = vga_cursor_position();
-    if (position >= VGA_WIDTH * VGA_HEIGHT) position = 0;
-    vga_x = (uint8_t)(position % VGA_WIDTH);
-    vga_y = (uint8_t)(position / VGA_WIDTH);
-    vga_ready = true;
+     // map it into kernel space (later on this will be userspace)
+     // also, eventually we should probably actually grab it from the pmem_t above
+     if (address_space_map_range(address_space_kernel(),
+                            vga_va,
+                            0xB8000,
+                            0x8000,
+                            PAGE_WRITABLE | PAGE_NX) != 0) {
+				     kvfree(vga_va);
+				     console_write("console-vga.c:console_vga_init() - failed to map VRAM!\n");
+				     return;
+			    }
+
+     // and if we get here, we should be able to talk to VRAM!
+     vga = (uint16_t*)vga_va;
+
+     // now setup the cursor stuff and other nonsense
+     uint16_t position = vga_cursor_position();
+     if (position >= VGA_WIDTH * VGA_HEIGHT) position = 0;
+     vga_x = (uint8_t)(position % VGA_WIDTH);
+     vga_y = (uint8_t)(position / VGA_WIDTH);
+     vga_ready = true;
 }
 
 bool console_vga_isready(void)
