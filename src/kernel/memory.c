@@ -728,6 +728,7 @@ static void address_space_destroy(address_space_t *address_space)
         if (address_space_unmap_page(address_space, address_space->mappings->virtual_address) != 0)
             memory_panic("address space destroy unmap failed");
     phys_page_put(address_space->pml4_phys);
+    kcapset_destroy(address_space->capset);
     kfree(address_space);
 }
 

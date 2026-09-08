@@ -374,6 +374,33 @@ int kcapset_new(capset_handle_t *new_set)
     return 0;
 }
 
+int kcapset_destroy(capset_handle_t set_handle)
+{
+    capset_t *set;
+    capset_entry_t *entry, *tmp;
+
+    kmutex_lock(&global_capsets_table_lock);
+
+    set = kcapset_find_locked(set_handle);
+    if (!set) {
+        kmutex_unlock(&global_capsets_table_lock);
+        return -1;
+    }
+
+    kspin_lock(&set->spinlock);
+    HASH_DEL(global_capsets_table, set);
+    kspin_unlock(&set->spinlock);
+    kmutex_unlock(&global_capsets_table_lock);
+
+    HASH_ITER(hh, set->caps, entry, tmp) {
+        HASH_DEL(set->caps, entry);
+        kfree(entry);
+    }
+
+    kfree(set);
+    return 0;
+}
+
 int kcapset_addcap(capset_handle_t set_handle, cap_handle_t cap_handle)
 {
     capset_t *set;

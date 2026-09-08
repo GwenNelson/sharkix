@@ -163,6 +163,9 @@ int kcap_getcap(cap_handle_t handle, cap_t *out);
 // allocate and create a new capset
 int  kcapset_new(capset_handle_t *new_set);
 
+// destroy a capset and its membership entries; referenced caps remain valid
+int  kcapset_destroy(capset_handle_t set);
+
 // add a cap to a capset
 int  kcapset_addcap(capset_handle_t set, cap_handle_t cap);
 
