@@ -5,6 +5,9 @@ else
 $(error x86-64 selection loaded for ARCH_BITS=$(ARCH_BITS))
 endif
 
+QEMU ?= qemu-system-x86_64
+QEMU_ACCEL_FLAGS ?= $(if $(wildcard /dev/kvm),-enable-kvm -cpu host,-cpu qemu64)
+
 KERNEL_CFLAGS += -m64 -mcmodel=kernel -fno-stack-protector -fno-pic -fno-pie -mno-red-zone -mno-sse -mno-mmx -mno-80387 -fno-asynchronous-unwind-tables
 KERNEL_ASFLAGS += -m64 $(if $(filter 1,$(DEBUG)),-g)
 KERNEL_CPPFLAGS += -I$(INCLUDE_ROOT) -I$(KERNEL_INCLUDE_ROOT)/freertos -I$(KERNEL_INCLUDE_ROOT)/arch/x86_64 -I$(KERNEL_INCLUDE_ROOT) -I$(EXTERNAL_ROOT)/libfifo/include

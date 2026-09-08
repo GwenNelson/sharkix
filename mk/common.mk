@@ -20,9 +20,7 @@ LD ?= ld
 AR ?= ar
 OBJCOPY ?= objcopy
 GRUB_MKRESCUE ?= grub-mkrescue
-QEMU ?= qemu-system-x86_64
 MKDIR_P ?= mkdir -p
-QEMU_ACCEL_FLAGS ?= $(if $(wildcard /dev/kvm),-enable-kvm -cpu host,-cpu qemu64)
 
 BUILD_VARIANT = $(if $(filter 1,$(DEBUG)),debug,release)
 CONFIG_BUILD_ROOT = $(BUILD_ROOT)/$(CONFIG)/$(PROFILE)/$(BUILD_VARIANT)
