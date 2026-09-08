@@ -3,6 +3,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+
+#define KVALLOC_BASE UINT64_C(0xfffff00000000000)
+#define KVALLOC_SIZE UINT64_C(0x0000008000000000)
+#define KVALLOC_END  (KVALLOC_BASE + KVALLOC_SIZE)
+
 /*
  * Setup the kvalloc subsystem
  *

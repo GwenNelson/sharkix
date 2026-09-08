@@ -4,6 +4,7 @@
 #include "FreeRTOS.h"
 #include "console.h"
 #include "memory.h"
+#include "kvalloc.h"
 #include "sharkix/kernel/sync.h"
 #include "sharkix/kernel/boot/multiboot1.h"
 
@@ -1083,6 +1084,28 @@ void kernel_stack_free(void *base_pointer, size_t size)
     kcritical_exit();
 }
 
+static void ensure_kernel_pml4_slot(uintptr_t va)
+{
+    uint64_t *pml4 = page_table(address_space_kernel()->pml4_phys);
+    unsigned index = (unsigned)((va >> 39) & 0x1ffU);
+    uint64_t pdpt_phys;
+    uint64_t *pdpt;
+
+    if (pml4[index] & PAGE_PRESENT)
+        return;
+
+    if (!phys_alloc_page(&pdpt_phys))
+        memory_panic("failed to allocate kernel PML4 slot");
+
+    pdpt = page_table(pdpt_phys);
+
+    for (size_t i = 0; i < PAGE_SIZE / sizeof(*pdpt); ++i)
+        pdpt[i] = 0;
+
+    pml4[index] = pdpt_phys | PAGE_PRESENT | PAGE_WRITABLE;
+}
+
+
 void memory_init(uint32_t multiboot_magic, uint32_t multiboot_info_phys)
 {
     multiboot_info_t *mbi = (multiboot_info_t *)(uintptr_t)multiboot_info_phys;
@@ -1111,6 +1134,8 @@ void memory_init(uint32_t multiboot_magic, uint32_t multiboot_info_phys)
     expand_physmap(tracked_phys_limit);
     allocator_init_metadata();
     bootstrap_finish();
+
+    ensure_kernel_pml4_slot(KVALLOC_BASE);
 
     page_table(kernel_address_space.pml4_phys)[0] = 0;
     address_space_activate(address_space_kernel());
