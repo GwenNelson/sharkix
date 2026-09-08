@@ -21,6 +21,9 @@
 #define KMALLOC_MIN_SPLIT             32ULL
 #define MAX_BOOT_RANGES               128U
 
+// TODO - fix this maybe to support >512GiB of physical memory, and audit it in general and rewrite any nonsense
+// 	  more importantly - need to rework it to be more cross-platform
+
 typedef struct boot_range {
     uint64_t start;
     uint64_t end;
