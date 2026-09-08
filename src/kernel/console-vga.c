@@ -1,6 +1,6 @@
 #include <stddef.h>
 #include <stdint.h>
-#include "console.h"
+#include <stdbool.h>
 #include "console-vga.h"
 #include "memory.h"
 #include "pmem.h"
@@ -15,6 +15,7 @@
 static volatile uint16_t *const vga = (volatile uint16_t *)(PHYSMAP_BASE + VGA_PHYS);
 static uint8_t vga_x, vga_y;
 static pmem_handle_t vga_pmem = PMEM_INVALID_HANDLE;
+static bool vga_ready;
 
 static void outb(uint16_t port, uint8_t value) { __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port)); }
 static uint8_t inb(uint16_t port) { uint8_t value; __asm__ volatile ("inb %1, %0" : "=a"(value) : "Nd"(port)); return value; }
@@ -46,21 +47,26 @@ static void vga_scroll_if_needed(void)
     vga_y = VGA_HEIGHT - 1;
 }
 
-void console_init(void)
+void console_vga_init(void)
 {
-    outb(0x3f9, 0); outb(0x3fb, 0x80); outb(0x3f8, 3);
-    outb(0x3f9, 0); outb(0x3fb, 3); outb(0x3fa, 0xc7); outb(0x3fc, 0x0b);
+    if (kpmem_create(&vga_pmem, 0xB8000, 0x8000) != 0)
+        return;
     uint16_t position = vga_cursor_position();
     if (position >= VGA_WIDTH * VGA_HEIGHT) position = 0;
     vga_x = (uint8_t)(position % VGA_WIDTH);
     vga_y = (uint8_t)(position / VGA_WIDTH);
+    vga_ready = true;
 }
-void console_putc(char c)
+
+bool console_vga_isready(void)
+{
+    return vga_ready;
+}
+
+void console_vga_putc(char c)
 {
     kcritical_enter();
-    while ((inb(0x3fd) & 0x20) == 0) {}
     if (c == '\n') {
-        outb(0x3f8, '\r'); outb(0x3f8, '\n');
         vga_x = 0;
         ++vga_y;
         vga_scroll_if_needed();
@@ -68,7 +74,6 @@ void console_putc(char c)
         kcritical_exit();
         return;
     }
-    outb(0x3f8, (uint8_t)c);
     vga[(size_t)vga_y * VGA_WIDTH + vga_x] = VGA_ATTRIBUTE | (uint8_t)c;
     if (++vga_x == VGA_WIDTH) {
         vga_x = 0;
@@ -77,23 +82,4 @@ void console_putc(char c)
     }
     vga_set_cursor();
     kcritical_exit();
-}
-void console_write(const char *text) { while (*text) console_putc(*text++); }
-void console_hex(uint64_t value)
-{
-    static const char digits[] = "0123456789abcdef";
-    console_write("0x");
-    for (int i = 15; i >= 0; --i) console_putc(digits[(value >> (i * 4)) & 0xf]);
-}
-void console_decimal(uint64_t value)
-{
-    char digits[21]; unsigned n = 0;
-    if (!value) { console_putc('0'); return; }
-    while (value) { digits[n++] = (char)('0' + value % 10); value /= 10; }
-    while (n) console_putc(digits[--n]);
-}
-
-void vga_init(void)
-{
-    (void)kpmem_create(&vga_pmem, 0xB8000, 0x8000);
 }
