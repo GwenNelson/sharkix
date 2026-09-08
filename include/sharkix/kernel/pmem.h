@@ -18,6 +18,8 @@ typedef struct pmem_t {
 	UT_hash_handle hh;
 } pmem_t;
 
+void kpmem_init(void);
+
 // create a new physical memory object, returns 0 on success and -1 on failure
 int kpmem_create(pmem_handle_t *out, uintptr_t base, size_t len);
 

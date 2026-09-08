@@ -6,6 +6,7 @@
 #include "arch.h"
 #include "console.h"
 #include "memory.h"
+#include "pmem.h"
 #include "startup.h"
 #include "caps.h"
 #include "sync.h"
@@ -113,6 +114,7 @@ void kernel_high_entry(uint32_t magic, uint32_t info)
     startup_common_init();
     if (virt_to_phys(phys_to_virt(VGA_PHYS)) == VGA_PHYS) console_write("physmap translation: ok\n");
     ksync_init();
+    kpmem_init();
     kinit_caps();
     kernel_startup_profile();
     vTaskStartScheduler();
