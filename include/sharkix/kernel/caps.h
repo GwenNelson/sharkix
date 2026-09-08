@@ -29,16 +29,17 @@ typedef uint64_t cap_rights_t;
 
 // standard perms (used on all object types)
 #define CAP_RIGHT_NONE		 UINT64_C(0)	    /* No rights at all                      */
-#define CAP_RIGHT_DELEGATE	(UINT64_C(1) << 0)  /* Can delegate this cap to another task */
-#define CAP_RIGHT_DESTROY	(UINT64_C(1) << 1)  /* Can destroy the underlying object     */
+#define CAP_RIGHT_TRANSFER	(UINT64_C(1) << 0)  /* Can transfer this cap to another task */
+#define CAP_RIGHT_DERIVE	(UINT64_C(1) << 1)  /* Can derive another cap from this cap  */
+#define CAP_RIGHT_DESTROY	(UINT64_C(1) << 2)  /* Can destroy the underlying object     */
 
 // mask defining all valid rights for any generic object
 // this should be updated if any reserved bits get used
-#define CAP_GENERIC_VALID_RIGHTS	(CAP_RIGHT_DELEGATE | \
+#define CAP_GENERIC_VALID_RIGHTS	(CAP_RIGHT_TRANSFER | \
+					 CAP_RIGHT_DERIVE | \
 					 CAP_RIGHT_DESTROY)
 
 // reserved for future standard perms
-#define CAP_RIGHT_RESV2		(UINT64_C(1) << 2)
 #define CAP_RIGHT_RESV3		(UINT64_C(1) << 3)
 #define CAP_RIGHT_RESV4		(UINT64_C(1) << 4)
 #define CAP_RIGHT_RESV5		(UINT64_C(1) << 5)
