@@ -9,9 +9,8 @@ MK_ROOT ?= $(SHARKIX_PROJECT_ROOT)/mk
 CONFIG_ROOT ?= $(SHARKIX_PROJECT_ROOT)/configs
 BUILD_ROOT ?= $(SHARKIX_PROJECT_ROOT)/build
 EXTERNAL_ROOT ?= $(SHARKIX_PROJECT_ROOT)/external
-BOOTSTUB32_ROOT ?= $(SHARKIX_PROJECT_ROOT)/bootstub32
 
-CONFIG ?= pc-x86_64-debug
+CONFIG ?= default
 PROFILE ?= normal
 DEBUG ?= 0
 
@@ -19,7 +18,6 @@ CC ?= gcc
 LD ?= ld
 AR ?= ar
 OBJCOPY ?= objcopy
-GRUB_MKRESCUE ?= grub-mkrescue
 MKDIR_P ?= mkdir -p
 
 BUILD_VARIANT = $(if $(filter 1,$(DEBUG)),debug,release)
@@ -27,8 +25,6 @@ CONFIG_BUILD_ROOT = $(BUILD_ROOT)/$(CONFIG)/$(PROFILE)/$(BUILD_VARIANT)
 KERNEL_OBJ_ROOT = $(CONFIG_BUILD_ROOT)/kernel
 USER_OBJ_ROOT = $(CONFIG_BUILD_ROOT)/user
 KERNEL_ELF = $(CONFIG_BUILD_ROOT)/kernel.elf
-ISO_ROOT = $(CONFIG_BUILD_ROOT)/iso
-ISO_IMAGE = $(CONFIG_BUILD_ROOT)/sharkix.iso
 
 # Module accumulators. Modules append; only documented scalar selections are
 # assigned by the selector that owns them.
@@ -48,6 +44,7 @@ KERNEL_LINKER_FORMAT :=
 KERNEL_OBJECTS :=
 USER_OBJECTS :=
 KERNEL_DEPFILES :=
+KERNEL_ARCH_MODULE_ROOTS :=
 BOOT_ARTIFACTS :=
-QEMU_ARGS :=
+CLEAN_COMMAND := :
 PROFILE_SOURCE :=

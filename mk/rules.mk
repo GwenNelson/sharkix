@@ -62,42 +62,30 @@ $(LIBFIFO_ARTIFACT): $(LIBFIFO_OBJECTS)
 	$(MKDIR_P) $(@D)
 	$(AR) rcs $@ $^
 
-$(BOOTSTUB32_BUILD_ROOT)/bootstub32.o: $(BOOTSTUB32_MODULE_ROOT)/bootstub32.S
-	$(MKDIR_P) $(@D)
-	$(CC) $(BOOTSTUB32_ASFLAGS) -c $< -o $@
-$(BOOTSTUB32_BUILD_ROOT)/bootstub32_c.o: $(BOOTSTUB32_MODULE_ROOT)/bootstub32.c
-	$(MKDIR_P) $(@D)
-	$(CC) $(BOOTSTUB32_CFLAGS) -c $< -o $@
-$(BOOTSTUB32_ARTIFACT): $(BOOTSTUB32_OBJECTS) $(BOOTSTUB32_MODULE_ROOT)/bootstub32.ld
-	$(MKDIR_P) $(@D)
-	$(LD) $(BOOTSTUB32_LDFLAGS) -o $@ $(BOOTSTUB32_OBJECTS)
-bootstub32/bootstub32: $(BOOTSTUB32_ARTIFACT)
-	ln -sfn $(patsubst $(SHARKIX_PROJECT_ROOT)/%,%,$<) $@
-
 run: $(KERNEL_ELF) $(BOOT_ARTIFACTS)
-	$(QEMU) $(QEMU_ARGS) -kernel $(BOOTSTUB32_ARTIFACT) -initrd $(KERNEL_ELF)
+	$(if $(strip $(RUN_COMMAND)),$(RUN_COMMAND),$(error run is unsupported by the selected architecture and platform))
 
 # Preserve the historical public target and its clean debug rebuild behavior.
 run-gdb:
 	$(MAKE) clean
 	$(MAKE) DEBUG=1 _run-gdb
 _run-gdb: $(KERNEL_ELF) $(BOOT_ARTIFACTS)
-	$(QEMU) $(QEMU_ARGS) -kernel $(BOOTSTUB32_ARTIFACT) -initrd $(KERNEL_ELF) -S -s
+	$(if $(strip $(RUN_GDB_COMMAND)),$(RUN_GDB_COMMAND),$(error run-gdb is unsupported by the selected architecture and platform))
 
-$(ISO_IMAGE): $(KERNEL_ELF) $(SHARKIX_PROJECT_ROOT)/grub.cfg
-	$(MKDIR_P) $(ISO_ROOT)/boot/grub
-	cp $(KERNEL_ELF) $(ISO_ROOT)/boot/kernel.elf
-	cp $(SHARKIX_PROJECT_ROOT)/grub.cfg $(ISO_ROOT)/boot/grub/grub.cfg
-	$(GRUB_MKRESCUE) -o $@ $(ISO_ROOT) >/dev/null
-iso: $(ISO_IMAGE)
-	ln -sfn $(patsubst $(SHARKIX_PROJECT_ROOT)/%,%,$<) sharkix.iso
-run-iso: $(ISO_IMAGE)
-	$(QEMU) $(QEMU_ARGS) -cdrom $(ISO_IMAGE)
+iso: $(KERNEL_ELF)
+	$(if $(strip $(ISO_CREATE_COMMAND)),,$(error iso is unsupported by the selected architecture and platform))
+	$(MKDIR_P) $(dir $(ISO_KERNEL_PATH))
+	cp $(KERNEL_ELF) $(ISO_KERNEL_PATH)
+	$(MKDIR_P) $(dir $(ISO_BOOT_CONFIG_PATH))
+	cp $(ISO_BOOT_CONFIG_SOURCE) $(ISO_BOOT_CONFIG_PATH)
+	$(ISO_CREATE_COMMAND)
+	ln -sfn $(patsubst $(SHARKIX_PROJECT_ROOT)/%,%,$(ISO_IMAGE)) $(ISO_LINK_PATH)
+run-iso: iso
+	$(if $(strip $(RUN_ISO_COMMAND)),$(RUN_ISO_COMMAND),$(error run-iso is unsupported by the selected architecture and platform))
 verify: $(KERNEL_ELF)
-	readelf -h $(KERNEL_ELF)
-	readelf -l $(KERNEL_ELF)
-	grub-file --is-x86-multiboot $(KERNEL_ELF)
+	$(if $(strip $(VERIFY_COMMAND)),$(VERIFY_COMMAND),$(error verify is unsupported by the selected architecture and platform))
 
 clean:
 	rm -rf $(BUILD_ROOT)
-	rm -f kernel.elf sharkix.iso bootstub32/bootstub32
+	rm -f kernel.elf
+	$(CLEAN_COMMAND)

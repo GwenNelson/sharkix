@@ -1,0 +1,18 @@
+BOOTSTUB32_ROOT ?= $(SHARKIX_PROJECT_ROOT)/bootstub32
+
+$(call include-module,$(BOOTSTUB32_ROOT))
+BOOT_ARTIFACTS += $(BOOTSTUB32_ARTIFACT)
+
+$(BOOTSTUB32_BUILD_ROOT)/bootstub32.o: $(BOOTSTUB32_MODULE_ROOT)/bootstub32.S
+	$(MKDIR_P) $(@D)
+	$(CC) $(BOOTSTUB32_ASFLAGS) -c $< -o $@
+$(BOOTSTUB32_BUILD_ROOT)/bootstub32_c.o: $(BOOTSTUB32_MODULE_ROOT)/bootstub32.c
+	$(MKDIR_P) $(@D)
+	$(CC) $(BOOTSTUB32_CFLAGS) -c $< -o $@
+$(BOOTSTUB32_ARTIFACT): $(BOOTSTUB32_OBJECTS) $(BOOTSTUB32_MODULE_ROOT)/bootstub32.ld
+	$(MKDIR_P) $(@D)
+	$(LD) $(BOOTSTUB32_LDFLAGS) -o $@ $(BOOTSTUB32_OBJECTS)
+bootstub32/bootstub32: $(BOOTSTUB32_ARTIFACT)
+	ln -sfn $(patsubst $(SHARKIX_PROJECT_ROOT)/%,%,$<) $@
+
+CLEAN_COMMAND += && rm -f bootstub32/bootstub32

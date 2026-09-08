@@ -7,6 +7,9 @@ endif
 
 QEMU ?= qemu-system-x86_64
 QEMU_ACCEL_FLAGS ?= $(if $(wildcard /dev/kvm),-enable-kvm -cpu host,-cpu qemu64)
+GRUB_MKRESCUE ?= grub-mkrescue
+ISO_ROOT = $(CONFIG_BUILD_ROOT)/iso
+ISO_IMAGE = $(CONFIG_BUILD_ROOT)/sharkix.iso
 
 KERNEL_CFLAGS += -m64 -mcmodel=kernel -fno-stack-protector -fno-pic -fno-pie -mno-red-zone -mno-sse -mno-mmx -mno-80387 -fno-asynchronous-unwind-tables
 KERNEL_ASFLAGS += -m64 $(if $(filter 1,$(DEBUG)),-g)
@@ -14,3 +17,4 @@ KERNEL_CPPFLAGS += -I$(INCLUDE_ROOT) -I$(KERNEL_INCLUDE_ROOT)/freertos -I$(KERNE
 KERNEL_LINKER_FORMAT := elf_x86_64
 USER_ASFLAGS += -x assembler-with-cpp -ffreestanding -m64
 USER_LINKER_FORMAT := elf_x86_64
+KERNEL_ARCH_MODULE_ROOTS += $(KERNEL_SRC_ROOT)/arch/x86_64
