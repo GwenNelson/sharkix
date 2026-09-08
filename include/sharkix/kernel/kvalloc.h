@@ -4,6 +4,14 @@
 #include <stdint.h>
 
 /*
+ * Setup the kvalloc subsystem
+ *
+ * If this fails, it returns -1, but it should probably never fail or we're fucked
+ *
+ */
+int kvalloc_init(void);
+
+/*
  * Reserve a page-aligned range of kernel virtual address space.
  *
  * `size` is specified in bytes and rounded up internally to PAGE_SIZE.

@@ -12,6 +12,7 @@
 #include "startup.h"
 #include "caps.h"
 #include "sync.h"
+#include "kvalloc.h"
 
 void vApplicationMallocFailedHook(void) { for (;;) __asm__ volatile ("cli; hlt"); }
 void vApplicationStackOverflowHook(TaskHandle_t task, char *name) { (void)task; (void)name; for (;;) __asm__ volatile ("cli; hlt"); }
@@ -31,6 +32,7 @@ void kernel_high_entry(uint32_t magic, uint32_t info)
     ksync_init();
     kpmem_init();
     kinit_caps();
+    kvalloc_init();
     console_vga_init();
     kernel_startup_profile();
     vTaskStartScheduler();
