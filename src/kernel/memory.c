@@ -616,13 +616,60 @@ static void invalidate_page(uintptr_t va)
     __asm__ volatile ("invlpg (%0)" : : "r"((void *)va) : "memory");
 }
 
-static bool mapping_allowed(address_space_t *address_space, uintptr_t va, bool kernel_region)
+static bool page_range_length(size_t length, size_t *rounded)
+{
+    if (!length || !rounded)
+        return false;
+
+    if (length > SIZE_MAX - (PAGE_SIZE - 1ULL))
+        return false;
+
+    *rounded = (length + PAGE_SIZE - 1ULL) &
+               ~(size_t)(PAGE_SIZE - 1ULL);
+
+    return true;
+}
+
+static bool page_is_mapped(address_space_t *address_space, uintptr_t va)
+{
+    page_walk_t walk;
+
+    return address_space &&
+           walk_to_pte(address_space->pml4_phys, va, &walk) &&
+           (walk.pt[walk.pt_index] & PAGE_PRESENT);
+}
+
+static bool mapping_allowed(address_space_t *address_space,
+                            uintptr_t va,
+                            bool kernel_region)
+{
+    if (!address_space || (va & (PAGE_SIZE - 1ULL)))
+        return false;
+
+    if (kernel_region) {
+        if (address_space != address_space_kernel())
+            return false;
+
+        /*
+         * Upper canonical half under the current 48-bit paging model.
+         */
+        return va >= PHYSMAP_BASE;
+    }
+
+    /*
+     * Ordinary address spaces may only create mappings in their private
+     * lower canonical half.
+     */
+    return va < USER_CANONICAL_TOP;
+}
+
+/*static bool mapping_allowed(address_space_t *address_space, uintptr_t va, bool kernel_region)
 {
     if (!address_space || (va & (PAGE_SIZE - 1ULL))) return false;
     if (kernel_region)
         return va >= KHEAP_BASE && va < KSTACK_LIMIT;
     return va < USER_CANONICAL_TOP;
-}
+}*/
 
 static int map_page_internal(address_space_t *address_space, uintptr_t va, uint64_t pa,
                              uint64_t flags, bool kernel_region, bool track_mapping)
@@ -1071,4 +1118,241 @@ void memory_init(uint32_t multiboot_magic, uint32_t multiboot_info_phys)
     console_write("ram bytes:           "); console_decimal(phys_total_ram_bytes()); console_write("\n");
     console_write("managed pages:       "); console_decimal(phys_managed_page_count()); console_write("\n");
     console_write("free managed pages:  "); console_decimal(phys_free_page_count()); console_write("\n");
+}
+
+// the new flangling functions, that's a deeply technical term
+
+int address_space_map_range(address_space_t *address_space,
+                            uintptr_t va,
+                            uint64_t pa,
+                            size_t length,
+                            uint64_t flags)
+{
+    size_t rounded;
+    size_t offset;
+    bool kernel_region;
+
+    if (!address_space)
+        return -1;
+
+    if ((va & (PAGE_SIZE - 1ULL)) ||
+        (pa & (PAGE_SIZE - 1ULL)))
+        return -1;
+
+    if (!page_range_length(length, &rounded))
+        return -1;
+
+    /*
+     * Avoid wrapping either the virtual or physical range.
+     */
+    if (va > UINTPTR_MAX - (rounded - 1U))
+        return -1;
+
+    if (pa > UINT64_MAX - (uint64_t)(rounded - 1U))
+        return -1;
+
+    /*
+     * Range mapping doesn't currently support transferring ownership of
+     * caller-held physical-page references. Use address_space_map_page()
+     * for that specialised operation.
+     *
+     * This keeps failure rollback sane and atomic from the caller's point
+     * of view.
+     */
+    if (flags & ADDRESS_SPACE_MAP_OWNED)
+        return -1;
+
+    kernel_region = address_space == address_space_kernel();
+
+    /*
+     * Validate both ends of the virtual range before touching page tables.
+     */
+    if (!mapping_allowed(address_space, va, kernel_region) ||
+        !mapping_allowed(address_space,
+                         va + rounded - PAGE_SIZE,
+                         kernel_region))
+        return -1;
+
+    kcritical_enter();
+
+    /*
+     * Preflight the entire destination. This avoids partially changing an
+     * existing mapping if one page in the requested range is occupied.
+     */
+    for (offset = 0; offset < rounded; offset += PAGE_SIZE) {
+        if (page_is_mapped(address_space, va + offset)) {
+            kcritical_exit();
+            return -1;
+        }
+    }
+
+    for (offset = 0; offset < rounded; offset += PAGE_SIZE) {
+        if (map_page_internal(address_space,
+                              va + offset,
+                              pa + offset,
+                              flags,
+                              kernel_region,
+                              true) != 0)
+            goto rollback;
+    }
+
+    kcritical_exit();
+    return 0;
+
+rollback:
+    /*
+     * Only pages installed by this call are below offset.
+     */
+    while (offset) {
+        offset -= PAGE_SIZE;
+
+        if (unmap_page_internal(address_space,
+                                va + offset,
+                                kernel_region,
+                                true) != 0)
+            memory_panic("map range rollback failed");
+    }
+
+    kcritical_exit();
+    return -1;
+}
+
+
+int address_space_unmap_range(address_space_t *address_space,
+                              uintptr_t va,
+                              size_t length)
+{
+    size_t rounded;
+    size_t offset;
+    bool kernel_region;
+
+    if (!address_space)
+        return -1;
+
+    if (va & (PAGE_SIZE - 1ULL))
+        return -1;
+
+    if (!page_range_length(length, &rounded))
+        return -1;
+
+    if (va > UINTPTR_MAX - (rounded - 1U))
+        return -1;
+
+    kernel_region = address_space == address_space_kernel();
+
+    if (!mapping_allowed(address_space, va, kernel_region) ||
+        !mapping_allowed(address_space,
+                         va + rounded - PAGE_SIZE,
+                         kernel_region))
+        return -1;
+
+    kcritical_enter();
+
+    /*
+     * Don't leave half the requested range mapped just because we found
+     * a hole halfway through.
+     */
+    for (offset = 0; offset < rounded; offset += PAGE_SIZE) {
+        if (!page_is_mapped(address_space, va + offset)) {
+            kcritical_exit();
+            return -1;
+        }
+    }
+
+    for (offset = 0; offset < rounded; offset += PAGE_SIZE) {
+        if (unmap_page_internal(address_space,
+                                va + offset,
+                                kernel_region,
+                                true) != 0)
+            memory_panic("validated range unmap failed");
+    }
+
+    kcritical_exit();
+    return 0;
+}
+
+
+static int protect_page_internal(address_space_t *address_space,
+                                 uintptr_t va,
+                                 uint64_t flags,
+                                 bool kernel_region)
+{
+    page_walk_t walk;
+    uint64_t entry;
+    uint64_t allowed_flags = PAGE_WRITABLE | PAGE_USER | PAGE_NX;
+
+    if (!mapping_allowed(address_space, va, kernel_region))
+        return -1;
+
+    if (!walk_to_pte(address_space->pml4_phys, va, &walk))
+        return -1;
+
+    if (!(walk.pt[walk.pt_index] & PAGE_PRESENT))
+        return -1;
+
+    entry = walk.pt[walk.pt_index];
+
+    /*
+     * Preserve physical address and all unrelated PTE state while replacing
+     * the caller-controlled protection bits.
+     */
+    entry &= ~allowed_flags;
+    entry |= flags & allowed_flags;
+
+    walk.pt[walk.pt_index] = entry;
+    invalidate_page(va);
+
+    return 0;
+}
+
+
+
+int address_space_protect_range(address_space_t *address_space,
+                                uintptr_t va,
+                                size_t length,
+                                uint64_t flags)
+{
+    size_t rounded;
+    size_t offset;
+    bool kernel_region;
+
+    if (!address_space)
+        return -1;
+
+    if (va & (PAGE_SIZE - 1ULL))
+        return -1;
+
+    if (!page_range_length(length, &rounded))
+        return -1;
+
+    if (va > UINTPTR_MAX - (rounded - 1U))
+        return -1;
+
+    kernel_region = address_space == address_space_kernel();
+
+    if (!mapping_allowed(address_space, va, kernel_region) ||
+        !mapping_allowed(address_space,
+                         va + rounded - PAGE_SIZE,
+                         kernel_region))
+        return -1;
+
+    kcritical_enter();
+
+    for (offset = 0; offset < rounded; offset += PAGE_SIZE) {
+        if (!page_is_mapped(address_space, va + offset)) {
+            kcritical_exit();
+            return -1;
+        }
+    }
+
+    for (offset = 0; offset < rounded; offset += PAGE_SIZE) {
+        if (protect_page_internal(address_space,
+                                  va + offset,
+                                  flags,
+                                  kernel_region) != 0)
+            memory_panic("validated range protect failed");
+    }
+
+    kcritical_exit();
+    return 0;
 }

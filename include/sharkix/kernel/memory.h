@@ -1,5 +1,5 @@
-#ifndef SHARKIX_MEMORY_H
-#define SHARKIX_MEMORY_H
+#pragma once
+
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -77,4 +77,44 @@ int address_space_unmap_page(address_space_t *address_space, uintptr_t va);
 void address_space_activate(address_space_t *address_space);
 uint64_t address_space_translate(address_space_t *address_space, uintptr_t va);
 
-#endif
+
+// arbitrary flangling of virtual memory mapping/unmapping, gonna need it for SHM etc later
+// and for device drivers and other shit
+
+/*
+ * Map a contiguous physical range into an address space.
+ *
+ * va and pa must be page-aligned. length is in bytes and is rounded up
+ * internally to PAGE_SIZE.
+ *
+ * For the kernel address space, va may be anywhere in the upper canonical
+ * half. For ordinary address spaces, va must be in the lower canonical half.
+ *
+ * The range must currently be unmapped.
+ */
+int address_space_map_range(address_space_t *address_space,
+                            uintptr_t va,
+                            uint64_t pa,
+                            size_t length,
+                            uint64_t flags);
+
+/*
+ * Unmap a contiguous virtual range.
+ *
+ * va must be page-aligned. length is rounded up internally to PAGE_SIZE.
+ * Every page in the range must currently be mapped.
+ */
+int address_space_unmap_range(address_space_t *address_space,
+                              uintptr_t va,
+                              size_t length);
+
+/*
+ * Change protection flags on an existing contiguous mapping.
+ *
+ * va must be page-aligned. length is rounded up internally to PAGE_SIZE.
+ * Every page in the range must currently be mapped.
+ */
+int address_space_protect_range(address_space_t *address_space,
+                                uintptr_t va,
+                                size_t length,
+                                uint64_t flags);

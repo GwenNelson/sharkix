@@ -5,6 +5,7 @@
 #include "memory.h"
 #include "pmem.h"
 #include "sync.h"
+#include "kvalloc.h"
 
 #define VGA_WIDTH 80
 #define VGA_HEIGHT 25
@@ -13,6 +14,8 @@
 #define VGA_CRTC_INDEX 0x3d4
 #define VGA_CRTC_DATA 0x3d5
 static volatile uint16_t *const vga = (volatile uint16_t *)(PHYSMAP_BASE + VGA_PHYS);
+
+static uintptr_t vga_va;
 static uint8_t vga_x, vga_y;
 static pmem_handle_t vga_pmem = PMEM_INVALID_HANDLE;
 static bool vga_ready;
@@ -51,6 +54,11 @@ void console_vga_init(void)
 {
     if (kpmem_create(&vga_pmem, 0xB8000, 0x8000) != 0)
         return;
+
+    if (kvalloc(0x8000, &vga_va) != 0) {
+        console_write("console-vga.c:console_vga_init() - failed kvalloc() of VRAM!\n");
+    }
+
     uint16_t position = vga_cursor_position();
     if (position >= VGA_WIDTH * VGA_HEIGHT) position = 0;
     vga_x = (uint8_t)(position % VGA_WIDTH);
