@@ -144,8 +144,143 @@ SHARKIX_SYSCALL_IMPL(IPC_REPLY) {
 	return syscall_return();
 }
 
-SHARKIX_SYSCALL_IMPL(VM_MAP) {
-	return syscall_return();
+/*
+ * input:
+ *     RDI = VMO cap
+ *     RSI = virtual address
+ *     RDX = offset into VMO
+ *     R10 = length
+ *     R8  = requested mapping rights (VMO_READ/WRITE/EXEC)
+ *     R9  = flags (must currently be 0)
+ *
+ * return:
+ *     RAX = status
+ *     RDX = mapped virtual address on success, 0 on failure
+ */
+SHARKIX_SYSCALL_IMPL(VM_MAP)
+{
+    thread_t *caller;
+
+    cap_handle_t vmo_cap;
+    cap_rights_t required_cap_rights;
+    kobject_handle_t vmo_obj_handle;
+    vmo_handle_t vmo_handle;
+
+    uintptr_t va;
+    size_t offset;
+    size_t length;
+    vmo_rights_t rights;
+    uint64_t flags;
+
+    caller = thread_current();
+
+    if (caller == NULL || caller->address_space == NULL) {
+        ctx->rax = VM_ERR_INVALID;
+        goto fail;
+    }
+
+    vmo_cap = (cap_handle_t)ctx->rdi;
+    va      = (uintptr_t)ctx->rsi;
+    offset  = (size_t)ctx->rdx;
+    length  = (size_t)ctx->r10;
+    rights  = (vmo_rights_t)ctx->r8;
+    flags   = ctx->r9;
+
+    /*
+     * No mapping flags are defined yet.
+     */
+    if (flags != 0) {
+        ctx->rax = VM_ERR_INVALID;
+        goto fail;
+    }
+
+    if (vmo_cap == CAP_INVALID_HANDLE) {
+        ctx->rax = VM_ERR_INVALID;
+        goto fail;
+    }
+
+    if (length == 0) {
+        ctx->rax = VM_ERR_INVALID;
+        goto fail;
+    }
+
+    /*
+     * VMO_MAP is an operation right, not a mapping permission.
+     * Callers request only READ/WRITE/EXEC here.
+     */
+    if (rights & ~(VMO_READ | VMO_WRITE | VMO_EXEC)) {
+        ctx->rax = VM_ERR_INVALID;
+        goto fail;
+    }
+
+    /*
+     * Ordinary x86-64 paging cannot represent a present mapping which
+     * isn't readable, so unreadable mappings aren't currently supported.
+     */
+    if (!(rights & VMO_READ)) {
+        ctx->rax = VM_ERR_INVALID;
+        goto fail;
+    }
+
+    /*
+     * For now the caller must supply an actual virtual address.
+     * A va of zero can later acquire "kernel chooses" semantics.
+     */
+    if (va == 0) {
+        ctx->rax = VM_ERR_INVALID;
+        goto fail;
+    }
+
+    /*
+     * Translate the requested operation into capability authority.
+     */
+    required_cap_rights = CAP_RIGHT_VMO_MAP;
+
+    if (rights & VMO_READ)
+        required_cap_rights |= CAP_RIGHT_VMO_READ;
+
+    if (rights & VMO_WRITE)
+        required_cap_rights |= CAP_RIGHT_VMO_WRITE;
+
+    if (rights & VMO_EXEC)
+        required_cap_rights |= CAP_RIGHT_VMO_EXEC;
+
+    /*
+     * Resolve the exact supplied capability in the caller's address
+     * space. Userspace never gets the underlying VMO handle.
+     */
+    if (kcapset_resolve_handle(caller->address_space->capset,
+                               vmo_cap,
+                               CAP_TYPE_VMO,
+                               required_cap_rights,
+                               &vmo_obj_handle) != 0) {
+        ctx->rax = VM_ERR_PERMISSION;
+        goto fail;
+    }
+
+    vmo_handle = (vmo_handle_t)vmo_obj_handle;
+
+    /*
+     * kvmo_map() performs intrinsic VMO-rights checking, PMEM bounds
+     * checking, page-table mapping and vmoset bookkeeping.
+     */
+    if (kvmo_map(vmo_handle,
+                 caller->address_space,
+                 va,
+                 offset,
+                 length,
+                 rights) != 0) {
+        ctx->rax = VM_ERR_INVALID;
+        goto fail;
+    }
+
+    ctx->rax = VM_OK;
+    ctx->rdx = (uint64_t)va;
+    return syscall_return();
+
+fail:
+    ctx->rdx = 0;
+    return syscall_return();
 }
 
 SHARKIX_SYSCALL_IMPL(VM_UNMAP) {
