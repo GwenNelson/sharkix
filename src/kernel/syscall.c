@@ -16,7 +16,7 @@ static uint64_t block_test_wake_count;
 #define SHARKIX_SYSCALL_DECL(name) static syscall_result_t syscall_##name(syscall_ctx_t ctx)
 
 #define SHARKIX_SYSCALL(name,num) SHARKIX_SYSCALL_DECL(name);
-#include <sharkix/kernel/syscalls.inc>
+#include <sharkix/syscalls.inc>
 #undef SHARKIX_SYSCALL
 
 #define SHARKIX_SYSCALL_IMPL(name) SHARKIX_SYSCALL_DECL(name)
@@ -225,7 +225,7 @@ syscall_result_t dispatch_syscall(syscall_ctx_t ctx)
 #define SHARKIX_SYSCALL(name,num) case SYSCALL_##name: \
 	    return syscall_##name(ctx); \
 	    break;
-#include <sharkix/kernel/syscalls.inc>
+#include <sharkix/syscalls.inc>
 #undef SHARKIX_SYSCALL
 
 	
