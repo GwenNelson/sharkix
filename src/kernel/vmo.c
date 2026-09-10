@@ -5,7 +5,8 @@
 
 #include <sharkix/kernel/kmalloc.h>
 #include <sharkix/kernel/sync.h>
-
+#include <sharkix/kernel/pmem.h>
+#include <sharkix/kernel/memory.h>
 
 /*
  * Global VMO and VMO-set tables.
@@ -18,7 +19,6 @@ static kspinlock_t vmosets_lock;
 
 static vmo_handle_t    next_vmo_handle    = 1;
 static vmoset_handle_t next_vmoset_handle = 1;
-
 
 /*
  * Internal lookup helpers.
@@ -42,6 +42,48 @@ static vmoset_t *vmoset_lookup_locked(vmoset_handle_t handle)
     HASH_FIND(hh, vmosets, &handle, sizeof(handle), set);
 
     return set;
+}
+
+int kvmoset_set_rights(vmoset_handle_t handle,
+                       uintptr_t va,
+                       vmo_rights_t rights)
+{
+    vmoset_t *set;
+    vmoset_entry_t *entry;
+
+    if (handle == VMOSET_INVALID_HANDLE)
+        return -1;
+
+    if (rights & ~(VMO_READ | VMO_WRITE | VMO_EXEC))
+        return -1;
+
+    kspin_lock(&vmosets_lock);
+
+    set = vmoset_lookup_locked(handle);
+    if (set == NULL) {
+        kspin_unlock(&vmosets_lock);
+        return -1;
+    }
+
+    kspin_lock(&set->spinlock);
+    kspin_unlock(&vmosets_lock);
+
+    HASH_FIND(hh,
+              set->entries,
+              &va,
+              sizeof(va),
+              entry);
+
+    if (entry == NULL) {
+        kspin_unlock(&set->spinlock);
+        return -1;
+    }
+
+    entry->rights = rights;
+
+    kspin_unlock(&set->spinlock);
+
+    return 0;
 }
 
 
@@ -469,4 +511,338 @@ int kvmoset_find(vmoset_handle_t handle,
     kspin_unlock(&set->spinlock);
 
     return -1;
+}
+
+int kvmo_map(vmo_handle_t handle,
+             address_space_t *as,
+             uintptr_t va,
+             size_t offset,
+             size_t length,
+             vmo_rights_t rights)
+{
+    vmo_t vmo;
+    pmem_t pmem;
+    uintptr_t phys;
+    uint64_t map_flags;
+
+    if (as == NULL)
+        return -1;
+
+    if (handle == VMO_INVALID_HANDLE)
+        return -1;
+
+    if (length == 0)
+        return -1;
+
+    /*
+     * VMO_MAP is an operation right, not a page permission.
+     */
+    if (rights & ~(VMO_READ | VMO_WRITE | VMO_EXEC))
+        return -1;
+
+    if (kvmo_get(handle, &vmo) != 0)
+        return -1;
+
+    /*
+     * The VMO itself must permit mapping, and the requested mapping
+     * permissions must be a subset of its intrinsic rights.
+     */
+    if (!(vmo.rights & VMO_MAP))
+        return -1;
+
+    if (rights & ~vmo.rights)
+        return -1;
+
+    /*
+     * x86-64 ordinary page tables do not have a readable bit.
+     *
+     * A present page is inherently readable, so allowing a mapping
+     * without VMO_READ would grant more access than was requested.
+     *
+     * For now, therefore, every mapped VMO must be readable.
+     */
+    if (!(rights & VMO_READ))
+        return -1;
+
+    if (kpmem_get(vmo.pmem, &pmem) != 0)
+        return -1;
+
+    /*
+     * Validate the requested range within the PMEM backing without
+     * allowing offset + length to overflow.
+     */
+    if (offset > pmem.length)
+        return -1;
+
+    if (length > pmem.length - offset)
+        return -1;
+
+    /*
+     * Don't allow calculation of the physical address to wrap.
+     */
+    if (offset > UINTPTR_MAX - pmem.phys_base)
+        return -1;
+
+    phys = pmem.phys_base + offset;
+
+    /*
+     * Translate VMO permissions into x86 page-table flags.
+     */
+    map_flags = PAGE_PRESENT;
+
+    if (rights & VMO_WRITE)
+        map_flags |= PAGE_WRITABLE;
+
+    if (!(rights & VMO_EXEC))
+        map_flags |= PAGE_NX;
+
+    /*
+     * Mappings in the lower canonical half are userspace mappings.
+     */
+    if (va < USER_CANONICAL_TOP)
+        map_flags |= PAGE_USER;
+
+    /*
+     * Establish the actual page-table mapping.
+     *
+     * PMEM-backed VMOs do not use ADDRESS_SPACE_MAP_OWNED: destroying
+     * the mapping must not implicitly free the physical memory described
+     * by the PMEM object.
+     */
+    if (address_space_map_range(as,
+                                va,
+                                phys,
+                                length,
+                                map_flags) != 0)
+        return -1;
+
+    /*
+     * Every VMO-backed mapping must have a corresponding vmoset entry.
+     *
+     * If the bookkeeping insertion fails, roll the page-table mapping
+     * back immediately.
+     */
+    if (kvmoset_add(as->vmoset,
+                    handle,
+                    va,
+                    offset,
+                    length,
+                    rights) != 0) {
+        if (address_space_unmap_range(as, va, length) != 0)
+            memory_panic("VMO map rollback failed");
+
+        return -1;
+    }
+
+    return 0;
+}
+
+int kvmo_unmap(vmo_handle_t handle,
+               address_space_t *as,
+               uintptr_t va,
+               size_t length)
+{
+    vmoset_entry_t entry;
+
+    if (as == NULL)
+        return -1;
+
+    if (handle == VMO_INVALID_HANDLE)
+        return -1;
+
+    if (length == 0)
+        return -1;
+
+    /*
+     * Find the VMO mapping containing this address.
+     */
+    if (kvmoset_find(as->vmoset, va, &entry) != 0)
+        return -1;
+
+    /*
+     * For now, unmapping operates on one complete recorded mapping.
+     *
+     * Partial unmapping will require splitting vmoset entries and is
+     * deliberately not supported yet.
+     */
+    if (entry.vmo != handle)
+        return -1;
+
+    if (entry.virtual_address != va)
+        return -1;
+
+    if (entry.length != length)
+        return -1;
+
+    /*
+     * Tear down the actual page-table mapping first.
+     *
+     * If this fails, leave the vmoset entry intact: it still describes
+     * the mapping we believe exists.
+     */
+    if (address_space_unmap_range(as, va, length) != 0)
+        return -1;
+
+    /*
+     * The mapping no longer exists, so its bookkeeping entry must now
+     * disappear as well.
+     *
+     * Failure here would violate the fundamental vmoset invariant and
+     * isn't something the caller can sensibly recover from.
+     */
+    if (kvmoset_remove(as->vmoset, va) != 0)
+        memory_panic("VMO unmap bookkeeping removal failed");
+
+    return 0;
+}
+
+int kvmo_protect(vmo_handle_t handle,
+                 address_space_t *as,
+                 uintptr_t va,
+                 size_t length,
+                 vmo_rights_t rights)
+{
+    vmo_t vmo;
+    vmoset_entry_t entry;
+    uint64_t flags;
+
+    if (as == NULL)
+        return -1;
+
+    if (handle == VMO_INVALID_HANDLE)
+        return -1;
+
+    if (length == 0)
+        return -1;
+
+    /*
+     * VMO_MAP is an operation right, not a mapping permission.
+     */
+    if (rights & ~(VMO_READ | VMO_WRITE | VMO_EXEC))
+        return -1;
+
+    /*
+     * x86-64 ordinary page tables cannot represent a present mapping
+     * which is not readable.
+     */
+    if (!(rights & VMO_READ))
+        return -1;
+
+    if (kvmo_get(handle, &vmo) != 0)
+        return -1;
+
+    /*
+     * The new mapping permissions must remain within the VMO's
+     * intrinsic rights.
+     */
+    if (rights & ~vmo.rights)
+        return -1;
+
+    /*
+     * Locate the existing mapping.
+     */
+    if (kvmoset_find(as->vmoset, va, &entry) != 0)
+        return -1;
+
+    /*
+     * For now protect operates on one complete recorded mapping.
+     * Supporting partial protection later requires splitting the
+     * corresponding vmoset entry.
+     */
+    if (entry.vmo != handle)
+        return -1;
+
+    if (entry.virtual_address != va)
+        return -1;
+
+    if (entry.length != length)
+        return -1;
+
+    /*
+     * Translate VMO permissions into page-table flags.
+     */
+    flags = PAGE_PRESENT;
+
+    if (rights & VMO_WRITE)
+        flags |= PAGE_WRITABLE;
+
+    if (!(rights & VMO_EXEC))
+        flags |= PAGE_NX;
+
+    if (va < USER_CANONICAL_TOP)
+        flags |= PAGE_USER;
+
+    /*
+     * Change the actual mapping first. If this fails, the vmoset still
+     * correctly describes the old mapping.
+     */
+    if (address_space_protect_range(as, va, length, flags) != 0)
+        return -1;
+
+    /*
+     * Now update the bookkeeping to describe the new permissions.
+     *
+     * We need a proper vmoset operation for this rather than reaching
+     * into the set internals here.
+     */
+    if (kvmoset_set_rights(as->vmoset, va, rights) != 0)
+        memory_panic("VMO protect bookkeeping update failed");
+
+    return 0;
+}
+
+int kvmoset_unmap_all(vmoset_handle_t handle,
+                      address_space_t *as)
+{
+    vmoset_t *set;
+    vmoset_entry_t *entry;
+
+    if (as == NULL)
+        return -1;
+
+    if (handle == VMOSET_INVALID_HANDLE)
+        return -1;
+
+    for (;;) {
+        vmo_handle_t vmo;
+        uintptr_t va;
+        size_t length;
+
+        kspin_lock(&vmosets_lock);
+
+        set = vmoset_lookup_locked(handle);
+        if (set == NULL) {
+            kspin_unlock(&vmosets_lock);
+            return -1;
+        }
+
+        kspin_lock(&set->spinlock);
+        kspin_unlock(&vmosets_lock);
+
+        entry = set->entries;
+
+        /*
+         * Empty set: all mappings have been successfully removed.
+         */
+        if (entry == NULL) {
+            kspin_unlock(&set->spinlock);
+            return 0;
+        }
+
+        /*
+         * Take a snapshot of the entry we are about to remove.
+         *
+         * We must release the vmoset lock before calling kvmo_unmap(),
+         * because kvmo_unmap() ultimately calls back into vmoset code
+         * to remove the bookkeeping entry.
+         */
+        vmo = entry->vmo;
+        va = entry->virtual_address;
+        length = entry->length;
+
+        kspin_unlock(&set->spinlock);
+
+        if (kvmo_unmap(vmo, as, va, length) != 0)
+            return -1;
+    }
 }

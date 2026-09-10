@@ -14,6 +14,7 @@
 #include "ipc.h"
 #include "sync.h"
 #include "kvalloc.h"
+#include "vmo.h"
 
 void vApplicationMallocFailedHook(void) { for (;;) __asm__ volatile ("cli; hlt"); }
 void vApplicationStackOverflowHook(TaskHandle_t task, char *name) { (void)task; (void)name; for (;;) __asm__ volatile ("cli; hlt"); }
@@ -43,6 +44,7 @@ void kernel_high_entry(uint32_t magic, uint32_t info)
     kpmem_init();
     kinit_caps();
     kvalloc_init();
+    kvmo_init();
     if (!startup_kernel_thread(kernel_start_task, "kernel-start", tskIDLE_PRIORITY + 2))
         for (;;) __asm__ volatile ("cli; hlt");
     vTaskStartScheduler();

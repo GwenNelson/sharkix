@@ -20,6 +20,8 @@ typedef struct pmem_t {
 
 void kpmem_init(void);
 
+int kpmem_get(pmem_handle_t handle, pmem_t *out);
+
 // create a new physical memory object, returns 0 on success and -1 on failure
 int kpmem_create(pmem_handle_t *out, uintptr_t base, size_t len);
 

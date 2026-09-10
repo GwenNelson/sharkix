@@ -49,6 +49,29 @@ void kpmem_init(void)
     kmutex_init(&global_pmem_table_lock);
 }
 
+int kpmem_get(pmem_handle_t handle, pmem_t *out)
+{
+    pmem_t *pmem;
+
+    if (!out || handle == PMEM_INVALID_HANDLE)
+        return -1;
+
+    kmutex_lock(&global_pmem_table_lock);
+
+    pmem = kpmem_find_locked(handle);
+    if (!pmem) {
+        kmutex_unlock(&global_pmem_table_lock);
+        return -1;
+    }
+
+    out->handle = pmem->handle;
+    out->phys_base = pmem->phys_base;
+    out->length = pmem->length;
+
+    kmutex_unlock(&global_pmem_table_lock);
+    return 0;
+}
+
 int kpmem_create(pmem_handle_t *out, uintptr_t base, size_t len)
 {
     pmem_t *pmem;

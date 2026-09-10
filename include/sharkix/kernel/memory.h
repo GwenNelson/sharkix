@@ -43,6 +43,10 @@ typedef struct address_space {
     vmoset_handle_t vmoset;
 } address_space_t;
 
+void memory_panic(const char *message) __attribute__((noreturn));
+void memory_panic(const char *message);
+
+
 void *phys_to_virt(uint64_t physical_address);
 uint64_t virt_to_phys(const void *virtual_address);
 void memory_init(uint32_t multiboot_magic, uint32_t multiboot_info_phys);

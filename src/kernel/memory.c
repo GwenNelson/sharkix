@@ -93,8 +93,8 @@ static void memory_halt(void)
     for (;;) __asm__ volatile ("cli; hlt");
 }
 
-static void memory_panic(const char *message) __attribute__((noreturn));
-static void memory_panic(const char *message)
+void memory_panic(const char *message) __attribute__((noreturn));
+void memory_panic(const char *message)
 {
     console_write("memory panic: ");
     console_write(message);
@@ -793,9 +793,17 @@ void address_space_retain(address_space_t *address_space)
 static void address_space_destroy(address_space_t *address_space)
 {
     if (!address_space || address_space->permanent) return;
+
+
+    if (kvmoset_unmap_all(address_space->vmoset, address_space) != 0)
+        memory_panic("address space destroy VMO unmap failed");
+
+    kvmoset_destroy(address_space->vmoset);
+
     while (address_space->mappings)
         if (address_space_unmap_page(address_space, address_space->mappings->virtual_address) != 0)
             memory_panic("address space destroy unmap failed");
+
     phys_page_put(address_space->pml4_phys);
     kcapset_destroy(address_space->capset);
     kfree(address_space);
@@ -823,6 +831,7 @@ address_space_t *address_space_create(uint32_t flags)
     uint64_t *destination;
     uint64_t *kernel_pml4;
     capset_handle_t as_capset;
+    vmoset_handle_t as_vmoset;
 
     kcritical_enter();
     if(kcapset_new(&as_capset) != 0) {
@@ -830,13 +839,23 @@ address_space_t *address_space_create(uint32_t flags)
        return NULL;
     }	    
 
+    if(kvmoset_new(&as_vmoset) != 0) {
+       kcapset_destroy(as_capset);
+       kcritical_exit();
+       return NULL;
+    }
+
     if (!phys_alloc_page(&pml4_phys)) {
+        kcapset_destroy(as_capset);
+	kvmoset_destroy(as_vmoset);
         kcritical_exit();
         return NULL;
     }
     address_space = kmalloc(sizeof(*address_space));
     if (!address_space) {
-        phys_page_put(pml4_phys);
+        kcapset_destroy(as_capset);
+        kvmoset_destroy(as_vmoset);
+	phys_page_put(pml4_phys);
         kcritical_exit();
         return NULL;
     }
@@ -852,6 +871,7 @@ address_space_t *address_space_create(uint32_t flags)
     address_space->live_threads = 0;
     address_space->permanent    = 0;
     address_space->capset       = as_capset;
+    address_space->vmoset       = as_vmoset;
     kcritical_exit();
     return address_space;
 }
