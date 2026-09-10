@@ -26,9 +26,7 @@ _Static_assert(offsetof(sharkix_syscall_regs_t, r9) == 48,
 _Static_assert(sizeof(sharkix_syscall_regs_t) == 56,
                "unexpected syscall register context size");
 
-sharkix_syscall_regs_t
-sharkix_syscall(sharkix_syscall_regs_t regs)
-{
-    sharkix_syscall_raw(&regs);
+sharkix_syscall_regs_t* sharkix_syscall(sharkix_syscall_regs_t *regs) {
+    sharkix_syscall_raw(regs);
     return regs;
 }

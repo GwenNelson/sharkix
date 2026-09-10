@@ -14,5 +14,4 @@ typedef struct sharkix_syscall_regs {
     uint64_t r9;     /* arg5 */
 } sharkix_syscall_regs_t;
 
-sharkix_syscall_regs_t
-sharkix_syscall(sharkix_syscall_regs_t regs);
+sharkix_syscall_regs_t* sharkix_syscall(sharkix_syscall_regs_t *regs);

@@ -1,10 +1,9 @@
-#ifndef SHARKIX_THREAD_H
-#define SHARKIX_THREAD_H
+#pragma once
 
 #include <stddef.h>
 #include <stdint.h>
-#include "memory.h"
-#include "task.h"
+#include <sharkix/kernel/memory.h>
+#include <sharkix/kernel/freertos/task.h>
 
 #define THREAD_DEFAULT_KERNEL_STACK_WORDS 2048U
 #define THREAD_DEFAULT_KERNEL_STACK_SIZE (THREAD_DEFAULT_KERNEL_STACK_WORDS * sizeof(StackType_t))
@@ -92,4 +91,3 @@ void thread_handle_exception(unsigned vector, uint64_t rip, uint64_t error,
 void thread_handle_kernel_exception(unsigned vector, uint64_t rip, uint64_t error,
                                     uint64_t address) __attribute__((noreturn));
 
-#endif

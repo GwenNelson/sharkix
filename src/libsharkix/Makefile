@@ -7,13 +7,11 @@ CC ?= gcc
 AR ?= ar
 
 BUILD_OUT ?= $(SHARKIX_ROOT)/build/libsharkix
-
 INCLUDE ?= $(SHARKIX_ROOT)/include
 
-CPPFLAGS := -I$(INCLUDE)
+CPPFLAGS += -I$(INCLUDE)
 
-
-CFLAGS := \
+COMMON_CFLAGS := \
 	-std=gnu11 \
 	-ffreestanding \
 	-Wall \
@@ -21,42 +19,74 @@ CFLAGS := \
 	-m64 \
 	-fno-stack-protector \
 	-mno-red-zone \
-	-fPIE \
 	-mno-sse \
 	-mno-mmx \
 	-mno-80387
 
-ASFLAGS := \
+USER_CFLAGS := $(COMMON_CFLAGS) -fPIE
+KERNEL_CFLAGS := $(COMMON_CFLAGS) -fno-pic -fno-pie -mcmodel=kernel
+
+USER_ASFLAGS := \
 	-x assembler-with-cpp \
 	-ffreestanding \
 	-m64
 
-# Optimization and debug flags
+KERNEL_ASFLAGS := \
+	-x assembler-with-cpp \
+	-ffreestanding \
+	-m64
+
 ifeq ($(DEBUG),1)
-    CFLAGS += -Og -g
+	USER_CFLAGS += -Og -g
+	KERNEL_CFLAGS += -Og -g
+	USER_ASFLAGS += -g
+	KERNEL_ASFLAGS += -g
 else
-    CFLAGS += -O2
+	USER_CFLAGS += -O2
+	KERNEL_CFLAGS += -O2
 endif
 
-OBJECTS := $(BUILD_OUT)/syscall-asm-stub.o $(BUILD_OUT)/syscall-c.o
-ARTIFACT := $(BUILD_OUT)/libsharkix.a
+USER_OBJECTS := \
+	$(BUILD_OUT)/user/syscall-c.o \
+	$(BUILD_OUT)/user/syscall-asm-stub.o
+
+KERNEL_OBJECTS := \
+	$(BUILD_OUT)/kernel/syscall-c.o \
+	$(BUILD_OUT)/kernel/syscall-kernel-stub.o
+
+USER_ARTIFACT := $(BUILD_OUT)/libsharkix-user.a
+KERNEL_ARTIFACT := $(BUILD_OUT)/libsharkix-kernel.a
 
 .PHONY: all clean
 
-all: $(ARTIFACT)
+all: $(USER_ARTIFACT) $(KERNEL_ARTIFACT)
 
-$(BUILD_OUT)/%.o: $(LIBSHARKIX_SRC)/%.S
+$(BUILD_OUT)/user/%.o: $(LIBSHARKIX_SRC)/%.c
 	mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(ASFLAGS) -MMD -MP -c $< -o $@
+	$(CC) $(CPPFLAGS) $(USER_CFLAGS) -MMD -MP -c $< -o $@
 
-$(BUILD_OUT)/%.o: $(LIBSHARKIX_SRC)/%.c
+$(BUILD_OUT)/user/%.o: $(LIBSHARKIX_SRC)/%.S
 	mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -MMD -MP -c $< -o $@
+	$(CC) $(CPPFLAGS) $(USER_ASFLAGS) -MMD -MP -c $< -o $@
 
-$(ARTIFACT): $(OBJECTS)
+$(BUILD_OUT)/kernel/%.o: $(LIBSHARKIX_SRC)/%.c
+	mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(KERNEL_CFLAGS) -MMD -MP -c $< -o $@
+
+$(BUILD_OUT)/kernel/%.o: $(LIBSHARKIX_SRC)/%.S
+	mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(KERNEL_ASFLAGS) -MMD -MP -c $< -o $@
+
+$(USER_ARTIFACT): $(USER_OBJECTS)
+	mkdir -p $(@D)
+	$(AR) rcs $@ $^
+
+$(KERNEL_ARTIFACT): $(KERNEL_OBJECTS)
+	mkdir -p $(@D)
 	$(AR) rcs $@ $^
 
 clean:
 	rm -rf $(BUILD_OUT)
 
--include $(OBJECTS:.o=.d)
+-include $(USER_OBJECTS:.o=.d)
+-include $(KERNEL_OBJECTS:.o=.d)
