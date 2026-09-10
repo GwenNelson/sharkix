@@ -733,8 +733,6 @@ static void run_tests(void* argument) {
 }
 
 void kernel_startup_profile(void) {
-     ipc_init();
-
      // we need to be inside a thread to run these things
      startup_kernel_thread(run_tests,"testipc-run_tests",tskIDLE_PRIORITY+2);
 

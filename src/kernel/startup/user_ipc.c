@@ -78,7 +78,7 @@ create_user_task(const program_image_t *image,
         .entry_rip = PROGRAM_DEFAULT_LOAD_ADDRESS,
         .initial_stack_pointer = stack_top - sizeof(uint64_t),
         .name = name,
-        .priority = tskIDLE_PRIORITY + 1
+        .priority = tskIDLE_PRIORITY + 2
     };
 
     thread = thread_create(address_space, THREAD_PRIVILEGE_USER, &params);
@@ -176,8 +176,6 @@ void kernel_startup_profile(void)
     unsigned consumer_cap_installed = 0;
     unsigned producer_cap_created = 0;
     unsigned producer_cap_installed = 0;
-
-    ipc_init();
 
     /*
      * Create the consumer first because it receives from the endpoint used

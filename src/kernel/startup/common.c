@@ -30,7 +30,7 @@ thread_t *startup_kernel_thread(TaskFunction_t entry, const char *name, UBaseTyp
 void startup_common_init(void)
 {
     if (reaper_thread) return;
-    reaper_thread = startup_kernel_thread(reaper_task, "reaper", tskIDLE_PRIORITY + 1);
+    reaper_thread = startup_kernel_thread(reaper_task, "reaper", tskIDLE_PRIORITY + 2);
     if (!reaper_thread) {
         console_write("reaper creation failed\n");
         for (;;) __asm__ volatile ("cli; hlt");

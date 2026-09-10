@@ -28,11 +28,11 @@ void kernel_startup_profile(void)
 
     thread_create_params_t params_a = {
         .entry_rip = TASK_A_ENTRY, .initial_stack_pointer = stack_a,
-        .name = "shared-A", .priority = tskIDLE_PRIORITY + 1
+        .name = "shared-A", .priority = tskIDLE_PRIORITY + 2
     };
     thread_create_params_t params_b = {
         .entry_rip = TASK_B_ENTRY, .initial_stack_pointer = stack_b,
-        .name = "shared-B", .priority = tskIDLE_PRIORITY + 1
+        .name = "shared-B", .priority = tskIDLE_PRIORITY + 2
     };
     a = thread_create(address_space, THREAD_PRIVILEGE_USER, &params_a);
     b = thread_create(address_space, THREAD_PRIVILEGE_USER, &params_b);

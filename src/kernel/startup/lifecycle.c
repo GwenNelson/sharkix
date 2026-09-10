@@ -12,6 +12,7 @@ static void lifecycle_spinner_task(void *argument) { (void)argument; startup_ker
 static void lifecycle_task(void *argument)
 {
     (void)argument;
+    (void)thread_delay_current(3);
     __asm__ volatile ("outb %0, %1" : : "a"((uint8_t)'X'), "Nd"((uint16_t)0x3f8));
     console_write("lifecycle task running\n");
     uint64_t before = phys_pages_in_use();
@@ -19,7 +20,7 @@ static void lifecycle_task(void *argument)
         uint64_t reaped = thread_reaped_count();
         program_image_t image = { exit_image_start, (size_t)(exit_image_end - exit_image_start) };
         program_start_options_t options = {
-            .privilege = THREAD_PRIVILEGE_USER, .name = "exit", .priority = tskIDLE_PRIORITY + 1,
+            .privilege = THREAD_PRIVILEGE_USER, .name = "exit", .priority = tskIDLE_PRIORITY + 2,
             .reap_on_exit = 1
         };
         if (program_load_and_start(&image, &options, NULL, NULL) != 0) break;
@@ -30,7 +31,7 @@ static void lifecycle_task(void *argument)
      * program container from disappearing with its last Thread. */
     program_image_t retained_image = { exit_image_start, (size_t)(exit_image_end - exit_image_start) };
     program_start_options_t retained_options = {
-        .privilege = THREAD_PRIVILEGE_USER, .name = "held", .priority = tskIDLE_PRIORITY + 1,
+        .privilege = THREAD_PRIVILEGE_USER, .name = "held", .priority = tskIDLE_PRIORITY + 2,
         .reap_on_exit = 1
     };
     address_space_t *held_as = NULL;
@@ -51,7 +52,7 @@ static void lifecycle_task(void *argument)
 void kernel_startup_profile(void)
 {
     startup_reaper();
-    if (!startup_kernel_thread(lifecycle_task, "lifecycle", tskIDLE_PRIORITY + 1)) {
+    if (!startup_kernel_thread(lifecycle_task, "lifecycle", tskIDLE_PRIORITY + 2)) {
         console_write("lifecycle startup failed\n");
         for (;;) __asm__ volatile ("cli; hlt");
     }

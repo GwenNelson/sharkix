@@ -28,7 +28,7 @@ void kernel_startup_profile(void)
     address_space_t *private_as = address_space_create(0);
     thread_create_params_t private_params = {
         .entry_rip = (uintptr_t)private_as_task, .name = "private0",
-        .priority = tskIDLE_PRIORITY + 1
+        .priority = tskIDLE_PRIORITY + 2
     };
     thread_t *private_thread = thread_create(private_as, THREAD_PRIVILEGE_KERNEL, &private_params);
     if (!private_thread || private_as_runs ||
@@ -38,5 +38,5 @@ void kernel_startup_profile(void)
     address_space_release(private_as);
     if (thread_start(private_thread) != 0) { console_write("vm private start failed\n"); for (;;) __asm__ volatile ("cli; hlt"); }
     console_write("vm private CPL0 AS started\n");
-    startup_kernel_thread(vm_task, "vm", tskIDLE_PRIORITY + 1);
+    startup_kernel_thread(vm_task, "vm", tskIDLE_PRIORITY + 2);
 }

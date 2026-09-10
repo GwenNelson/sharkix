@@ -13,7 +13,7 @@ void kernel_startup_profile(void)
     program_image_t image_a = { taskA_image_start, (size_t)(taskA_image_end - taskA_image_start) };
     program_image_t image_b = { taskB_image_start, (size_t)(taskB_image_end - taskB_image_start) };
     program_start_options_t options = {
-        .privilege = THREAD_PRIVILEGE_USER, .name = "taskA", .priority = tskIDLE_PRIORITY + 1,
+        .privilege = THREAD_PRIVILEGE_USER, .name = "taskA", .priority = tskIDLE_PRIORITY + 2,
         .reap_on_exit = 1
     };
     thread_t *a, *b;
