@@ -156,11 +156,10 @@ vPortSyscallEntry:
  pushq cpu0+16(%rip)
  pushq %r11; pushq %rcx; pushq %rax; pushq %rdi; pushq %rsi; pushq %rdx; pushq %r10
  pushq %r8; pushq %r9; pushq %rbx; pushq %rbp; pushq %r12; pushq %r13; pushq %r14; pushq %r15
- /* SysV AMD64: syscall_result_t is returned through a hidden first pointer
-  * argument; the 56-byte by-value syscall_ctx_t is passed on the stack.
-  * The saved user RSP plus register saves leave RSP 16-byte aligned.  The
-  * 128-byte local frame remains resident on this thread's kernel stack while
-  * blocked, including both its result context and architectural return RSP. */
+ /* The 56-byte syscall_ctx_t lives in this local frame.  The saved user RSP
+  * plus register saves leave RSP 16-byte aligned.  This frame remains resident
+  * on the thread's kernel stack while blocked, including the syscall context
+  * and architectural return RSP. */
  subq $128, %rsp
  movq 224(%rsp), %rax; movq %rax, 0(%rsp)
  movq 216(%rsp), %rax; movq %rax, 8(%rsp)
@@ -169,24 +168,24 @@ vPortSyscallEntry:
  movq 192(%rsp), %rax; movq %rax, 32(%rsp)
  movq 184(%rsp), %rax; movq %rax, 40(%rsp)
  movq 176(%rsp), %rax; movq %rax, 48(%rsp)
- leaq 64(%rsp), %rdi
+ leaq 0(%rsp), %rdi
  call dispatch_syscall
- cmpl $0, 64(%rsp)
+ testl %eax, %eax
  je 1f
- /* BLOCK: result.ctx is the persistent return context in this thread's
-  * syscall frame. thread_block_current() does not return until thread_wake(). */
- leaq 72(%rsp), %rdi
+ /* BLOCK: the local syscall context is persistent in this thread's syscall
+  * frame. thread_block_current() does not return until thread_wake(). */
+ leaq 0(%rsp), %rdi
  call thread_block_current
  testl %eax, %eax
  jne vPortDefaultHandler
 1:
- movq 72(%rsp), %rax; movq %rax, 224(%rsp)
- movq 80(%rsp), %rax; movq %rax, 216(%rsp)
- movq 88(%rsp), %rax; movq %rax, 208(%rsp)
- movq 96(%rsp), %rax; movq %rax, 200(%rsp)
- movq 104(%rsp), %rax; movq %rax, 192(%rsp)
- movq 112(%rsp), %rax; movq %rax, 184(%rsp)
- movq 120(%rsp), %rax; movq %rax, 176(%rsp)
+ movq 0(%rsp), %rax; movq %rax, 224(%rsp)
+ movq 8(%rsp), %rax; movq %rax, 216(%rsp)
+ movq 16(%rsp), %rax; movq %rax, 208(%rsp)
+ movq 24(%rsp), %rax; movq %rax, 200(%rsp)
+ movq 32(%rsp), %rax; movq %rax, 192(%rsp)
+ movq 40(%rsp), %rax; movq %rax, 184(%rsp)
+ movq 48(%rsp), %rax; movq %rax, 176(%rsp)
  addq $128, %rsp
  popq %r15; popq %r14; popq %r13; popq %r12; popq %rbp; popq %rbx; popq %r9; popq %r8
  popq %r10; popq %rdx; popq %rsi; popq %rdi; popq %rax; popq %rcx; popq %r11

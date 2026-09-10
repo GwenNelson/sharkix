@@ -28,12 +28,7 @@ typedef enum syscall_disposition {
     SYSCALL_DISPOSITION_BLOCK
 } syscall_disposition_t;
 
-typedef struct syscall_result {
-    syscall_disposition_t disposition;
-    syscall_ctx_t ctx;
-} syscall_result_t;
-
-syscall_result_t dispatch_syscall(syscall_ctx_t ctx);
+syscall_disposition_t dispatch_syscall(syscall_ctx_t *ctx);
 
 /* Temporary, profile-only blocking-syscall test observability. */
 uint64_t syscall_block_test_invocations(void);
