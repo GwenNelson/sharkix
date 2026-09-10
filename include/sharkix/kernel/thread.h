@@ -1,9 +1,11 @@
 #pragma once
 
+#include <sharkix/kernel/freertos/FreeRTOS.h>
+
 #include <stddef.h>
 #include <stdint.h>
-#include <sharkix/kernel/memory.h>
-#include <sharkix/kernel/freertos/task.h>
+#include "memory.h"
+#include "task.h"
 
 #define THREAD_DEFAULT_KERNEL_STACK_WORDS 2048U
 #define THREAD_DEFAULT_KERNEL_STACK_SIZE (THREAD_DEFAULT_KERNEL_STACK_WORDS * sizeof(StackType_t))
