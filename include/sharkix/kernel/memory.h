@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include <sharkix/kernel/caps.h>
+#include <sharkix/kernel/vmo.h>
 
 #define PHYSMAP_BASE 0xffff800000000000ULL
 #define KHEAP_BASE 0xffffc00000000000ULL
@@ -39,6 +40,7 @@ typedef struct address_space {
     uint32_t live_threads;
     uint32_t permanent;
     capset_handle_t capset;
+    vmoset_handle_t vmoset;
 } address_space_t;
 
 void *phys_to_virt(uint64_t physical_address);

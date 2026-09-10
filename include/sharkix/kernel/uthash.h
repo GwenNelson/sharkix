@@ -2,7 +2,7 @@
 
 // Wrapper around the generic uthash.h for use inside the kernel
 
-#include <sharkix/kernel/memory.h>
+#include <sharkix/kernel/kmalloc.h>
 #include <sharkix/kernel/console.h>
 #include <string.h>
 

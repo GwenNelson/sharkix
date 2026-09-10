@@ -92,6 +92,18 @@ typedef uint64_t cap_rights_t;
 				 CAP_RIGHT_PMEM_DERIVE | \
 				 CAP_RIGHT_PMEM_MERGE)
 
+// virtual-memory-object specific perms
+#define CAP_RIGHT_VMO_MAP       (UINT64_C(1) << 10)
+#define CAP_RIGHT_VMO_READ      (UINT64_C(1) << 11)
+#define CAP_RIGHT_VMO_WRITE     (UINT64_C(1) << 12)
+#define CAP_RIGHT_VMO_EXEC      (UINT64_C(1) << 13)
+
+#define CAP_VMO_VALID_RIGHTS    (CAP_GENERIC_VALID_RIGHTS | \
+                                 CAP_RIGHT_VMO_MAP | \
+                                 CAP_RIGHT_VMO_READ | \
+                                 CAP_RIGHT_VMO_WRITE | \
+                                 CAP_RIGHT_VMO_EXEC)
+
 // helpers
 #define CAP_HAS_ALL(cap, required) \
     ((((cap)->rights) & (required)) == (required))
@@ -126,6 +138,7 @@ typedef uint64_t cap_rights_t;
 typedef enum cap_type_t {
 	CAP_TYPE_IPC_ENDPOINT = 1,
 	CAP_TYPE_PMEM         = 2,
+	CAP_TYPE_VMO          = 3,
 } cap_type_t;
 
 // represents an inividual cap
