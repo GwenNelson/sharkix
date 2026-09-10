@@ -46,6 +46,15 @@ typedef uint64_t vmo_rights_t;
                           VMO_EXEC)
 
 
+
+typedef enum vm_status_t {
+#define SHARKIX_ERRNO(name,value,msg) name = value,
+#include <sharkix/kernel/vm_errno.inc>
+#undef SHARKIX_ERRNO
+} vm_status_t;
+
+
+
 /*
  * Represents one virtual memory object.
  *

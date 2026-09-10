@@ -6,6 +6,7 @@
 #include "errno.h"
 #include "ipc.h"
 #include "caps.h"
+#include "vmo.h"
 
 static uint64_t announced_a;
 static uint64_t announced_b;
@@ -196,10 +197,134 @@ SHARKIX_SYSCALL_IMPL(PMEM_MERGE) {
 	return syscall_return();
 }
 
+/*
+ * input:
+ * 	RDI = pmem cap
+ * 	RSI = requested rights mask
+ *
+ * return:
+ * 	RAX = status (VM_OK on success)
+ * 	RDI = pmem cap (invalid handle on failure)
+ *
+ */
+/*
+ * input:
+ *     RDI = PMEM cap
+ *     RSI = requested VMO rights mask
+ *
+ * return:
+ *     RAX = status (VM_OK on success)
+ *     RDX = new VMO cap (CAP_INVALID_HANDLE on failure)
+ */
 SHARKIX_SYSCALL_IMPL(PMEM_NEW_VMO) {
-	(void)ctx;
-	return syscall_return();
+    thread_t *caller;
+    vmo_rights_t requested_rights;
+    cap_rights_t required_pmem_rights;
+    cap_rights_t new_cap_rights;
+    cap_handle_t pmem_cap;
+
+    vmo_handle_t vmo;
+    cap_handle_t vmo_cap;
+
+    kobject_handle_t pmem_obj_handle;
+    pmem_handle_t pmem_handle;
+
+    caller = thread_current();
+
+    if (caller == NULL || caller->address_space == NULL) {
+        ctx->rax = VM_ERR_INVALID;
+        goto fail;
+    }
+
+    requested_rights = (vmo_rights_t)ctx->rsi;
+    pmem_cap = (cap_handle_t)ctx->rdi;
+
+    if (requested_rights & ~VMO_VALID_RIGHTS) {
+        ctx->rax = VM_ERR_INVALID;
+        goto fail;
+    }
+
+    if (!(requested_rights & VMO_MAP)) {
+        /* An unmappable VMO is currently useless. */
+        ctx->rax = VM_ERR_INVALID;
+        goto fail;
+    }
+
+    if (!(requested_rights & VMO_READ)) {
+        /* x86-64 paging cannot provide a present unreadable mapping. */
+        ctx->rax = VM_ERR_INVALID;
+        goto fail;
+    }
+
+    required_pmem_rights = 0;
+
+    if (requested_rights & VMO_MAP)
+        required_pmem_rights |= CAP_RIGHT_PMEM_MAP;
+
+    if (requested_rights & VMO_READ)
+        required_pmem_rights |= CAP_RIGHT_PMEM_READ;
+
+    if (requested_rights & VMO_WRITE)
+        required_pmem_rights |= CAP_RIGHT_PMEM_WRITE;
+
+    if (requested_rights & VMO_EXEC)
+        required_pmem_rights |= CAP_RIGHT_PMEM_EXEC;
+
+    if (kcapset_resolve_handle(caller->address_space->capset,
+                               pmem_cap,
+                               CAP_TYPE_PMEM,
+                               required_pmem_rights,
+                               &pmem_obj_handle) != 0) {
+        ctx->rax = VM_ERR_PERMISSION;
+        goto fail;
+    }
+
+    pmem_handle = (pmem_handle_t)pmem_obj_handle;
+
+    if (kvmo_create(&vmo, pmem_handle, requested_rights) != 0) {
+        ctx->rax = VM_ERR_INVALID;
+        goto fail;
+    }
+
+    new_cap_rights = CAP_GENERIC_VALID_RIGHTS;
+
+    if (requested_rights & VMO_MAP)
+        new_cap_rights |= CAP_RIGHT_VMO_MAP;
+
+    if (requested_rights & VMO_READ)
+        new_cap_rights |= CAP_RIGHT_VMO_READ;
+
+    if (requested_rights & VMO_WRITE)
+        new_cap_rights |= CAP_RIGHT_VMO_WRITE;
+
+    if (requested_rights & VMO_EXEC)
+        new_cap_rights |= CAP_RIGHT_VMO_EXEC;
+
+    if (kcap_create((kobject_handle_t)vmo,
+                    CAP_TYPE_VMO,
+                    new_cap_rights,
+                    &vmo_cap) != 0) {
+        kvmo_destroy(vmo);
+        ctx->rax = VM_ERR_FAILED_CAP_CREATE;
+        goto fail;
+    }
+
+    if (kcapset_addcap(caller->address_space->capset, vmo_cap) != 0) {
+        kcap_destroy(vmo_cap);
+        kvmo_destroy(vmo);
+        ctx->rax = VM_ERR_FAILED_CAP_CREATE;
+        goto fail;
+    }
+
+    ctx->rax = VM_OK;
+    ctx->rdx = (uint64_t)vmo_cap;
+    return syscall_return();
+
+fail:
+    ctx->rdx = (uint64_t)CAP_INVALID_HANDLE;
+    return syscall_return();
 }
+
 
 /* Existing observable syscall 0: write one character and return the trusted
  * caller's SharkKernel ID in RAX. */
