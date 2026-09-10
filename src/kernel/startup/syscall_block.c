@@ -28,9 +28,9 @@ static void block_monitor(void *argument)
             thread_get_state(waker_id) == THREAD_STATE_INVALID &&
             thread_reaped_count() >= baseline_reaped + 2) {
             console_write("syscall_block verified: block wake one-call all-register dead-invalid reaped\n");
-            for (;;) taskYIELD();
+            for (;;) thread_yield();
         }
-        taskYIELD();
+        thread_yield();
     }
 }
 

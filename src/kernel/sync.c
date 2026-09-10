@@ -1,13 +1,13 @@
 #include <sharkix/kernel/sync.h>
+#include <sharkix/kernel/thread.h>
 
 #include "FreeRTOS.h"
-#include "task.h"
 
 #include <libfifo/sync.h>
 
 static void ksync_yield(void)
 {
-    taskYIELD();
+    thread_yield();
 }
 
 void ksync_init(void)

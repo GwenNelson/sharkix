@@ -59,6 +59,7 @@ typedef struct cpu_local {
 extern cpu_local_t cpu0;
 thread_t *thread_current(void);
 uint64_t thread_current_id(void);
+void thread_yield(void);
 /* Single-CPU diagnostic lookup only: a returned raw pointer is valid only
  * until the next deferred-reaper pass.  Callers needing a durable answer use
  * thread_get_state(). */
@@ -92,4 +93,3 @@ void thread_handle_exception(unsigned vector, uint64_t rip, uint64_t error,
                              uint64_t address) __attribute__((noreturn));
 void thread_handle_kernel_exception(unsigned vector, uint64_t rip, uint64_t error,
                                     uint64_t address) __attribute__((noreturn));
-

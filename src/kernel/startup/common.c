@@ -44,5 +44,5 @@ void startup_reaper(void)
 
 void startup_kernel_spinner(char marker)
 {
-    for (;;) { console_putc(marker); taskYIELD(); }
+    for (;;) { console_putc(marker); thread_yield(); }
 }

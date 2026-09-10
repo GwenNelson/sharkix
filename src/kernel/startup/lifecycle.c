@@ -23,7 +23,7 @@ static void lifecycle_task(void *argument)
             .reap_on_exit = 1
         };
         if (program_load_and_start(&image, &options, NULL, NULL) != 0) break;
-        while (thread_reaped_count() == reaped) taskYIELD();
+        while (thread_reaped_count() == reaped) thread_yield();
         console_putc('L');
     }
     /* An explicit output AS reference prevents an otherwise ephemeral
@@ -38,7 +38,7 @@ static void lifecycle_task(void *argument)
     if (program_load_and_start(&retained_image, &retained_options, &held_as, NULL) != 0) {
         console_write(" lifecycle retained creation failed\n");
     } else {
-        while (thread_reaped_count() == held_reaped) taskYIELD();
+        while (thread_reaped_count() == held_reaped) thread_yield();
         address_space_release(held_as);
     }
     console_write("lifecycle pages "); console_decimal(before); console_putc(' '); console_decimal(phys_pages_in_use()); console_write("\n");

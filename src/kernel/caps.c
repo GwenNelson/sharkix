@@ -18,6 +18,9 @@ static int kcap_validate_rights(cap_type_t type, cap_rights_t rights) {
     case CAP_TYPE_IPC_ENDPOINT:
         return (rights & ~CAP_IPC_VALID_RIGHTS) ? -1 : 0;
 
+    case CAP_TYPE_PMEM:
+        return (rights & ~CAP_PMEM_VALID_RIGHTS) ? -1 : 0;
+
     default:
         return -1;
     }

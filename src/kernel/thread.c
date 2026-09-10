@@ -19,6 +19,7 @@ static uint64_t reaped_threads;
 
 thread_t *thread_current(void) { return cpu0.current_thread; }
 uint64_t thread_current_id(void) { return cpu0.current_thread ? cpu0.current_thread->id : 0; }
+void thread_yield(void) { taskYIELD(); }
 
 static thread_t *thread_allocate(void)
 {
@@ -361,7 +362,7 @@ int thread_block_current(syscall_ctx_t *context)
      * make wake impossible and would also hand ownership of its TCB to the
      * idle-task reaper. */
     vTaskSuspendCurrentNoYield();
-    taskYIELD();
+    thread_yield();
     thread->blocked_syscall_ctx = NULL;
     return 0;
 }

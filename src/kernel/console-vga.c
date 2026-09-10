@@ -29,7 +29,7 @@ static bool vga_ready;
 static void console_vga_server_thread(void *argument)
 {
     (void)argument;
-    for (;;) taskYIELD();
+    for (;;) thread_yield();
 }
 
 static void outb(uint16_t port, uint8_t value) { __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port)); }
