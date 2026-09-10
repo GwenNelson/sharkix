@@ -151,15 +151,53 @@ SHARKIX_SYSCALL_IMPL(VM_UNMAP) {
 	return syscall_return();
 }
 
-SHARKIX_SYSCALL_IMPL(VM_GRANT) {
+SHARKIX_SYSCALL_IMPL(CAP_TRANSFER) {
+	(void)ctx;
 	return syscall_return();
 }
 
-SHARKIX_SYSCALL_IMPL(VM_REVOKE) {
+SHARKIX_SYSCALL_IMPL(CAP_FORWARD) {
+	(void)ctx;
 	return syscall_return();
 }
 
-SHARKIX_SYSCALL_IMPL(VM_DESTROY) {
+SHARKIX_SYSCALL_IMPL(CAP_DERIVE) {
+	(void)ctx;
+	return syscall_return();
+}
+
+SHARKIX_SYSCALL_IMPL(CAP_DESTROY) {
+	(void)ctx;
+	return syscall_return();
+}
+
+SHARKIX_SYSCALL_IMPL(CAP_REMOVE) {
+	(void)ctx;
+	return syscall_return();
+}
+
+SHARKIX_SYSCALL_IMPL(VM_PROTECT) {
+	(void)ctx;
+	return syscall_return();
+}
+
+SHARKIX_SYSCALL_IMPL(PMEM_ALLOC) {
+	(void)ctx;
+	return syscall_return();
+}
+
+SHARKIX_SYSCALL_IMPL(PMEM_DERIVE) {
+	(void)ctx;
+	return syscall_return();
+}
+
+SHARKIX_SYSCALL_IMPL(PMEM_MERGE) {
+	(void)ctx;
+	return syscall_return();
+}
+
+SHARKIX_SYSCALL_IMPL(PMEM_NEW_VMO) {
+	(void)ctx;
 	return syscall_return();
 }
 

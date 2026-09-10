@@ -8,7 +8,7 @@ _start:
     xorq %r10, %r10
     xorq %r8, %r8
     xorq %r9, %r9
-    movq $-2, %rax
+    movq $-202, %rax
     syscall
     testq %rax, %rax
     jne failure

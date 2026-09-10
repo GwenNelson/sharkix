@@ -3,7 +3,7 @@
 .global _start
 _start:
     popq %rdi
-    movq $-3, %rax
+    movq $-203, %rax
     syscall
     testq %rax, %rax
     jne failure
