@@ -20,8 +20,9 @@ static int kpmem_get_end(uintptr_t base, size_t length, uintptr_t *end)
 static pmem_t *kpmem_find_locked(pmem_handle_t handle)
 {
     pmem_t *pmem = NULL;
+    uint32_t hashv = (uint32_t)handle;
 
-    HASH_FIND(hh, global_pmem_table, &handle, sizeof(handle), pmem);
+    HASH_FIND_BYHASHVALUE(hh, global_pmem_table, &handle, sizeof(handle), hashv, pmem);
     return pmem;
 }
 
@@ -31,11 +32,13 @@ static int kpmem_insert_locked(pmem_t *pmem)
         return -1;
 
     pmem->handle = next_pmem_handle++;
+    uint32_t hashv = (uint32_t)pmem->handle;
 
-    HASH_ADD(hh,
+    HASH_ADD_BYHASHVALUE(hh,
              global_pmem_table,
              handle,
              sizeof(pmem->handle),
+             hashv,
              pmem);
 
     return 0;

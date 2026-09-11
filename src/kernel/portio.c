@@ -11,8 +11,9 @@ static kmutex_t global_portio_table_lock;
 static portio_t *kportio_find_locked(portio_handle_t handle)
 {
     portio_t *portio = NULL;
+    uint32_t hashv = (uint32_t)handle;
 
-    HASH_FIND(hh, global_portio_table, &handle, sizeof(handle), portio);
+    HASH_FIND_BYHASHVALUE(hh, global_portio_table, &handle, sizeof(handle), hashv, portio);
     return portio;
 }
 
@@ -22,11 +23,13 @@ static int kportio_insert_locked(portio_t *portio)
         return -1;
 
     portio->handle = next_portio_handle++;
+    uint32_t hashv = (uint32_t)portio->handle;
 
-    HASH_ADD(hh,
+    HASH_ADD_BYHASHVALUE(hh,
              global_portio_table,
              handle,
              sizeof(portio->handle),
+             hashv,
              portio);
 
     return 0;

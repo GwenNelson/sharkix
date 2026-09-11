@@ -19,10 +19,11 @@ static kmutex_t endpoints_lock;
  */
 static ipc_endpoint_t *ipc_acquire(ipc_handle_t handle) {
                        ipc_endpoint_t *endpoint;
+                       uint32_t hashv = (uint32_t)handle;
 
                        kmutex_lock(&endpoints_lock);
 
-                       HASH_FIND(hh, endpoints, &handle, sizeof(handle), endpoint);
+                       HASH_FIND_BYHASHVALUE(hh, endpoints, &handle, sizeof(handle), hashv, endpoint);
 
                        if (endpoint)
                            endpoint->references++;
@@ -110,7 +111,8 @@ ipc_status_t ipc_create(ipc_handle_t *handle) {
              kmutex_lock(&endpoints_lock);
 
              endpoint->handle = next_handle++;
-             HASH_ADD(hh, endpoints, handle, sizeof(endpoint->handle), endpoint);
+             uint32_t hashv = (uint32_t)endpoint->handle;
+             HASH_ADD_BYHASHVALUE(hh, endpoints, handle, sizeof(endpoint->handle), hashv, endpoint);
 
              kmutex_unlock(&endpoints_lock);
 
@@ -125,6 +127,7 @@ ipc_status_t ipc_destroy(ipc_handle_t handle) {
              size_t wake_senders;
              size_t wake_receivers;
              size_t i;
+             uint32_t hashv = (uint32_t)handle;
 
              if (!handle)
                  return IPC_ERR_INVALID;
@@ -136,7 +139,7 @@ ipc_status_t ipc_destroy(ipc_handle_t handle) {
               */
              kmutex_lock(&endpoints_lock);
 
-             HASH_FIND(hh, endpoints, &handle, sizeof(handle), endpoint);
+             HASH_FIND_BYHASHVALUE(hh, endpoints, &handle, sizeof(handle), hashv, endpoint);
 
              if (!endpoint) {
                  kmutex_unlock(&endpoints_lock);

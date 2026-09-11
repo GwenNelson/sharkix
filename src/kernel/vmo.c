@@ -28,8 +28,9 @@ static vmoset_handle_t next_vmoset_handle = 1;
 static vmo_t *vmo_lookup_locked(vmo_handle_t handle)
 {
     vmo_t *vmo = NULL;
+    uint32_t hashv = (uint32_t)handle;
 
-    HASH_FIND(hh, vmos, &handle, sizeof(handle), vmo);
+    HASH_FIND_BYHASHVALUE(hh, vmos, &handle, sizeof(handle), hashv, vmo);
 
     return vmo;
 }
@@ -38,8 +39,9 @@ static vmo_t *vmo_lookup_locked(vmo_handle_t handle)
 static vmoset_t *vmoset_lookup_locked(vmoset_handle_t handle)
 {
     vmoset_t *set = NULL;
+    uint32_t hashv = (uint32_t)handle;
 
-    HASH_FIND(hh, vmosets, &handle, sizeof(handle), set);
+    HASH_FIND_BYHASHVALUE(hh, vmosets, &handle, sizeof(handle), hashv, set);
 
     return set;
 }
@@ -139,8 +141,9 @@ int kvmo_create(vmo_handle_t *out,
      * generation/reuse treatment as your other kernel handle tables.
      */
     vmo->handle = next_vmo_handle++;
+    uint32_t hashv = (uint32_t)vmo->handle;
 
-    HASH_ADD(hh, vmos, handle, sizeof(vmo->handle), vmo);
+    HASH_ADD_BYHASHVALUE(hh, vmos, handle, sizeof(vmo->handle), hashv, vmo);
 
     kspin_unlock(&vmos_lock);
 
@@ -239,8 +242,9 @@ int kvmoset_new(vmoset_handle_t *out)
     kspin_lock(&vmosets_lock);
 
     set->handle = next_vmoset_handle++;
+    uint32_t hashv = (uint32_t)set->handle;
 
-    HASH_ADD(hh, vmosets, handle, sizeof(set->handle), set);
+    HASH_ADD_BYHASHVALUE(hh, vmosets, handle, sizeof(set->handle), hashv, set);
 
     kspin_unlock(&vmosets_lock);
 

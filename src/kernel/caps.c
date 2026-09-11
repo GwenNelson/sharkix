@@ -35,11 +35,13 @@ static int kcap_validate_rights(cap_type_t type, cap_rights_t rights) {
 static capset_t *kcapset_find_locked(capset_handle_t handle)
 {
     capset_t *set = NULL;
+    uint32_t hashv = (uint32_t)handle;
 
-    HASH_FIND(hh,
+    HASH_FIND_BYHASHVALUE(hh,
               global_capsets_table,
               &handle,
               sizeof(handle),
+              hashv,
               set);
 
     return set;
@@ -48,8 +50,9 @@ static capset_t *kcapset_find_locked(capset_handle_t handle)
 static cap_t *kcap_find_locked(cap_handle_t handle)
 {
     cap_t *cap = NULL;
+    uint32_t hashv = (uint32_t)handle;
 
-    HASH_FIND(hh, global_caps_table, &handle, sizeof(handle), cap);
+    HASH_FIND_BYHASHVALUE(hh, global_caps_table, &handle, sizeof(handle), hashv, cap);
     return cap;
 }
 
@@ -95,11 +98,13 @@ int kcap_create(kobject_handle_t obj_handle,
     kmutex_lock(&global_caps_table_lock);
 
     cap->cap_handle = next_cap_handle++;
+    uint32_t hashv = (uint32_t)cap->cap_handle;
 
-    HASH_ADD(hh,
+    HASH_ADD_BYHASHVALUE(hh,
              global_caps_table,
              cap_handle,
              sizeof(cap->cap_handle),
+             hashv,
              cap);
 
     kmutex_unlock(&global_caps_table_lock);
@@ -110,13 +115,15 @@ int kcap_create(kobject_handle_t obj_handle,
 
 bool kcap_cap_exists(cap_handle_t handle) {
     cap_t *found = NULL;
+    uint32_t hashv = (uint32_t)handle;
 
     kmutex_lock(&global_caps_table_lock);
 
-    HASH_FIND(hh,
+    HASH_FIND_BYHASHVALUE(hh,
               global_caps_table,
               &handle,
               sizeof(handle),
+              hashv,
               found);
 
     kmutex_unlock(&global_caps_table_lock);
@@ -126,13 +133,15 @@ bool kcap_cap_exists(cap_handle_t handle) {
 
 int kcap_destroy(cap_handle_t handle) {
     cap_t *found = NULL;
+    uint32_t hashv = (uint32_t)handle;
 
     kmutex_lock(&global_caps_table_lock);
 
-    HASH_FIND(hh,
+    HASH_FIND_BYHASHVALUE(hh,
               global_caps_table,
               &handle,
               sizeof(handle),
+              hashv,
               found);
 
     if (!found) {
@@ -154,6 +163,7 @@ int kcap_derive(cap_handle_t source,
 {
     cap_t *src = NULL;
     cap_t *derived;
+    uint32_t source_hashv = (uint32_t)source;
 
     if (!new_cap)
         return -1;
@@ -166,10 +176,11 @@ int kcap_derive(cap_handle_t source,
 
     kmutex_lock(&global_caps_table_lock);
 
-    HASH_FIND(hh,
+    HASH_FIND_BYHASHVALUE(hh,
               global_caps_table,
               &source,
               sizeof(source),
+              source_hashv,
               src);
 
     if (!src) {
@@ -191,11 +202,13 @@ int kcap_derive(cap_handle_t source,
     derived->type       = src->type;
     derived->obj_handle = src->obj_handle;
     derived->rights     = new_rights;
+    uint32_t derived_hashv = (uint32_t)derived->cap_handle;
 
-    HASH_ADD(hh,
+    HASH_ADD_BYHASHVALUE(hh,
              global_caps_table,
              cap_handle,
              sizeof(derived->cap_handle),
+             derived_hashv,
              derived);
 
     kmutex_unlock(&global_caps_table_lock);
@@ -208,6 +221,7 @@ int kcap_clone(cap_handle_t source, cap_handle_t *new_cap)
 {
     cap_t *src = NULL;
     cap_t *clone;
+    uint32_t source_hashv = (uint32_t)source;
 
     if (!new_cap)
         return -1;
@@ -220,10 +234,11 @@ int kcap_clone(cap_handle_t source, cap_handle_t *new_cap)
 
     kmutex_lock(&global_caps_table_lock);
 
-    HASH_FIND(hh,
+    HASH_FIND_BYHASHVALUE(hh,
               global_caps_table,
               &source,
               sizeof(source),
+              source_hashv,
               src);
 
     if (!src) {
@@ -236,11 +251,13 @@ int kcap_clone(cap_handle_t source, cap_handle_t *new_cap)
     clone->type       = src->type;
     clone->obj_handle = src->obj_handle;
     clone->rights     = src->rights;
+    uint32_t clone_hashv = (uint32_t)clone->cap_handle;
 
-    HASH_ADD(hh,
+    HASH_ADD_BYHASHVALUE(hh,
              global_caps_table,
              cap_handle,
              sizeof(clone->cap_handle),
+             clone_hashv,
              clone);
 
     kmutex_unlock(&global_caps_table_lock);
@@ -256,6 +273,8 @@ int kcap_merge(cap_handle_t a,
     cap_t *cap_a = NULL;
     cap_t *cap_b = NULL;
     cap_t *merged;
+    uint32_t a_hashv = (uint32_t)a;
+    uint32_t b_hashv = (uint32_t)b;
 
     if (!new_cap)
         return -1;
@@ -268,16 +287,18 @@ int kcap_merge(cap_handle_t a,
 
     kmutex_lock(&global_caps_table_lock);
 
-    HASH_FIND(hh,
+    HASH_FIND_BYHASHVALUE(hh,
               global_caps_table,
               &a,
               sizeof(a),
+              a_hashv,
               cap_a);
 
-    HASH_FIND(hh,
+    HASH_FIND_BYHASHVALUE(hh,
               global_caps_table,
               &b,
               sizeof(b),
+              b_hashv,
               cap_b);
 
     if (!cap_a || !cap_b) {
@@ -308,10 +329,12 @@ int kcap_merge(cap_handle_t a,
         return -1;
     }
 
-    HASH_ADD(hh,
+    uint32_t merged_hashv = (uint32_t)merged->cap_handle;
+    HASH_ADD_BYHASHVALUE(hh,
              global_caps_table,
              cap_handle,
              sizeof(merged->cap_handle),
+             merged_hashv,
              merged);
 
     kmutex_unlock(&global_caps_table_lock);
@@ -322,16 +345,18 @@ int kcap_merge(cap_handle_t a,
 
 int kcap_getcap(cap_handle_t handle, cap_t *out) {
     cap_t *found = NULL;
+    uint32_t hashv = (uint32_t)handle;
 
     if (!out)
         return -1;
 
     kmutex_lock(&global_caps_table_lock);
 
-    HASH_FIND(hh,
+    HASH_FIND_BYHASHVALUE(hh,
               global_caps_table,
               &handle,
               sizeof(handle),
+              hashv,
               found);
 
     if (!found) {
@@ -370,11 +395,13 @@ int kcapset_new(capset_handle_t *new_set)
     kmutex_lock(&global_capsets_table_lock);
 
     set->capset_handle = next_capset_handle++;
+    uint32_t hashv = (uint32_t)set->capset_handle;
 
-    HASH_ADD(hh,
+    HASH_ADD_BYHASHVALUE(hh,
              global_capsets_table,
              capset_handle,
              sizeof(set->capset_handle),
+             hashv,
              set);
 
     kmutex_unlock(&global_capsets_table_lock);
@@ -415,6 +442,7 @@ int kcapset_addcap(capset_handle_t set_handle, cap_handle_t cap_handle)
     capset_t *set;
     capset_entry_t *existing = NULL;
     capset_entry_t *entry;
+    uint32_t hashv = (uint32_t)cap_handle;
 
     entry = kmalloc(sizeof(*entry));
     if (!entry)
@@ -442,10 +470,11 @@ int kcapset_addcap(capset_handle_t set_handle, cap_handle_t cap_handle)
 
     kspin_lock(&set->spinlock);
 
-    HASH_FIND(hh,
+    HASH_FIND_BYHASHVALUE(hh,
               set->caps,
               &cap_handle,
               sizeof(cap_handle),
+              hashv,
               existing);
 
     if (existing) {
@@ -456,10 +485,11 @@ int kcapset_addcap(capset_handle_t set_handle, cap_handle_t cap_handle)
         return -1;
     }
 
-    HASH_ADD(hh,
+    HASH_ADD_BYHASHVALUE(hh,
              set->caps,
              cap_handle,
              sizeof(entry->cap_handle),
+             hashv,
              entry);
 
     kspin_unlock(&set->spinlock);
@@ -473,6 +503,7 @@ int kcapset_delcap(capset_handle_t set_handle, cap_handle_t cap_handle)
 {
     capset_t *set;
     capset_entry_t *entry = NULL;
+    uint32_t hashv = (uint32_t)cap_handle;
 
     kmutex_lock(&global_capsets_table_lock);
 
@@ -484,10 +515,11 @@ int kcapset_delcap(capset_handle_t set_handle, cap_handle_t cap_handle)
 
     kspin_lock(&set->spinlock);
 
-    HASH_FIND(hh,
+    HASH_FIND_BYHASHVALUE(hh,
               set->caps,
               &cap_handle,
               sizeof(cap_handle),
+              hashv,
               entry);
 
     if (!entry) {
@@ -509,6 +541,7 @@ bool kcapset_hascap(capset_handle_t set_handle, cap_handle_t cap_handle)
 {
     capset_t *set;
     capset_entry_t *entry = NULL;
+    uint32_t hashv = (uint32_t)cap_handle;
 
     kmutex_lock(&global_capsets_table_lock);
 
@@ -520,10 +553,11 @@ bool kcapset_hascap(capset_handle_t set_handle, cap_handle_t cap_handle)
 
     kspin_lock(&set->spinlock);
 
-    HASH_FIND(hh,
+    HASH_FIND_BYHASHVALUE(hh,
               set->caps,
               &cap_handle,
               sizeof(cap_handle),
+              hashv,
               entry);
 
     kspin_unlock(&set->spinlock);
@@ -599,6 +633,7 @@ int kcapset_resolve_handle(capset_handle_t set_handle,
     capset_t *set;
     capset_entry_t *entry = NULL;
     cap_t cap;
+    uint32_t cap_hashv = (uint32_t)cap_handle;
 
     if (!out)
         return -1;
@@ -615,10 +650,11 @@ int kcapset_resolve_handle(capset_handle_t set_handle,
 
     kspin_lock(&set->spinlock);
 
-    HASH_FIND(hh,
+    HASH_FIND_BYHASHVALUE(hh,
               set->caps,
               &cap_handle,
               sizeof(cap_handle),
+              cap_hashv,
               entry);
 
     cap_t *found = entry ? kcap_find_locked(cap_handle) : NULL;
