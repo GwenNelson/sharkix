@@ -45,6 +45,7 @@ void kernel_high_entry(uint32_t magic, uint32_t info)
     kinit_caps();
     kvalloc_init();
     kvmo_init();
+    kvmoset_new(&(address_space_kernel()->vmoset));
     if (!startup_kernel_thread(kernel_start_task, "kernel-start", tskIDLE_PRIORITY + 2))
         for (;;) __asm__ volatile ("cli; hlt");
     vTaskStartScheduler();

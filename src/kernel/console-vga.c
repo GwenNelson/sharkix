@@ -25,6 +25,7 @@ static uintptr_t vga_va;
 static uint8_t vga_x, vga_y;
 static pmem_handle_t vga_pmem = PMEM_INVALID_HANDLE;
 static cap_handle_t vga_cap = CAP_INVALID_HANDLE;
+static cap_handle_t vga_vmo_cap = CAP_INVALID_HANDLE;
 static capset_handle_t vga_server_capset;
 static cap_handle_t vga_endpoint_cap = CAP_INVALID_HANDLE;
 static cap_handle_t vga_endpoint_send_cap = CAP_INVALID_HANDLE;
@@ -39,6 +40,7 @@ static void console_vga_server_thread(void *argument)
 {
     capset_handle_t capset = (capset_handle_t)(uintptr_t)argument;
     cap_t pmem_cap;
+    cap_t vmo_cap;
     cap_t endpoint_cap;
     sharkix_syscall_regs_t regs = { 0 };
 
@@ -51,14 +53,66 @@ static void console_vga_server_thread(void *argument)
 
     (void)pmem_cap;
 
+    // first, we already know pmem_cap, so we need to mint the new cap for vmo_cap
+    // this will allow us to map the resulting VMO
+    regs.rax = SYSCALL_PMEM_NEW_VMO;
+    regs.rdi = pmem_cap.cap_handle;
+    regs.rsi = VMO_MAP | VMO_READ | VMO_WRITE;
+    sharkix_syscall(&regs);
+    vga_vmo_cap = regs.rdx;
+
+    if(regs.rax != VM_OK) {
+	console_write("console-vga.c: failed on SYS_PMEM_NEW_VMO!\n");
+	console_write("RAX: ");
+	console_decimal(regs.rax);
+	console_write("\n");
+	for(;;) thread_yield();
+    }
+
+    // for now we still use kvalloc to get the virtual address
+    // but once this is true ring3, we'll implement ualloc, or maybe just identity map vram
     if (kvalloc(0x8000, &vga_va) != 0)
         for (;;) thread_yield();
 
-    if (address_space_map_range(address_space_kernel(), vga_va, 0xB8000,
+    // so now we can actually map the VMO hopefully
+   
+    /*
+     * Map the whole VGA framebuffer region at our chosen VA.
+     *
+     * RDI = VMO cap
+     * RSI = VA
+     * RDX = offset into VMO
+     * R10 = length
+     * R8  = mapping rights
+     * R9  = flags
+     */
+     regs = (sharkix_syscall_regs_t){0};
+
+     regs.rax = SYSCALL_VM_MAP;
+     regs.rdi = vga_vmo_cap;
+     regs.rsi = vga_va;
+     regs.rdx = 0;                    /* beginning of VMO */
+     regs.r10 = 0x8000;               /* VGA PMEM length */
+     regs.r8  = VMO_READ | VMO_WRITE;
+     regs.r9  = 0;                    /* no VM_MAP flags yet */
+     sharkix_syscall(&regs);
+
+     if(regs.rax != VM_OK) {
+	console_write("console-vga.c: failed SYS_VM_MAP!\n");
+	console_write("RAX: ");
+	console_decimal(regs.rax);
+	console_write("\n");
+	for(;;) thread_yield();
+     }
+     
+     regs = (sharkix_syscall_regs_t){0};
+
+     // now it should be possible to actually use it!
+/*    if (address_space_map_range(address_space_kernel(), vga_va, 0xB8000,
                                 0x8000, PAGE_WRITABLE | PAGE_NX) != 0) {
         kvfree(vga_va);
         for (;;) thread_yield();
-    }
+    }*/
 
     vga = (uint16_t *)vga_va;
     uint16_t position = vga_cursor_position();
@@ -148,7 +202,8 @@ void console_vga_init(void) {
          kcapset_addcap(vga_server_capset, vga_endpoint_cap) != 0 ||
          /* TODO: temporary while the VGA server shares the kernel address
           * space; remove/fix this when it moves to its own address space/ring 3. */
-         kcapset_addcap(address_space_kernel()->capset, vga_endpoint_send_cap) != 0 ||
+	 kcapset_addcap(address_space_kernel()->capset, vga_cap) != 0 ||
+	 kcapset_addcap(address_space_kernel()->capset, vga_endpoint_send_cap) != 0 ||
          kcapset_addcap(address_space_kernel()->capset, vga_endpoint_cap) != 0) {
          console_write("console-vga.c:console_vga_init() - failed to setup server IPC!\n");
          return;
