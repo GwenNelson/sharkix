@@ -4,6 +4,7 @@
 #include <sharkix/kernel/console-vga.h>
 #include "memory.h"
 #include <sharkix/kernel/pmem.h>
+#include <sharkix/kernel/portio.h>
 #include <sharkix/kernel/sync.h>
 #include <sharkix/kernel/kvalloc.h>
 #include <sharkix/kernel/caps.h>
@@ -16,8 +17,9 @@
 #define VGA_HEIGHT 25
 #define VGA_PHYS 0xb8000ULL
 #define VGA_ATTRIBUTE 0x0f00U
-#define VGA_CRTC_INDEX 0x3d4
-#define VGA_CRTC_DATA 0x3d5
+#define VGA_CRTC_BASE 0x3d4U
+#define VGA_CRTC_INDEX_OFFSET 0U
+#define VGA_CRTC_DATA_OFFSET 1U
 //static volatile uint16_t *const vga = (volatile uint16_t *)(PHYSMAP_BASE + VGA_PHYS);
 static volatile uint16_t *vga = NULL;
 
@@ -26,6 +28,8 @@ static uint8_t vga_x, vga_y;
 static pmem_handle_t vga_pmem = PMEM_INVALID_HANDLE;
 static cap_handle_t vga_cap = CAP_INVALID_HANDLE;
 static cap_handle_t vga_vmo_cap = CAP_INVALID_HANDLE;
+static portio_handle_t vga_portio = PORTIO_INVALID_HANDLE;
+static cap_handle_t vga_portio_cap = CAP_INVALID_HANDLE;
 static capset_handle_t vga_server_capset;
 static cap_handle_t vga_endpoint_cap = CAP_INVALID_HANDLE;
 static cap_handle_t vga_endpoint_send_cap = CAP_INVALID_HANDLE;
@@ -35,12 +39,15 @@ static bool vga_ready;
 
 static void internal_console_vga_putc(char c);
 static uint16_t vga_cursor_position(void);
+static void vga_port_outb(uint32_t offset, uint8_t value);
+static uint8_t vga_port_inb(uint32_t offset);
 
 static void console_vga_server_thread(void *argument)
 {
     capset_handle_t capset = (capset_handle_t)(uintptr_t)argument;
     cap_t pmem_cap;
     cap_t vmo_cap;
+    cap_t portio_cap;
     cap_t endpoint_cap;
     sharkix_syscall_regs_t regs = { 0 };
 
@@ -48,10 +55,14 @@ static void console_vga_server_thread(void *argument)
                             CAP_RIGHT_PMEM_MAP | CAP_RIGHT_PMEM_READ |
                             CAP_RIGHT_PMEM_WRITE, &pmem_cap) != 0 ||
         kcapset_resolve_cap(capset, CAP_TYPE_IPC_ENDPOINT,
-                            CAP_RIGHT_IPC_RECV, &endpoint_cap) != 0)
+                            CAP_RIGHT_IPC_RECV, &endpoint_cap) != 0 ||
+        kcapset_resolve_cap(capset, CAP_TYPE_PORTIO,
+                            CAP_RIGHT_PORTIO_READ | CAP_RIGHT_PORTIO_WRITE,
+                            &portio_cap) != 0)
         for (;;) thread_yield();
 
     (void)pmem_cap;
+    vga_portio_cap = portio_cap.cap_handle;
 
     // first, we already know pmem_cap, so we need to mint the new cap for vmo_cap
     // this will allow us to map the resulting VMO
@@ -146,24 +157,50 @@ static void console_vga_server_thread(void *argument)
     }
 }
 
-static void outb(uint16_t port, uint8_t value) { __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port)); }
-static uint8_t inb(uint16_t port) { uint8_t value; __asm__ volatile ("inb %1, %0" : "=a"(value) : "Nd"(port)); return value; }
+static void vga_port_outb(uint32_t offset, uint8_t value)
+{
+    sharkix_syscall_regs_t regs = { 0 };
+
+    regs.rax = SYSCALL_PORT_OUTB;
+    regs.rdi = vga_portio_cap;
+    regs.rsi = offset;
+    regs.rdx = value;
+    sharkix_syscall(&regs);
+
+    if (regs.rax != PORTIO_OK)
+        for (;;) thread_yield();
+}
+
+static uint8_t vga_port_inb(uint32_t offset)
+{
+    sharkix_syscall_regs_t regs = { 0 };
+
+    regs.rax = SYSCALL_PORT_INB;
+    regs.rdi = vga_portio_cap;
+    regs.rsi = offset;
+    sharkix_syscall(&regs);
+
+    if (regs.rax != PORTIO_OK)
+        for (;;) thread_yield();
+
+    return (uint8_t)regs.rdx;
+}
 
 static uint16_t vga_cursor_position(void)
 {
-    outb(VGA_CRTC_INDEX, 0x0e);
-    uint16_t position = (uint16_t)inb(VGA_CRTC_DATA) << 8;
-    outb(VGA_CRTC_INDEX, 0x0f);
-    return position | inb(VGA_CRTC_DATA);
+    vga_port_outb(VGA_CRTC_INDEX_OFFSET, 0x0e);
+    uint16_t position = (uint16_t)vga_port_inb(VGA_CRTC_DATA_OFFSET) << 8;
+    vga_port_outb(VGA_CRTC_INDEX_OFFSET, 0x0f);
+    return position | vga_port_inb(VGA_CRTC_DATA_OFFSET);
 }
 
 static void vga_set_cursor(void)
 {
     uint16_t position = (uint16_t)vga_y * VGA_WIDTH + vga_x;
-    outb(VGA_CRTC_INDEX, 0x0e);
-    outb(VGA_CRTC_DATA, (uint8_t)(position >> 8));
-    outb(VGA_CRTC_INDEX, 0x0f);
-    outb(VGA_CRTC_DATA, (uint8_t)position);
+    vga_port_outb(VGA_CRTC_INDEX_OFFSET, 0x0e);
+    vga_port_outb(VGA_CRTC_DATA_OFFSET, (uint8_t)(position >> 8));
+    vga_port_outb(VGA_CRTC_INDEX_OFFSET, 0x0f);
+    vga_port_outb(VGA_CRTC_DATA_OFFSET, (uint8_t)position);
 }
 
 static void vga_scroll_if_needed(void)
@@ -182,10 +219,21 @@ void console_vga_init(void) {
          return;
      }
 
+     if (kportio_create(&vga_portio, VGA_CRTC_BASE, 2) != 0) {
+         return;
+     }
+
      // create the cap it needs
      if(kcap_create((kobject_handle_t)vga_pmem, CAP_TYPE_PMEM, CAP_RIGHT_PMEM_MAP|CAP_RIGHT_PMEM_READ|CAP_RIGHT_PMEM_WRITE, &vga_cap) != 0) {
         console_write("console_vga.c:console_vga_init() - failed kcap_create() for VRAM!\n");
         return;
+     }
+
+     if (kcap_create((kobject_handle_t)vga_portio, CAP_TYPE_PORTIO,
+                     CAP_RIGHT_PORTIO_READ | CAP_RIGHT_PORTIO_WRITE,
+                     &vga_portio_cap) != 0) {
+         console_write("console_vga.c:console_vga_init() - failed kcap_create() for VGA ports!\n");
+         return;
      }
 
      // for now, we create the vga-consoled thread in ring0
@@ -199,10 +247,12 @@ void console_vga_init(void) {
                      CAP_RIGHT_IPC_SEND, &vga_endpoint_send_cap) != 0 ||
          kcapset_new(&vga_server_capset) != 0 ||
          kcapset_addcap(vga_server_capset, vga_cap) != 0 ||
+         kcapset_addcap(vga_server_capset, vga_portio_cap) != 0 ||
          kcapset_addcap(vga_server_capset, vga_endpoint_cap) != 0 ||
          /* TODO: temporary while the VGA server shares the kernel address
           * space; remove/fix this when it moves to its own address space/ring 3. */
 	 kcapset_addcap(address_space_kernel()->capset, vga_cap) != 0 ||
+	 kcapset_addcap(address_space_kernel()->capset, vga_portio_cap) != 0 ||
 	 kcapset_addcap(address_space_kernel()->capset, vga_endpoint_send_cap) != 0 ||
          kcapset_addcap(address_space_kernel()->capset, vga_endpoint_cap) != 0) {
          console_write("console-vga.c:console_vga_init() - failed to setup server IPC!\n");
@@ -247,8 +297,8 @@ static void internal_console_vga_putc(char c)
         vga_x = 0;
         ++vga_y;
         vga_scroll_if_needed();
-        vga_set_cursor();
         kcritical_exit();
+        vga_set_cursor();
         return;
     }
     vga[(size_t)vga_y * VGA_WIDTH + vga_x] = VGA_ATTRIBUTE | (uint8_t)c;
@@ -257,8 +307,8 @@ static void internal_console_vga_putc(char c)
         ++vga_y;
         vga_scroll_if_needed();
     }
-    vga_set_cursor();
     kcritical_exit();
+    vga_set_cursor();
 }
 
 void console_vga_putc(char c)
