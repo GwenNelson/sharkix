@@ -104,6 +104,14 @@ typedef uint64_t cap_rights_t;
                                  CAP_RIGHT_VMO_WRITE | \
                                  CAP_RIGHT_VMO_EXEC)
 
+// x86 I/O-port specific perms
+#define CAP_RIGHT_PORTIO_READ   (UINT64_C(1) << 10)
+#define CAP_RIGHT_PORTIO_WRITE  (UINT64_C(1) << 11)
+
+#define CAP_PORTIO_VALID_RIGHTS (CAP_GENERIC_VALID_RIGHTS | \
+                                 CAP_RIGHT_PORTIO_READ | \
+                                 CAP_RIGHT_PORTIO_WRITE)
+
 // helpers
 #define CAP_HAS_ALL(cap, required) \
     ((((cap)->rights) & (required)) == (required))
@@ -139,6 +147,7 @@ typedef enum cap_type_t {
 	CAP_TYPE_IPC_ENDPOINT = 1,
 	CAP_TYPE_PMEM         = 2,
 	CAP_TYPE_VMO          = 3,
+	CAP_TYPE_PORTIO       = 4,
 } cap_type_t;
 
 // represents an inividual cap

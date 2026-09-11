@@ -9,6 +9,7 @@
 #include "console-vga.h"
 #include "memory.h"
 #include "pmem.h"
+#include "portio.h"
 #include "startup.h"
 #include "caps.h"
 #include "ipc.h"
@@ -42,6 +43,7 @@ void kernel_high_entry(uint32_t magic, uint32_t info)
     ksync_init();
     ipc_init();
     kpmem_init();
+    kportio_init();
     kinit_caps();
     kvalloc_init();
     kvmo_init();

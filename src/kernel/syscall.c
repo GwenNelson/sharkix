@@ -6,6 +6,7 @@
 #include "errno.h"
 #include "ipc.h"
 #include "caps.h"
+#include "portio.h"
 #include "vmo.h"
 
 static uint64_t announced_a;
@@ -30,6 +31,44 @@ static syscall_disposition_t syscall_return(void)
 static syscall_disposition_t syscall_block(void)
 {
     return SYSCALL_DISPOSITION_BLOCK;
+}
+
+static portio_status_t syscall_portio_resolve(syscall_ctx_t *ctx,
+                                              cap_rights_t required_rights,
+                                              bool require_offset,
+                                              portio_handle_t *out)
+{
+    thread_t *caller;
+    kobject_handle_t object_handle;
+    portio_t portio;
+    cap_handle_t cap;
+
+    if (!out)
+        return PORTIO_ERR_INVALID;
+
+    caller = thread_current();
+    if (!caller || !caller->address_space)
+        return PORTIO_ERR_INVALID;
+
+    cap = (cap_handle_t)ctx->rdi;
+    if (cap == CAP_INVALID_HANDLE)
+        return PORTIO_ERR_INVALID;
+
+    if (require_offset && ctx->rsi > UINT32_MAX)
+        return PORTIO_ERR_INVALID;
+
+    if (kcapset_resolve_handle(caller->address_space->capset,
+                               cap,
+                               CAP_TYPE_PORTIO,
+                               required_rights,
+                               &object_handle) != 0)
+        return PORTIO_ERR_PERMISSION;
+
+    *out = (portio_handle_t)object_handle;
+    if (kportio_get(*out, &portio) != 0)
+        return PORTIO_ERR_NOT_FOUND;
+
+    return PORTIO_OK;
 }
 
 SHARKIX_SYSCALL_IMPL(IPC_CREATE) {
@@ -303,7 +342,27 @@ SHARKIX_SYSCALL_IMPL(CAP_DERIVE) {
 }
 
 SHARKIX_SYSCALL_IMPL(CAP_DESTROY) {
-	(void)ctx;
+    portio_handle_t handle;
+    cap_handle_t cap = (cap_handle_t)ctx->rdi;
+    portio_status_t status;
+
+    status = syscall_portio_resolve(ctx, CAP_RIGHT_DESTROY, false, &handle);
+    if (status != PORTIO_OK) {
+        ctx->rax = (uint64_t)status;
+        return syscall_return();
+    }
+
+    if (kportio_destroy(handle) != 0) {
+        ctx->rax = PORTIO_ERR_NOT_FOUND;
+        return syscall_return();
+    }
+
+    if (kcap_destroy(cap) != 0) {
+        ctx->rax = PORTIO_ERR_INVALID;
+        return syscall_return();
+    }
+
+    ctx->rax = PORTIO_OK;
 	return syscall_return();
 }
 
@@ -457,6 +516,129 @@ SHARKIX_SYSCALL_IMPL(PMEM_NEW_VMO) {
 
 fail:
     ctx->rdx = (uint64_t)CAP_INVALID_HANDLE;
+    return syscall_return();
+}
+
+SHARKIX_SYSCALL_IMPL(PORT_INB) {
+    portio_handle_t handle;
+    uint8_t value;
+    portio_status_t status;
+
+    ctx->rdx = 0;
+    status = syscall_portio_resolve(ctx, CAP_RIGHT_PORTIO_READ, true, &handle);
+    if (status != PORTIO_OK) {
+        ctx->rax = (uint64_t)status;
+        return syscall_return();
+    }
+
+    if (kportio_inb(handle, (uint32_t)ctx->rsi, &value) != 0) {
+        ctx->rax = PORTIO_ERR_INVALID;
+        return syscall_return();
+    }
+
+    ctx->rax = PORTIO_OK;
+    ctx->rdx = value;
+    return syscall_return();
+}
+
+SHARKIX_SYSCALL_IMPL(PORT_INW) {
+    portio_handle_t handle;
+    uint16_t value;
+    portio_status_t status;
+
+    ctx->rdx = 0;
+    status = syscall_portio_resolve(ctx, CAP_RIGHT_PORTIO_READ, true, &handle);
+    if (status != PORTIO_OK) {
+        ctx->rax = (uint64_t)status;
+        return syscall_return();
+    }
+
+    if (kportio_inw(handle, (uint32_t)ctx->rsi, &value) != 0) {
+        ctx->rax = PORTIO_ERR_INVALID;
+        return syscall_return();
+    }
+
+    ctx->rax = PORTIO_OK;
+    ctx->rdx = value;
+    return syscall_return();
+}
+
+SHARKIX_SYSCALL_IMPL(PORT_INL) {
+    portio_handle_t handle;
+    uint32_t value;
+    portio_status_t status;
+
+    ctx->rdx = 0;
+    status = syscall_portio_resolve(ctx, CAP_RIGHT_PORTIO_READ, true, &handle);
+    if (status != PORTIO_OK) {
+        ctx->rax = (uint64_t)status;
+        return syscall_return();
+    }
+
+    if (kportio_inl(handle, (uint32_t)ctx->rsi, &value) != 0) {
+        ctx->rax = PORTIO_ERR_INVALID;
+        return syscall_return();
+    }
+
+    ctx->rax = PORTIO_OK;
+    ctx->rdx = value;
+    return syscall_return();
+}
+
+SHARKIX_SYSCALL_IMPL(PORT_OUTB) {
+    portio_handle_t handle;
+    portio_status_t status;
+
+    status = syscall_portio_resolve(ctx, CAP_RIGHT_PORTIO_WRITE, true, &handle);
+    if (status != PORTIO_OK) {
+        ctx->rax = (uint64_t)status;
+        return syscall_return();
+    }
+
+    if (kportio_outb(handle, (uint32_t)ctx->rsi, (uint8_t)ctx->rdx) != 0) {
+        ctx->rax = PORTIO_ERR_INVALID;
+        return syscall_return();
+    }
+
+    ctx->rax = PORTIO_OK;
+    return syscall_return();
+}
+
+SHARKIX_SYSCALL_IMPL(PORT_OUTW) {
+    portio_handle_t handle;
+    portio_status_t status;
+
+    status = syscall_portio_resolve(ctx, CAP_RIGHT_PORTIO_WRITE, true, &handle);
+    if (status != PORTIO_OK) {
+        ctx->rax = (uint64_t)status;
+        return syscall_return();
+    }
+
+    if (kportio_outw(handle, (uint32_t)ctx->rsi, (uint16_t)ctx->rdx) != 0) {
+        ctx->rax = PORTIO_ERR_INVALID;
+        return syscall_return();
+    }
+
+    ctx->rax = PORTIO_OK;
+    return syscall_return();
+}
+
+SHARKIX_SYSCALL_IMPL(PORT_OUTL) {
+    portio_handle_t handle;
+    portio_status_t status;
+
+    status = syscall_portio_resolve(ctx, CAP_RIGHT_PORTIO_WRITE, true, &handle);
+    if (status != PORTIO_OK) {
+        ctx->rax = (uint64_t)status;
+        return syscall_return();
+    }
+
+    if (kportio_outl(handle, (uint32_t)ctx->rsi, (uint32_t)ctx->rdx) != 0) {
+        ctx->rax = PORTIO_ERR_INVALID;
+        return syscall_return();
+    }
+
+    ctx->rax = PORTIO_OK;
     return syscall_return();
 }
 

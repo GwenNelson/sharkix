@@ -16,7 +16,7 @@ KERNEL_C_SRCS += \
  $(KERNEL_MODULE_ROOT)/main.c $(KERNEL_MODULE_ROOT)/console.c $(KERNEL_MODULE_ROOT)/console-serial.c $(KERNEL_MODULE_ROOT)/console-vga.c $(KERNEL_MODULE_ROOT)/libc.c $(KERNEL_MODULE_ROOT)/sync.c \
  $(KERNEL_MODULE_ROOT)/memory.c $(KERNEL_MODULE_ROOT)/thread.c \
  $(KERNEL_MODULE_ROOT)/program.c $(KERNEL_MODULE_ROOT)/syscall.c \
- $(KERNEL_MODULE_ROOT)/ipc.c $(KERNEL_MODULE_ROOT)/caps.c $(KERNEL_MODULE_ROOT)/pmem.c \
+ $(KERNEL_MODULE_ROOT)/ipc.c $(KERNEL_MODULE_ROOT)/caps.c $(KERNEL_MODULE_ROOT)/pmem.c $(KERNEL_MODULE_ROOT)/portio.c \
  $(KERNEL_MODULE_ROOT)/vmo.c \
  $(KERNEL_MODULE_ROOT)/kvalloc.c \
  $(KERNEL_MODULE_ROOT)/startup/common.c $(PROFILE_SOURCE)
