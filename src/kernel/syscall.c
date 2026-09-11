@@ -14,6 +14,24 @@ static uint64_t announced_b;
 static uint64_t block_test_thread_id;
 static uint64_t block_test_invocation_count;
 static uint64_t block_test_wake_count;
+static uint64_t benchmark_ready_count;
+static uint64_t benchmark_start_cycles;
+static uint64_t benchmark_stop_cycles;
+
+static inline uint64_t benchmark_tsc_start(void)
+{
+    uint32_t lo, hi;
+    __asm__ volatile("lfence\nrdtsc" : "=a"(lo), "=d"(hi) :: "memory");
+    return ((uint64_t)hi << 32) | lo;
+}
+
+static inline uint64_t benchmark_tsc_stop(void)
+{
+    uint32_t lo, hi;
+    /* qemu64 does not expose RDTSCP; LFENCE/RDTSC/LFENCE is serialized. */
+    __asm__ volatile("lfence\nrdtsc\nlfence" : "=a"(lo), "=d"(hi) :: "memory");
+    return ((uint64_t)hi << 32) | lo;
+}
 
 #define SHARKIX_SYSCALL_DECL(name) static syscall_disposition_t syscall_##name(syscall_ctx_t *ctx)
 
@@ -697,6 +715,27 @@ SHARKIX_SYSCALL_IMPL(TEST_EXIT) {
 	syscall_return(); // pointless, but keeps the compiler happy
 }
 
+SHARKIX_SYSCALL_IMPL(TEST_BENCHMARK) {
+    switch (ctx->rdi) {
+    case SYSCALL_BENCHMARK_READY:
+        ++benchmark_ready_count;
+        ctx->rax = 0;
+        break;
+    case SYSCALL_BENCHMARK_START:
+        benchmark_start_cycles = benchmark_tsc_start();
+        ctx->rax = 0;
+        break;
+    case SYSCALL_BENCHMARK_STOP:
+        benchmark_stop_cycles = benchmark_tsc_stop();
+        ctx->rax = 0;
+        break;
+    default:
+        ctx->rax = UINT64_MAX;
+        break;
+    }
+    return syscall_return();
+}
+
 syscall_disposition_t dispatch_syscall(syscall_ctx_t *ctx)
 {
     switch (ctx->rax) {
@@ -726,3 +765,7 @@ syscall_disposition_t dispatch_syscall(syscall_ctx_t *ctx)
 
 uint64_t syscall_block_test_invocations(void) { return block_test_invocation_count; }
 uint64_t syscall_block_test_wakes(void) { return block_test_wake_count; }
+void syscall_benchmark_reset(void) { benchmark_ready_count = 0; benchmark_start_cycles = 0; benchmark_stop_cycles = 0; }
+uint64_t syscall_benchmark_ready_count(void) { return benchmark_ready_count; }
+uint64_t syscall_benchmark_start_tsc(void) { return benchmark_start_cycles; }
+uint64_t syscall_benchmark_stop_tsc(void) { return benchmark_stop_cycles; }

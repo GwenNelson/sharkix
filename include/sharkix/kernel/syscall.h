@@ -33,4 +33,14 @@ syscall_disposition_t dispatch_syscall(syscall_ctx_t *ctx);
 /* Temporary, profile-only blocking-syscall test observability. */
 uint64_t syscall_block_test_invocations(void);
 uint64_t syscall_block_test_wakes(void);
+
+enum {
+    SYSCALL_BENCHMARK_READY = 0,
+    SYSCALL_BENCHMARK_START = 1,
+    SYSCALL_BENCHMARK_STOP = 2
+};
+void syscall_benchmark_reset(void);
+uint64_t syscall_benchmark_ready_count(void);
+uint64_t syscall_benchmark_start_tsc(void);
+uint64_t syscall_benchmark_stop_tsc(void);
 #endif
