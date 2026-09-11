@@ -31,7 +31,7 @@ KERNEL_ELF = $(CONFIG_BUILD_ROOT)/kernel.elf
 KERNEL_C_SRCS :=
 KERNEL_ASM_SRCS :=
 KERNEL_CPPFLAGS :=
-KERNEL_CFLAGS = -std=gnu11 -ffreestanding $(if $(filter 1,$(DEBUG)),-O0 -g,-O2) -Wall -Wextra
+KERNEL_CFLAGS = -std=gnu11 -ffreestanding $(if $(filter 1,$(DEBUG)),-O0 -g,-O3) -Wall -Wextra
 KERNEL_ASFLAGS := -x assembler-with-cpp -ffreestanding
 KERNEL_LDFLAGS = -m $(KERNEL_LINKER_FORMAT) -T $(KERNEL_LINKER_SCRIPT) -nostdlib
 USER_ASM_SRCS :=
