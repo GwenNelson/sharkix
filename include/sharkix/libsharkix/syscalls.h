@@ -3,6 +3,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <sharkix/syscalls-enum.inc>
+
 #define SHARKIX_CAP_NAME_MAX 32
 
 enum sharkix_bootstrap_status {
