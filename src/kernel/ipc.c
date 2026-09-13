@@ -5,10 +5,33 @@
 #include <sharkix/kernel/ipc.h>
 #include <sharkix/kernel/memory.h>
 
-#include <libfifo/fifo.h>
 static ipc_endpoint_t *endpoints;
 static ipc_handle_t next_handle;
 static kmutex_t endpoints_lock;
+
+
+static bool ipc_queue_push(ipc_endpoint_t *endpoint,
+                           const ipc_message_t *message) {
+             if (endpoint->queue_count == IPC_QUEUE_CAPACITY)
+                 return false;
+
+             endpoint->queue[endpoint->queue_tail] = *message;
+             endpoint->queue_tail = (endpoint->queue_tail + 1U) % IPC_QUEUE_CAPACITY;
+             endpoint->queue_count++;
+             return true;
+}
+
+
+static bool ipc_queue_pop(ipc_endpoint_t *endpoint,
+                          ipc_message_t *message) {
+             if (endpoint->queue_count == 0)
+                 return false;
+
+             *message = endpoint->queue[endpoint->queue_head];
+             endpoint->queue_head = (endpoint->queue_head + 1U) % IPC_QUEUE_CAPACITY;
+             endpoint->queue_count--;
+             return true;
+}
 
 
 /*
@@ -41,11 +64,6 @@ static ipc_endpoint_t *ipc_acquire(ipc_handle_t handle) {
  * and there are no operations still holding references to it.
  */
 static void ipc_endpoint_free(ipc_endpoint_t *endpoint) {
-            ipc_message_t *message;
-
-            while (fifo_pop(&endpoint->queue, (void **)&message))
-                kfree(message);
-
             kfree(endpoint);
 }
 
@@ -94,7 +112,9 @@ ipc_status_t ipc_create(ipc_handle_t *handle) {
 
              memset(endpoint, 0, sizeof(*endpoint));
 
-             fifo_init(&endpoint->queue, endpoint->queue_storage, IPC_QUEUE_CAPACITY);
+             endpoint->queue_head = 0;
+             endpoint->queue_tail = 0;
+             endpoint->queue_count = 0;
 
              kmutex_init(&endpoint->lock);
              ksem_init(&endpoint->sender_sem, 0);
@@ -203,7 +223,7 @@ ipc_status_t ipc_destroy(ipc_handle_t handle) {
  */
 ipc_status_t ipc_send(thread_t *caller, ipc_handle_t handle, const ipc_message_t *message) {
              ipc_endpoint_t *endpoint;
-             ipc_message_t *queued;
+             ipc_message_t queued;
 
              if (!caller || !handle || !message)
                  return IPC_ERR_INVALID;
@@ -212,14 +232,8 @@ ipc_status_t ipc_send(thread_t *caller, ipc_handle_t handle, const ipc_message_t
              if (!endpoint)
                  return IPC_ERR_NOT_FOUND;
 
-             queued = kmalloc(sizeof(*queued));
-             if (!queued) {
-                 ipc_release(endpoint);
-                 return IPC_ERR_NO_MEMORY;
-             }
-
-             memcpy(queued, message, sizeof(*queued));
-             queued->sender_tid = caller->id;
+             queued = *message;
+             queued.sender_tid = caller->id;
 
              for (;;) {
                  kmutex_lock(&endpoint->lock);
@@ -227,13 +241,12 @@ ipc_status_t ipc_send(thread_t *caller, ipc_handle_t handle, const ipc_message_t
                  if (endpoint->is_shutting_down) {
                      kmutex_unlock(&endpoint->lock);
 
-                     kfree(queued);
                      ipc_release(endpoint);
 
                      return IPC_ERR_ENDPOINT_CLOSED;
                  }
 
-                 if (fifo_push(&endpoint->queue, queued)) {
+                 if (ipc_queue_push(endpoint, &queued)) {
                      /*
                       * Wake exactly one receiver if one is waiting.
                       *
@@ -285,7 +298,7 @@ ipc_status_t ipc_send(thread_t *caller, ipc_handle_t handle, const ipc_message_t
  */
 ipc_status_t ipc_send_nb(thread_t *caller, ipc_handle_t handle, const ipc_message_t *message) {
              ipc_endpoint_t *endpoint;
-             ipc_message_t *queued;
+             ipc_message_t queued;
 
              if (!caller || !handle || !message)
                  return IPC_ERR_INVALID;
@@ -294,30 +307,22 @@ ipc_status_t ipc_send_nb(thread_t *caller, ipc_handle_t handle, const ipc_messag
              if (!endpoint)
                  return IPC_ERR_NOT_FOUND;
 
-             queued = kmalloc(sizeof(*queued));
-             if (!queued) {
-                 ipc_release(endpoint);
-                 return IPC_ERR_NO_MEMORY;
-             }
-
-             memcpy(queued, message, sizeof(*queued));
-             queued->sender_tid = caller->id;
+             queued = *message;
+             queued.sender_tid = caller->id;
 
              kmutex_lock(&endpoint->lock);
 
              if (endpoint->is_shutting_down) {
                  kmutex_unlock(&endpoint->lock);
 
-                 kfree(queued);
                  ipc_release(endpoint);
 
                  return IPC_ERR_ENDPOINT_CLOSED;
              }
 
-             if (!fifo_push(&endpoint->queue, queued)) {
+             if (!ipc_queue_push(endpoint, &queued)) {
                  kmutex_unlock(&endpoint->lock);
 
-                 kfree(queued);
                  ipc_release(endpoint);
 
                  return IPC_ERR_CANCELLED;
@@ -342,7 +347,6 @@ ipc_status_t ipc_send_nb(thread_t *caller, ipc_handle_t handle, const ipc_messag
  */
 ipc_status_t ipc_recv(ipc_handle_t handle, ipc_message_t *message) {
              ipc_endpoint_t *endpoint;
-             ipc_message_t *queued;
 
              if ( !handle || !message)
                  return IPC_ERR_INVALID;
@@ -362,7 +366,7 @@ ipc_status_t ipc_recv(ipc_handle_t handle, ipc_message_t *message) {
                      return IPC_ERR_ENDPOINT_CLOSED;
                  }
 
-                 if (fifo_pop(&endpoint->queue, (void **)&queued)) {
+                 if (ipc_queue_pop(endpoint, message)) {
                      /*
                       * One queue slot just became available.
                       */
@@ -372,9 +376,6 @@ ipc_status_t ipc_recv(ipc_handle_t handle, ipc_message_t *message) {
                      }
 
                      kmutex_unlock(&endpoint->lock);
-
-                     memcpy(message, queued, sizeof(*message));
-                     kfree(queued);
 
                      ipc_release(endpoint);
 
@@ -401,7 +402,6 @@ ipc_status_t ipc_recv(ipc_handle_t handle, ipc_message_t *message) {
  */
 ipc_status_t ipc_recv_nb(ipc_handle_t handle, ipc_message_t *message) {
              ipc_endpoint_t *endpoint;
-             ipc_message_t *queued;
 
              if (!handle || !message)
                  return IPC_ERR_INVALID;
@@ -419,7 +419,7 @@ ipc_status_t ipc_recv_nb(ipc_handle_t handle, ipc_message_t *message) {
                  return IPC_ERR_ENDPOINT_CLOSED;
              }
 
-             if (!fifo_pop(&endpoint->queue, (void **)&queued)) {
+             if (!ipc_queue_pop(endpoint, message)) {
                  kmutex_unlock(&endpoint->lock);
                  ipc_release(endpoint);
 
@@ -432,9 +432,6 @@ ipc_status_t ipc_recv_nb(ipc_handle_t handle, ipc_message_t *message) {
              }
 
              kmutex_unlock(&endpoint->lock);
-
-             memcpy(message, queued, sizeof(*message));
-             kfree(queued);
 
              ipc_release(endpoint);
 

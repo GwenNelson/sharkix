@@ -1,9 +1,8 @@
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
-
-#include <libfifo/fifo.h>
 
 #include <sharkix/kernel/sync.h>
 #include <sharkix/kernel/thread.h>
@@ -36,8 +35,10 @@ typedef struct ipc_endpoint_t {
 	ipc_handle_t  handle;
 	thread_t     *owner;
 
-	fifo_t queue;
-	void *queue_storage[IPC_QUEUE_CAPACITY];
+	ipc_message_t queue[IPC_QUEUE_CAPACITY];
+	size_t queue_head;
+	size_t queue_tail;
+	size_t queue_count;
 
 	/*
 	 * Protects endpoint state below and serialises queue-state decisions.
