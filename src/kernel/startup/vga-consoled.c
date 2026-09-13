@@ -9,44 +9,69 @@
 #include "program.h"
 #include "startup.h"
 #include "thread.h"
+#include <sharkix/kernel/pmem.h>
+#include <sharkix/kernel/portio.h>
+
 
 enum {
-    VGA_CONSOLED_STACK_WORDS = 4,
+    VGA_CONSOLED_STACK_WORDS = 5,
     VGA_CONSOLED_STACK_BYTES = VGA_CONSOLED_STACK_WORDS * sizeof(uint64_t)
 };
 
 extern const uint8_t vga_consoled_image_start[];
 extern const uint8_t vga_consoled_image_end[];
 
-static ipc_handle_t endpoint;
-static cap_handle_t user_cap;
-static volatile unsigned kernel_worker_done;
-static volatile unsigned kernel_worker_failed;
+// VRAM physical memory
+// we don't need to bother with creating the actual VMO - the ring3 driver can do that itself
+static pmem_handle_t vram_pem           = PMEM_INVALID_HANDLE;
+static cap_handle_t  vram_pmem_cap      = CAP_INVALID_HANDLE;
 
-static void kernel_worker(void *argument)
-{
+// port IO
+static portio_handle_t vga_portio       = PORTIO_INVALID_HANDLE;
+static cap_handle_t    vga_portio_cap   = CAP_INVALID_HANDLE;
+
+// endpoint for receiving actual bytes to write to the screen
+// kernel >> user
+static ipc_handle_t    vga_endpoint     = IPC_INVALID_HANDLE;
+static cap_handle_t    vga_endpoint_cap = CAP_INVALID_HANDLE;
+
+// endpoint for the VGA driver to inform kernel once it's ready to rock
+// user >> kernel
+static ipc_handle_t    vga_ready_endpoint     = IPC_INVALID_HANDLE;
+static cap_handle_t    vga_ready_endpoint_cap = CAP_INVALID_HANDLE;
+
+static void kernel_worker(void *argument) {
     ipc_message_t message = { 0 };
-    char name[KCAP_NAME_MAX];
-    size_t name_len = 0;
-    static const char renamed[] = "renamed-cap";
 
     (void)argument;
-    if (ipc_recv(endpoint, &message) != IPC_OK || message.words[0] != 42 ||
-        kcap_get_name(user_cap, name, sizeof(name), &name_len) != 0 ||
-        name_len != sizeof(renamed) - 1 ||
-        memcmp(name, renamed, name_len) != 0) {
-        kernel_worker_failed = 1;
+    if (ipc_recv(vga_ready_endpoint, &message) != IPC_OK) {
+        console_write("vga-consoled ready receive failed\n");
         return;
     }
 
-    console_decimal(42);
-    console_write("\n[vga-consoled] cap renamed to renamed-cap\n");
-    kernel_worker_done = 1;
+    console_write("[vga-consoled] VGA driver ready\n");
+
+    // for now, this just does a simple loop of spamming ABABABAB over and over
+    message = (ipc_message_t) {
+        .type = IPC_MSGTYPE_SEND,
+        .words = { 1, (uint64_t)'A', 0, 0, 0 }
+    };
+    for (;;) {
+        if (ipc_send(thread_current(), vga_endpoint, &message) != IPC_OK) {
+            console_write("vga-consoled output send failed\n");
+            return;
+        }
+        message.words[1] = (uint64_t)'B';
+        if (ipc_send(thread_current(), vga_endpoint, &message) != IPC_OK) {
+            console_write("vga-consoled output send failed\n");
+            return;
+        }
+        message.words[1] = (uint64_t)'A';
+    }
 }
 
-static int create_user_task(address_space_t **out_as, thread_t **out_thread,
-                            uint64_t **out_bootstrap)
-{
+// utility function that does what the name implies
+static int create_user_task(address_space_t **out_as, thread_t **out_thread, uint64_t **out_bootstrap) {
     address_space_t *address_space;
     uintptr_t stack_top;
     uint64_t physical;
@@ -83,30 +108,72 @@ static int create_user_task(address_space_t **out_as, thread_t **out_thread,
     return 0;
 }
 
-void kernel_startup_profile(void)
-{
-    address_space_t *user_as = NULL;
-    thread_t *user_thread = NULL;
-    thread_t *worker_thread;
-    uint64_t *bootstrap = NULL;
-    static const char initial_name[] = "hello-cap";
+void kernel_startup_profile(void) {
+     address_space_t *user_as = NULL;
+     thread_t *user_thread = NULL;
+     uint64_t *bootstrap = NULL;
+  
+     // setup the pmem for vram first
+     thread_t *worker_thread;
 
-    if (ipc_create(&endpoint) != IPC_OK ||
-        kcap_create(endpoint, CAP_TYPE_IPC_ENDPOINT,
-                    CAP_RIGHT_IPC_SEND | CAP_RIGHT_GETNAME | CAP_RIGHT_SETNAME,
-                    &user_cap) != 0 ||
-        kcap_set_name(user_cap, initial_name, sizeof(initial_name) - 1) != 0 ||
-        create_user_task(&user_as, &user_thread, &bootstrap) != 0 ||
-        kcapset_addcap(user_as->capset, user_cap) != 0) {
+     if (kpmem_create(&vram_pem, (uintptr_t)0xB8000, 0x8000) != 0 ||
+         kcap_create(vram_pem, CAP_TYPE_PMEM,
+                     CAP_RIGHT_PMEM_MAP | CAP_RIGHT_PMEM_READ |
+                     CAP_RIGHT_PMEM_WRITE | CAP_RIGHT_GETNAME,
+                     &vram_pmem_cap) != 0) {
+         console_write("vga-consoled VRAM setup failed\n");
+         for (;;) __asm__ volatile ("cli; hlt");
+     }
+
+     // setup the endpoints
+     if (ipc_create(&vga_endpoint) != IPC_OK ||
+         kcap_create(vga_endpoint, CAP_TYPE_IPC_ENDPOINT,
+                     CAP_RIGHT_IPC_RECV | CAP_RIGHT_GETNAME,
+                     &vga_endpoint_cap) != 0 ||
+         ipc_create(&vga_ready_endpoint) != IPC_OK ||
+         kcap_create(vga_ready_endpoint, CAP_TYPE_IPC_ENDPOINT,
+                     CAP_RIGHT_IPC_SEND | CAP_RIGHT_GETNAME,
+                     &vga_ready_endpoint_cap) != 0) {
+         console_write("vga-consoled endpoint setup failed\n");
+         for (;;) __asm__ volatile ("cli; hlt");
+     }
+
+     // setup the portio
+     if (kportio_create(&vga_portio, UINT16_C(0x3D4), 2) != 0 ||
+         kcap_create(vga_portio, CAP_TYPE_PORTIO,
+                     CAP_RIGHT_PORTIO_READ | CAP_RIGHT_PORTIO_WRITE |
+                     CAP_RIGHT_GETNAME,
+                     &vga_portio_cap) != 0) {
+         console_write("vga-consoled port I/O setup failed\n");
+         for (;;) __asm__ volatile ("cli; hlt");
+     }
+
+     // setup the capset for userspace and create the task
+     if (create_user_task(&user_as, &user_thread, &bootstrap) != 0 ||
+         kcap_set_name(vram_pmem_cap, "vga.vram",
+                       sizeof("vga.vram") - 1) != 0 ||
+         kcap_set_name(vga_portio_cap, "vga.crtc",
+                       sizeof("vga.crtc") - 1) != 0 ||
+         kcap_set_name(vga_endpoint_cap, "vga.output",
+                       sizeof("vga.output") - 1) != 0 ||
+         kcap_set_name(vga_ready_endpoint_cap, "vga.ready",
+                       sizeof("vga.ready") - 1) != 0 ||
+         kcapset_addcap(user_as->capset, vram_pmem_cap) != 0 ||
+         kcapset_addcap(user_as->capset, vga_portio_cap) != 0 ||
+         kcapset_addcap(user_as->capset, vga_endpoint_cap) != 0 ||
+         kcapset_addcap(user_as->capset, vga_ready_endpoint_cap) != 0) {
         console_write("vga-consoled startup failed\n");
         for (;;) __asm__ volatile ("cli; hlt");
     }
+    
+    // setup the bootstrap with all these caps 
+    bootstrap[0] = 4;
+    bootstrap[1] = vram_pmem_cap;
+    bootstrap[2] = vga_portio_cap;
+    bootstrap[3] = vga_endpoint_cap;
+    bootstrap[4] = vga_ready_endpoint_cap;
 
-    bootstrap[0] = 1;
-    bootstrap[1] = user_cap;
-    bootstrap[2] = 0;
-    bootstrap[3] = 0;
-
+    // start the kernel worker thread
     worker_thread = startup_kernel_thread(kernel_worker, "vga-consoled-worker",
                                           tskIDLE_PRIORITY + 2);
     if (!worker_thread || thread_start(user_thread) != 0) {
@@ -114,12 +181,6 @@ void kernel_startup_profile(void)
         for (;;) __asm__ volatile ("cli; hlt");
     }
 
-    while (!kernel_worker_done && !kernel_worker_failed)
-        thread_yield();
-
-    if (kernel_worker_failed)
-        console_write("vga-consoled worker failed\n");
-    (void)ipc_destroy(endpoint);
     (void)user_as;
     startup_reaper();
 }

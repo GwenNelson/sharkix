@@ -20,7 +20,7 @@ int program_map_flat_image(address_space_t *address_space, const program_image_t
         uint8_t *destination = (uint8_t *)phys_to_virt(page);
         for (size_t i = 0; i < count; ++i) destination[i] = image->data[mapped + i];
         if (address_space_map_page(address_space, load_address + mapped, page,
-                                   PAGE_USER | ADDRESS_SPACE_MAP_OWNED) != 0) {
+                                   PAGE_USER | PAGE_WRITABLE | ADDRESS_SPACE_MAP_OWNED) != 0) {
             phys_page_put(page);
             while (mapped) { mapped -= PAGE_SIZE; address_space_unmap_page(address_space, load_address + mapped); }
             return -1;

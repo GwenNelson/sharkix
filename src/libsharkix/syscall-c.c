@@ -90,3 +90,130 @@ int sharkix_cap_get_name(uint64_t cap, char *name_out, size_t out_size,
     sharkix_unpack_name_word(name_out, len, 24, regs.r9);
     return 0;
 }
+
+void sharkix_debug_puts(const char *s)
+{
+    if (!s)
+        return;
+
+    while (*s) {
+        sharkix_syscall_regs_t regs = {
+            .rax = 0,
+            .rdi = (uint64_t)(unsigned char)*s
+        };
+
+        (void)sharkix_syscall(&regs);
+        ++s;
+    }
+}
+
+static size_t sharkix_bootstrap_name_length(const char *name)
+{
+    size_t len;
+
+    for (len = 0; len <= SHARKIX_CAP_NAME_MAX; ++len) {
+        if (name[len] == '\0')
+            return len;
+    }
+    return SHARKIX_CAP_NAME_MAX + 1;
+}
+
+static int sharkix_bootstrap_strings_equal(const char *a, const char *b)
+{
+    size_t i = 0;
+
+    while (a[i] && b[i]) {
+        if (a[i] != b[i])
+            return 0;
+        ++i;
+    }
+    return a[i] == b[i];
+}
+
+static int sharkix_bootstrap_name_matches(const char *name, size_t name_len,
+                                          const char *requested)
+{
+    size_t requested_len = sharkix_bootstrap_name_length(requested);
+
+    if (name_len != requested_len)
+        return 0;
+    for (size_t i = 0; i < name_len; ++i) {
+        if (name[i] != requested[i])
+            return 0;
+    }
+    return 1;
+}
+
+static void sharkix_bootstrap_clear_handles(uint64_t *handles_out, size_t capc)
+{
+    for (size_t i = 0; i < capc; ++i)
+        handles_out[i] = UINT64_MAX;
+}
+
+int sharkix_get_bootstrap(uint64_t *handles_out, char **capv, size_t capc,
+                          uint64_t *bootstrap)
+{
+    uint64_t supplied_count;
+
+    if (!bootstrap || (capc != 0 && (!handles_out || !capv)))
+        return SHARKIX_BOOTSTRAP_ERR_INVALID_ARGUMENT;
+    if (capc == 0)
+        return SHARKIX_BOOTSTRAP_OK;
+
+    for (size_t i = 0; i < capc; ++i) {
+        size_t name_len;
+
+        if (!capv[i])
+            return SHARKIX_BOOTSTRAP_ERR_INVALID_ARGUMENT;
+        name_len = sharkix_bootstrap_name_length(capv[i]);
+        if (name_len == 0 || name_len > SHARKIX_CAP_NAME_MAX)
+            return SHARKIX_BOOTSTRAP_ERR_INVALID_ARGUMENT;
+        for (size_t j = 0; j < i; ++j) {
+            if (sharkix_bootstrap_strings_equal(capv[i], capv[j]))
+                return SHARKIX_BOOTSTRAP_ERR_AMBIGUOUS;
+        }
+    }
+
+    supplied_count = bootstrap[0];
+    if (supplied_count < capc)
+        return SHARKIX_BOOTSTRAP_ERR_INVALID_DATA;
+
+    sharkix_bootstrap_clear_handles(handles_out, capc);
+    for (uint64_t supplied_index = 0;
+         supplied_index < supplied_count; ++supplied_index) {
+        char name[SHARKIX_CAP_NAME_MAX + 1];
+        size_t name_len;
+        uint64_t handle = bootstrap[supplied_index + 1];
+
+        if (handle == 0 || handle == UINT64_MAX) {
+            sharkix_bootstrap_clear_handles(handles_out, capc);
+            return SHARKIX_BOOTSTRAP_ERR_INVALID_DATA;
+        }
+        if (sharkix_cap_get_name(handle, name, SHARKIX_CAP_NAME_MAX,
+                                 &name_len) != 0) {
+            sharkix_bootstrap_clear_handles(handles_out, capc);
+            return SHARKIX_BOOTSTRAP_ERR_CAP_NAME;
+        }
+        name[name_len] = '\0';
+
+        for (size_t requested_index = 0;
+             requested_index < capc; ++requested_index) {
+            if (!sharkix_bootstrap_name_matches(name, name_len,
+                                                capv[requested_index]))
+                continue;
+            if (handles_out[requested_index] != UINT64_MAX) {
+                sharkix_bootstrap_clear_handles(handles_out, capc);
+                return SHARKIX_BOOTSTRAP_ERR_AMBIGUOUS;
+            }
+            handles_out[requested_index] = handle;
+        }
+    }
+
+    for (size_t i = 0; i < capc; ++i) {
+        if (handles_out[i] == UINT64_MAX) {
+            sharkix_bootstrap_clear_handles(handles_out, capc);
+            return SHARKIX_BOOTSTRAP_ERR_NOT_FOUND;
+        }
+    }
+    return SHARKIX_BOOTSTRAP_OK;
+}

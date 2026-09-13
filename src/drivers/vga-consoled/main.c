@@ -3,9 +3,12 @@
 
 #include <sharkix/libsharkix/syscalls.h>
 
-#define SYS_IPC_SEND   (-202)
-#define SYS_TEST_WRITE 0
 #define SYS_TEST_EXIT  1
+
+uint64_t vga_output_cap;
+uint64_t vga_ready_cap;
+uint64_t vga_vram_cap;
+uint64_t vga_crtc_cap;
 
 static uint64_t syscall_call(uint64_t number, uint64_t arg0, uint64_t arg1)
 {
@@ -18,12 +21,6 @@ static uint64_t syscall_call(uint64_t number, uint64_t arg0, uint64_t arg1)
     return regs.rax;
 }
 
-static void test_write_bytes(const char *bytes, size_t len)
-{
-    for (size_t i = 0; i < len; ++i)
-        (void)syscall_call(SYS_TEST_WRITE, (uint64_t)(unsigned char)bytes[i], 0);
-}
-
 static void test_exit(void)
 {
     (void)syscall_call(SYS_TEST_EXIT, 0, 0);
@@ -32,25 +29,35 @@ static void test_exit(void)
     }
 }
 
-void vga_consoled_main(const uint64_t *bootstrap)
+void vga_consoled_main(uint64_t *bootstrap)
 {
-    char name[SHARKIX_CAP_NAME_MAX];
-    size_t name_len;
-    uint64_t cap;
-    static const char renamed[] = "renamed-cap";
+    uint64_t handles[4];
+    char *capv[] = {
+        "vga.output",
+        "vga.ready",
+        "vga.vram",
+        "vga.crtc",
+    };
 
-    if (!bootstrap || bootstrap[0] < 1)
+    if (!bootstrap || bootstrap[0] != 4) {
+        sharkix_debug_puts("vga-consoled: invalid bootstrap\n");
         test_exit();
-    cap = bootstrap[1];
+    }
 
-    if (sharkix_cap_get_name(cap, name, sizeof(name), &name_len) != 0)
+    if (sharkix_get_bootstrap(handles, capv, 4, bootstrap) !=
+        SHARKIX_BOOTSTRAP_OK) {
+        sharkix_debug_puts("vga-consoled: bootstrap discovery failed\n");
         test_exit();
-    test_write_bytes(name, name_len);
-    test_write_bytes("\n", 1);
+    }
 
-    if (sharkix_cap_set_name(cap, renamed, sizeof(renamed) - 1) != 0)
-        test_exit();
-    if (syscall_call(SYS_IPC_SEND, cap, 42) != 0)
-        test_exit();
+    vga_output_cap = handles[0];
+    vga_ready_cap = handles[1];
+    vga_vram_cap = handles[2];
+    vga_crtc_cap = handles[3];
+
+    sharkix_debug_puts("vga-consoled: obtained vga.output\n");
+    sharkix_debug_puts("vga-consoled: obtained vga.ready\n");
+    sharkix_debug_puts("vga-consoled: obtained vga.vram\n");
+    sharkix_debug_puts("vga-consoled: obtained vga.crtc\n");
     test_exit();
 }
