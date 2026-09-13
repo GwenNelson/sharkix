@@ -1,6 +1,9 @@
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
+
+#define SHARKIX_CAP_NAME_MAX 32
 
 // TODO - at some point i really need to start giving a crap about portability
 
@@ -15,3 +18,7 @@ typedef struct sharkix_syscall_regs {
 } sharkix_syscall_regs_t;
 
 sharkix_syscall_regs_t* sharkix_syscall(sharkix_syscall_regs_t *regs);
+
+int sharkix_cap_set_name(uint64_t cap, const char *name, size_t len);
+int sharkix_cap_get_name(uint64_t cap, char *name_out, size_t out_size,
+                         size_t *out_len);

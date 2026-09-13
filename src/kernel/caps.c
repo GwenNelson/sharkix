@@ -9,6 +9,16 @@ static cap_handle_t next_cap_handle = 0;
 static cap_t*       global_caps_table = NULL;
 static kmutex_t global_caps_table_lock;
 
+typedef struct cap_name_entry {
+    cap_handle_t handle;
+    char name[KCAP_NAME_MAX];
+    size_t len;
+    UT_hash_handle hh;
+} cap_name_entry_t;
+
+static cap_name_entry_t *global_cap_names_table = NULL;
+static kmutex_t global_cap_names_table_lock;
+
 static capset_handle_t next_capset_handle = 1;
 static capset_t       *global_capsets_table = NULL;
 static kmutex_t    global_capsets_table_lock;
@@ -59,12 +69,14 @@ static cap_t *kcap_find_locked(cap_handle_t handle)
 void kinit_caps(void)
 {
     global_caps_table    = NULL;
+    global_cap_names_table = NULL;
     global_capsets_table = NULL;
 
     next_cap_handle    = 1;
     next_capset_handle = 1;
 
     kmutex_init(&global_caps_table_lock);
+    kmutex_init(&global_cap_names_table_lock);
     kmutex_init(&global_capsets_table_lock);
 
     // we have to do this here, cos it can't be done before the memory system is live
@@ -133,6 +145,7 @@ bool kcap_cap_exists(cap_handle_t handle) {
 
 int kcap_destroy(cap_handle_t handle) {
     cap_t *found = NULL;
+    cap_name_entry_t *name_entry = NULL;
     uint32_t hashv = (uint32_t)handle;
 
     kmutex_lock(&global_caps_table_lock);
@@ -151,9 +164,96 @@ int kcap_destroy(cap_handle_t handle) {
 
     HASH_DEL(global_caps_table, found);
 
+    kmutex_lock(&global_cap_names_table_lock);
+    HASH_FIND_BYHASHVALUE(hh, global_cap_names_table, &handle, sizeof(handle),
+                          hashv, name_entry);
+    if (name_entry) {
+        HASH_DEL(global_cap_names_table, name_entry);
+        kfree(name_entry);
+    }
+    kmutex_unlock(&global_cap_names_table_lock);
+
     kmutex_unlock(&global_caps_table_lock);
 
     kfree(found);
+    return 0;
+}
+
+int kcap_set_name(cap_handle_t handle, const char *new_name, size_t len)
+{
+    cap_name_entry_t *replacement = NULL;
+    cap_name_entry_t *old = NULL;
+    uint32_t hashv = (uint32_t)handle;
+
+    if (len > KCAP_NAME_MAX || (len != 0 && !new_name))
+        return -1;
+
+    if (len != 0) {
+        replacement = kmalloc(sizeof(*replacement));
+        if (!replacement)
+            return -1;
+        memset(replacement, 0, sizeof(*replacement));
+        replacement->handle = handle;
+        replacement->len = len;
+        memcpy(replacement->name, new_name, len);
+    }
+
+    kmutex_lock(&global_caps_table_lock);
+    if (!kcap_find_locked(handle)) {
+        kmutex_unlock(&global_caps_table_lock);
+        kfree(replacement);
+        return -1;
+    }
+
+    kmutex_lock(&global_cap_names_table_lock);
+    HASH_FIND_BYHASHVALUE(hh, global_cap_names_table, &handle, sizeof(handle),
+                          hashv, old);
+    if (old) {
+        HASH_DEL(global_cap_names_table, old);
+        kfree(old);
+    }
+    if (replacement)
+        HASH_ADD_BYHASHVALUE(hh, global_cap_names_table, handle,
+                             sizeof(replacement->handle), hashv, replacement);
+    kmutex_unlock(&global_cap_names_table_lock);
+    kmutex_unlock(&global_caps_table_lock);
+    return 0;
+}
+
+int kcap_get_name(cap_handle_t handle, char *name_out, size_t out_size,
+                  size_t *out_len)
+{
+    cap_name_entry_t *entry = NULL;
+    uint32_t hashv = (uint32_t)handle;
+
+    if (!name_out || !out_len)
+        return -1;
+
+    kmutex_lock(&global_caps_table_lock);
+    if (!kcap_find_locked(handle)) {
+        kmutex_unlock(&global_caps_table_lock);
+        return -1;
+    }
+
+    kmutex_lock(&global_cap_names_table_lock);
+    HASH_FIND_BYHASHVALUE(hh, global_cap_names_table, &handle, sizeof(handle),
+                          hashv, entry);
+    if (!entry) {
+        kmutex_unlock(&global_cap_names_table_lock);
+        kmutex_unlock(&global_caps_table_lock);
+        return -1;
+    }
+
+    *out_len = entry->len;
+    if (out_size < entry->len) {
+        kmutex_unlock(&global_cap_names_table_lock);
+        kmutex_unlock(&global_caps_table_lock);
+        return -1;
+    }
+
+    memcpy(name_out, entry->name, entry->len);
+    kmutex_unlock(&global_cap_names_table_lock);
+    kmutex_unlock(&global_caps_table_lock);
     return 0;
 }
 
@@ -679,6 +779,51 @@ int kcapset_resolve_handle(capset_handle_t set_handle,
     }
 
     *out = cap.obj_handle;
+
+    kspin_unlock(&set->spinlock);
+    kmutex_unlock(&global_capsets_table_lock);
+    kmutex_unlock(&global_caps_table_lock);
+    return 0;
+}
+
+int kcapset_resolve_record(capset_handle_t set_handle,
+                           cap_handle_t cap_handle,
+                           cap_rights_t required_rights,
+                           cap_t *out)
+{
+    capset_t *set;
+    capset_entry_t *entry = NULL;
+    cap_t *found;
+    uint32_t hashv = (uint32_t)cap_handle;
+
+    if (!out)
+        return -1;
+
+    kmutex_lock(&global_caps_table_lock);
+    kmutex_lock(&global_capsets_table_lock);
+
+    set = kcapset_find_locked(set_handle);
+    if (!set) {
+        kmutex_unlock(&global_capsets_table_lock);
+        kmutex_unlock(&global_caps_table_lock);
+        return -1;
+    }
+
+    kspin_lock(&set->spinlock);
+    HASH_FIND_BYHASHVALUE(hh, set->caps, &cap_handle, sizeof(cap_handle),
+                          hashv, entry);
+    found = entry ? kcap_find_locked(cap_handle) : NULL;
+    if (!found || !CAP_HAS_ALL(found, required_rights)) {
+        kspin_unlock(&set->spinlock);
+        kmutex_unlock(&global_capsets_table_lock);
+        kmutex_unlock(&global_caps_table_lock);
+        return -1;
+    }
+
+    out->cap_handle = found->cap_handle;
+    out->type = found->type;
+    out->obj_handle = found->obj_handle;
+    out->rights = found->rights;
 
     kspin_unlock(&set->spinlock);
     kmutex_unlock(&global_capsets_table_lock);

@@ -389,6 +389,71 @@ SHARKIX_SYSCALL_IMPL(CAP_REMOVE) {
 	return syscall_return();
 }
 
+/*
+ * Naming applies to the exact capability handle, regardless of its object
+ * type.  Resolve the capset member first so an otherwise-global handle cannot
+ * be named by an address space that does not hold it.
+ *
+ * CAP_SETNAME: RDI=cap, RSI=len, RDX/R10/R8/R9=name bytes.
+ * CAP_GETNAME: RDI=cap, RSI=output capacity; returns RSI=len and the bytes in
+ * RDX/R10/R8/R9.  No userspace pointers cross this ABI.
+ */
+SHARKIX_SYSCALL_IMPL(CAP_SETNAME) {
+    thread_t *caller = thread_current();
+    cap_t cap;
+    char name[KCAP_NAME_MAX] = { 0 };
+    size_t len = (size_t)ctx->rsi;
+
+    if (!caller || !caller->address_space || len > KCAP_NAME_MAX ||
+        kcapset_resolve_record(caller->address_space->capset,
+                               (cap_handle_t)ctx->rdi,
+                               CAP_RIGHT_SETNAME, &cap) != 0) {
+        ctx->rax = (uint64_t)-1;
+        return syscall_return();
+    }
+
+    memcpy(name + 0, &ctx->rdx, sizeof(ctx->rdx));
+    memcpy(name + 8, &ctx->r10, sizeof(ctx->r10));
+    memcpy(name + 16, &ctx->r8, sizeof(ctx->r8));
+    memcpy(name + 24, &ctx->r9, sizeof(ctx->r9));
+    ctx->rax = (uint64_t)kcap_set_name((cap_handle_t)ctx->rdi, name, len);
+    return syscall_return();
+}
+
+SHARKIX_SYSCALL_IMPL(CAP_GETNAME) {
+    thread_t *caller = thread_current();
+    cap_t cap;
+    char name[KCAP_NAME_MAX] = { 0 };
+    size_t len = 0;
+    size_t out_size = (size_t)ctx->rsi;
+    int status;
+
+    ctx->rdx = 0;
+    ctx->r10 = 0;
+    ctx->r8 = 0;
+    ctx->r9 = 0;
+    ctx->rsi = 0;
+
+    if (!caller || !caller->address_space ||
+        kcapset_resolve_record(caller->address_space->capset,
+                               (cap_handle_t)ctx->rdi,
+                               CAP_RIGHT_GETNAME, &cap) != 0) {
+        ctx->rax = (uint64_t)-1;
+        return syscall_return();
+    }
+
+    status = kcap_get_name((cap_handle_t)ctx->rdi, name, out_size, &len);
+    ctx->rsi = len;
+    if (status == 0) {
+        memcpy(&ctx->rdx, name + 0, sizeof(ctx->rdx));
+        memcpy(&ctx->r10, name + 8, sizeof(ctx->r10));
+        memcpy(&ctx->r8, name + 16, sizeof(ctx->r8));
+        memcpy(&ctx->r9, name + 24, sizeof(ctx->r9));
+    }
+    ctx->rax = (uint64_t)status;
+    return syscall_return();
+}
+
 SHARKIX_SYSCALL_IMPL(VM_PROTECT) {
 	(void)ctx;
 	return syscall_return();

@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 #include <sharkix/kernel/sync.h>
 
@@ -24,6 +25,8 @@ typedef uint64_t cap_rights_t;
 #define CAP_INVALID_HANDLE ((cap_handle_t)UINT64_MAX) /* invalid handle                     */
 #define CAPSET_HANDLE_SELF 0                          /* the capset for the current process */
 
+#define KCAP_NAME_MAX 32
+
 
 #include <sharkix/kernel/uthash.h>
 
@@ -42,12 +45,17 @@ typedef uint64_t cap_rights_t;
 //        AND THEY WILL ALSO BE TRANSFERRABLE
 //
 //
+
+// Potential TODO - think about if we want a generic metadata K/V store for caps
 #define CAP_RIGHT_NONE		 UINT64_C(0)	    /* No rights at all                                      */
 #define CAP_RIGHT_TRANSFER	(UINT64_C(1) << 0)  /* Can transfer this cap to another task's capset        */
 #define CAP_RIGHT_FORWARD	(UINT64_C(1) << 1)  /* Can forward this cap as-is OR use it locally not both */
 #define CAP_RIGHT_DERIVE	(UINT64_C(1) << 2)  /* Can derive another cap from this cap                  */
 #define CAP_RIGHT_DESTROY	(UINT64_C(1) << 3)  /* Can destroy the underlying object                     */
 #define CAP_RIGHT_REMOVE	(UINT64_C(1) << 4)  /* Can remove the cap - this removes it globally         */
+#define CAP_RIGHT_GETNAME	(UINT64_C(1) << 5)  /* Can get the ASCII name of the cap                     */
+#define CAP_RIGHT_SETNAME	(UINT64_C(1) << 6)  /* Can set the ASCII name of the cap                     */
+
 
 // mask defining all valid rights for any generic object
 // this should be updated if any reserved bits get used
@@ -55,11 +63,11 @@ typedef uint64_t cap_rights_t;
 					 CAP_RIGHT_FORWARD | \
 					 CAP_RIGHT_DERIVE | \
 					 CAP_RIGHT_DESTROY | \
-					 CAP_RIGHT_REMOVE)
+					 CAP_RIGHT_REMOVE | \
+					 CAP_RIGHT_GETNAME | \
+					 CAP_RIGHT_SETNAME )
 
 // reserved for future standard perms
-#define CAP_RIGHT_RESV5		(UINT64_C(1) << 5)
-#define CAP_RIGHT_RESV6		(UINT64_C(1) << 6)
 #define CAP_RIGHT_RESV7		(UINT64_C(1) << 7)
 #define CAP_RIGHT_RESV8		(UINT64_C(1) << 8)
 #define CAP_RIGHT_RESV9		(UINT64_C(1) << 9)
@@ -156,9 +164,9 @@ typedef struct cap_t {
 	cap_type_t       type;       // what kind of object is this cap for?
 	kobject_handle_t obj_handle; // handle for the underlying object
 	cap_rights_t     rights;     // bitmap of rights held to that underlying object
-
-        UT_hash_handle   hh;	     // uthash stuff
+	UT_hash_handle   hh;	     // uthash stuff
 } cap_t;
+
 
 
 typedef struct capset_entry_t {
@@ -179,6 +187,20 @@ void kinit_caps(void);
 
 // create a new cap
 int  kcap_create(kobject_handle_t obj_handle, cap_type_t cap_type, cap_rights_t init_rights, cap_handle_t* new_cap);
+
+// set a cap's name
+// the maximum name is 32 bytes
+// it need not be NUL-terminated
+// returns -1 on error
+int  kcap_set_name(cap_handle_t cap, const char *new_name, size_t len);
+
+// get a cap's name
+// out_size is the capacity in bytes of the buffer passed as name_out, and up to 32 bytes will be written to it
+// out_len will be set as the length of the name
+// this function does NOT guarantee zero-termination, if that is needed, it is up to the caller to use an array of 33 bytes at least
+// then the caller can manually set name_out[*out_len]=0
+// returns -1 on error
+int  kcap_get_name(cap_handle_t cap, char *name_out, size_t out_size, size_t *out_len);
 
 // destroy a cap - this is NOT the same thing as destroying the underlying object, which must be implemented by the underlying subsystem
 int  kcap_destroy(cap_handle_t cap);
@@ -221,6 +243,10 @@ int kcapset_resolve_cap(capset_handle_t set, cap_type_t req_type, cap_rights_t r
 // check if a capset has this exact cap, of this exact type, with these required rights
 // if so, return the object handle it points to in *out, otherwise *out is left unaltered
 int kcapset_resolve_handle(capset_handle_t set, cap_handle_t cap, cap_type_t required_type, cap_rights_t required_rights, kobject_handle_t *out);
+
+/* Resolve an exact capset member without imposing an object-type constraint. */
+int kcapset_resolve_record(capset_handle_t set, cap_handle_t cap,
+                           cap_rights_t required_rights, cap_t *out);
 
 // check if a capset has any caps allowing the specified operations on a particular type, without actually obtaining it
 int kcapset_check_perms(capset_handle_t set, cap_type_t req_type, cap_rights_t req_rights);
