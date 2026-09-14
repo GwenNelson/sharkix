@@ -61,9 +61,9 @@ static void kernel_worker(void *argument) {
     console_write("[serial-consoled] serial driver ready\n");
     serial_ready = true;
 
-    //for(;;) thread_yield();
+    for(;;) thread_yield();
     // for now, this just does a simple loop of spamming ABABABAB over and over
-    message = (ipc_message_t) {
+    /*message = (ipc_message_t) {
         .type = IPC_MSGTYPE_SEND,
         .words = { 1, (uint64_t)'A', 0, 0, 0 }
     };
@@ -78,7 +78,7 @@ static void kernel_worker(void *argument) {
             return;
         }
         message.words[1] = (uint64_t)'A';
-    }
+    }*/
 }
 
 void console_serial_putc(char c) {
@@ -215,9 +215,9 @@ void console_serial_init(void) {
     bootstrap[7] = serial_lsr_cap;
     bootstrap[8] = serial_com1_cap;
 
-    // start the kernel worker thread
+    // Match the user task's priority so the ready waiter cannot starve startup.
     worker_thread = startup_kernel_thread(kernel_worker, "serial-consoled-worker",
-                                          tskIDLE_PRIORITY + 3);
+                                          tskIDLE_PRIORITY + 2);
     if (!worker_thread || thread_start(user_thread) != 0) {
         console_write("serial-consoled thread startup failed\n");
         return;
