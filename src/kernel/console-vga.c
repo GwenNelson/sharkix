@@ -110,7 +110,7 @@ static int create_user_task(address_space_t **out_as, thread_t **out_thread, uin
     params = (thread_create_params_t) {
         .entry_rip = PROGRAM_DEFAULT_LOAD_ADDRESS,
         .initial_stack_pointer = stack_top - VGA_CONSOLED_STACK_BYTES,
-        .name = "vga-consoled", .priority = tskIDLE_PRIORITY + 3
+        .name = "vga-consoled", .priority = tskIDLE_PRIORITY + 2
     };
     *out_thread = thread_create(address_space, THREAD_PRIVILEGE_USER, &params);
     if (!*out_thread)
@@ -188,7 +188,7 @@ void console_vga_init(void) {
 
     // start the kernel worker thread
     worker_thread = startup_kernel_thread(kernel_worker, "vga-consoled-worker",
-                                          tskIDLE_PRIORITY + 3);
+                                          tskIDLE_PRIORITY + 2);
     if (!worker_thread || thread_start(user_thread) != 0) {
         console_write("vga-consoled thread startup failed\n");
         return;

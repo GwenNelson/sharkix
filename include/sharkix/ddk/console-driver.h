@@ -14,7 +14,7 @@ typedef struct sharkix_console_driver_t {
 
 // this macro goes at global level of any .c file
 #define REGISTER_CONSOLE_DRIVER(driver_name, init_fn, ready_fn, putc_fn) \
-	static sharkix_console_driver_t __attribute((section(".console_drivers"))) \
+	static sharkix_console_driver_t __attribute__((section(".console_drivers"))) __attribute__((used)) \
 	_console_##driver_name = { \
 		.name  = #driver_name, \
 		.init  = init_fn, \
