@@ -22,7 +22,6 @@ void console_init_late(void) {
 }
 
 void console_putc(char c) {
-     console_serial_putc(c);
 
      sharkix_console_driver_t *driver;
      if(late_drivers_ready) {
