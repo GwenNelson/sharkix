@@ -17,9 +17,14 @@ $(foreach component,$(PLATFORM_COMPONENTS),$(eval $(call include-selection,$(MK_
 include $(MK_ROOT)/boot/$(BOOT).mk
 include $(MK_ROOT)/profiles/$(PROFILE).mk
 
+$(foreach driver,$(PLATFORM_DRIVERS),\
+      $(eval $(call include-selection,$(MK_ROOT)/drivers/$(driver).mk)))
+
+
 include $(KERNEL_SRC_ROOT)/module.mk
 $(foreach module,$(KERNEL_ARCH_MODULE_ROOTS),$(eval $(call include-module,$(module))))
 include $(KERNEL_SRC_ROOT)/freertos/module.mk
 include $(USER_SRC_ROOT)/module.mk
 include $(MK_ROOT)/libfifo.mk
 include $(MK_ROOT)/rules.mk
+
