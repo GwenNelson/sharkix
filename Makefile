@@ -19,8 +19,6 @@ include $(MK_ROOT)/profiles/$(PROFILE).mk
 
 include $(DRIVER_SRC_ROOT)/module.mk
 
-$(foreach driver,$(PLATFORM_DRIVERS),\
-      $(eval $(call include-selection,$(MK_ROOT)/drivers/$(driver).mk)))
 
 
 include $(KERNEL_SRC_ROOT)/module.mk

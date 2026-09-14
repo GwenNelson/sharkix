@@ -3,6 +3,6 @@ DRIVER_SRCS :=
 
 
 $(foreach driver,$(PLATFORM_DRIVERS),\
-      $(eval $(call include-selection,$(MK_ROOT)/drivers/$(driver).mk)))
+      $(eval $(call include-selection,$(DRIVER_SRC_ROOT)/$(driver)/module.mk)))
 
 
