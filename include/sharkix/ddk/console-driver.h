@@ -22,3 +22,13 @@ typedef struct sharkix_console_driver_t {
 		.putc  = putc_fn, \
 	}
 
+#define REGISTER_EARLY_CONSOLE_DRIVER(driver_name, init_fn, ready_fn, putc_fn) \
+	static sharkix_console_driver_t __attribute__((section(".console_early_drivers"))) __attribute__((used)) \
+	_console_##driver_name = { \
+		.name  = #driver_name, \
+		.init  = init_fn, \
+		.ready = ready_fn, \
+		.putc  = putc_fn, \
+	}
+
+

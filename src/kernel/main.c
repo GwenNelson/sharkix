@@ -30,7 +30,7 @@ static void kernel_start_task(void *argument)
 void kernel_high_entry(uint32_t magic, uint32_t info)
 {
     (void)magic; (void)info;
- //   console_serial_init();
+    console_init_early();
     console_write("SharkKernel x86_64\n");
     console_write("kernel virtual base: 0xffffffff80000000\n");
     console_write("physmap base:        0xffff800000000000\n");

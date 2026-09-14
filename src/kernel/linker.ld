@@ -32,7 +32,11 @@ SECTIONS
     {
         *(.data .data.*)
         . = ALIGN(8);
-        __console_drivers_start = .;
+	__console_early_drivers_start = .;
+	*(.console_early_drivers)
+	__console_early_drivers_end = .;
+	. = ALIGN(8);
+	__console_drivers_start = .;
         *(.console_drivers)
         __console_drivers_end = .;
     }

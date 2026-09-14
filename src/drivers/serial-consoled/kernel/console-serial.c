@@ -33,4 +33,4 @@ bool console_serial_isready(void) {
 }
 
 
-REGISTER_CONSOLE_DRIVER(serial,console_serial_init,console_serial_isready,console_serial_putc);
+REGISTER_EARLY_CONSOLE_DRIVER(serial,console_serial_init,console_serial_isready,console_serial_putc);

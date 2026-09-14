@@ -1,14 +1,26 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "console.h"
-#include "console-serial.h"
 
 #include <sharkix/ddk/console-driver.h>
 
 extern sharkix_console_driver_t __console_drivers_start[];
 extern sharkix_console_driver_t __console_drivers_end[];
 
+extern sharkix_console_driver_t __console_early_drivers_start[];
+extern sharkix_console_driver_t __console_early_drivers_end[];
+
 static bool late_drivers_ready = false;
+
+void console_init_early(void) {
+     sharkix_console_driver_t *driver;
+
+     for (driver = __console_early_drivers_start; driver < __console_early_drivers_end; driver++) {
+        if (driver->init) {
+            driver->init();
+        }
+     }	
+}
 
 void console_init_late(void) {
      sharkix_console_driver_t *driver;
@@ -24,6 +36,18 @@ void console_init_late(void) {
 void console_putc(char c) {
 
      sharkix_console_driver_t *driver;
+
+      for (driver = __console_early_drivers_start; driver < __console_early_drivers_end; driver++) {
+            if (driver->ready) {
+               if(driver->ready()) {
+                    if(driver->putc) {
+                        driver->putc(c);
+		    }
+	       }
+            }
+        }
+
+
      if(late_drivers_ready) {
 
         for (driver = __console_drivers_start; driver < __console_drivers_end; driver++) {
@@ -37,8 +61,9 @@ void console_putc(char c) {
         }
 
      }
-//    if (console_vga_isready())
-//        console_vga_putc(c);
+
+
+
 }
 
 void console_write(const char *text) { while (*text) console_putc(*text++); }
