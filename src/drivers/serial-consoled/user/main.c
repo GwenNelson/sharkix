@@ -38,9 +38,9 @@ static void serial_log(char* msg) {
 }
 
 static void serial_panic(char* msg) {
-	vga_log("PANIC!");
-	vga_log(msg);
-	vga_log("Can not continue, terminating...");
+	serial_log("PANIC!");
+	serial_log(msg);
+	serial_log("Can not continue, terminating...");
 	test_exit();
 }
 
@@ -50,7 +50,7 @@ static void serial_signal_ready(void) {
 	// maybe at some point in future we can use this endpoint to signal other stuff too
 	// such as error states for example?
 	regs.rax = SYSCALL_IPC_SEND;
-	regs.rdi = vga_ready_cap;
+	regs.rdi = serial_ready_cap;
 	sharkix_syscall(&regs);
 	if(regs.rax != 0) {
 		serial_panic("Failed signalling ready state to kernel via SYSCALL_IPC_SEND!");
@@ -68,11 +68,11 @@ static void serial_port_outb(uint64_t cap, uint8_t value)
     sharkix_syscall(&regs);
 
     if (regs.rax != 0) {
-        vga_panic("serial_port_outb() failed!");
+        serial_panic("serial_port_outb() failed!");
     }
 }
 
-static uint8_t serial_port_inb(uint32_t cap)
+static uint8_t serial_port_inb(uint64_t cap)
 {
     sharkix_syscall_regs_t regs = { 0 };
 
@@ -82,17 +82,25 @@ static uint8_t serial_port_inb(uint32_t cap)
     sharkix_syscall(&regs);
 
     if (regs.rax != 0) {
-        vga_panic("serial_port_inb() failed!");
+        serial_panic("serial_port_inb() failed!");
     }
 
     return (uint8_t)regs.rdx;
+}
+
+static void internal_console_serial_putc(char c) {
+	// LSR bit 5 indicates that the transmit holding register can accept a byte.
+	while((serial_port_inb(serial_lsr_cap) & 0x20) == 0) {}
+	if(c == '\n') {
+		serial_port_outb(serial_com1_cap,'\r');
+	}
+	serial_port_outb(serial_com1_cap,c);
 }
 
 
 
 void run_serial_service(void) {
 	// setup the serial port first
-{
 	serial_port_outb(serial_ier_cap,0);
 	serial_port_outb(serial_lcr_cap,0x80);
 	serial_port_outb(serial_com1_cap,3);
@@ -126,17 +134,9 @@ void run_serial_service(void) {
             for (uint64_t i = 0; i < count; ++i)
                  internal_console_serial_putc((char)(words[i / 8] >> ((i % 8) * 8)));
             regs.rax = SYSCALL_IPC_RECV;
-            regs.rdi = vga_output_cap;
+            regs.rdi = serial_output_cap;
         }
 	
-}
-
-static void internal_console_serial_putc(char c) {
-	while((serial_port_inb(serial_lsr_cap) & 020) == 0) {}
-	if(c == '\n') {
-		serial_port_outb(serial_com1_cap,'\r');
-	}
-	serial_port_outb(serial_com1_cap,'\n');
 }
 
 void serial_consoled_main(uint64_t *bootstrap) {
@@ -152,7 +152,7 @@ void serial_consoled_main(uint64_t *bootstrap) {
 	"serial.com1",
     };
 
-    if (!bootstrap || bootstrap[0] != 4) {
+    if (!bootstrap || bootstrap[0] != 8) {
 	serial_panic("invalid bootstrap!");
     }
 
