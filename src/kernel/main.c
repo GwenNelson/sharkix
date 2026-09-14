@@ -6,7 +6,6 @@
 #include "arch.h"
 #include "console.h"
 #include "console-serial.h"
-#include "console-vga.h"
 #include "memory.h"
 #include "pmem.h"
 #include "portio.h"
@@ -23,7 +22,7 @@ void vApplicationStackOverflowHook(TaskHandle_t task, char *name) { (void)task; 
 static void kernel_start_task(void *argument)
 {
     (void)argument;
-    console_vga_init();
+    console_init_late();
     kernel_startup_profile();
     thread_exit_current();
 }

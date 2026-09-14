@@ -31,6 +31,10 @@ SECTIONS
     .data ALIGN(4K) : AT(ADDR(.data) - KERNEL_BASE + 0x00200000)
     {
         *(.data .data.*)
+        . = ALIGN(8);
+        __console_drivers_start = .;
+        *(.console_drivers)
+        __console_drivers_end = .;
     }
     .bss ALIGN(4K) (NOLOAD) : AT(ADDR(.bss) - KERNEL_BASE + 0x00200000)
     {
@@ -43,3 +47,4 @@ SECTIONS
 
     /DISCARD/ : { *(.comment) *(.note*) *(.eh_frame*) }
 }
+
