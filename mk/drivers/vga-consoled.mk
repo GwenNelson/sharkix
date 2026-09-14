@@ -1,14 +1,16 @@
 
 VGA_CONSOLED_DIR := $(SHARKIX_PROJECT_ROOT)/src/drivers/vga-consoled
-VGA_CONSOLED_ENTRY_SOURCE := $(VGA_CONSOLED_DIR)/entry.S
-VGA_CONSOLED_SOURCE := $(VGA_CONSOLED_DIR)/main.c
-VGA_CONSOLED_LINKER_SCRIPT := $(VGA_CONSOLED_DIR)/vga-consoled.ld
-VGA_CONSOLED_ENTRY_OBJECT := $(USER_OBJ_ROOT)/vga-consoled/entry.o
-VGA_CONSOLED_OBJECT := $(USER_OBJ_ROOT)/vga-consoled/main.o
-VGA_CONSOLED_ELF := $(USER_OBJ_ROOT)/vga-consoled/vga-consoled.elf
-VGA_CONSOLED_BINARY := $(USER_OBJ_ROOT)/vga-consoled/vga-consoled.bin
-VGA_CONSOLED_EMBED_OBJECT := $(KERNEL_OBJ_ROOT)/user_vga_consoled.o
-VGA_CONSOLED_LIBSHARKIX := $(CONFIG_BUILD_ROOT)/libsharkix/libsharkix-user.a
+
+VGA_CONSOLED_ENTRY_SOURCE  := $(VGA_CONSOLED_DIR)/user/entry.S
+VGA_CONSOLED_SOURCE        := $(VGA_CONSOLED_DIR)/user/main.c
+VGA_CONSOLED_LINKER_SCRIPT := $(VGA_CONSOLED_DIR)/user/vga-consoled.ld
+
+VGA_CONSOLED_ENTRY_OBJECT  := $(USER_OBJ_ROOT)/vga-consoled/entry.o
+VGA_CONSOLED_OBJECT        := $(USER_OBJ_ROOT)/vga-consoled/main.o
+VGA_CONSOLED_ELF           := $(USER_OBJ_ROOT)/vga-consoled/vga-consoled.elf
+VGA_CONSOLED_BINARY        := $(USER_OBJ_ROOT)/vga-consoled/vga-consoled.bin
+VGA_CONSOLED_EMBED_OBJECT  := $(KERNEL_OBJ_ROOT)/user_vga_consoled.o
+VGA_CONSOLED_LIBSHARKIX    := $(CONFIG_BUILD_ROOT)/libsharkix/libsharkix-user.a
 
 VGA_CONSOLED_CFLAGS := \
     -std=gnu11 -ffreestanding -O2 -Wall -Wextra \
@@ -54,6 +56,6 @@ $(VGA_CONSOLED_EMBED_OBJECT): $(VGA_CONSOLED_BINARY)
 		$(patsubst $(SHARKIX_PROJECT_ROOT)/%,%,$<) \
 		$(patsubst $(SHARKIX_PROJECT_ROOT)/%,%,$@)
 
-KERNEL_C_SRCS += $(SHARKIX_PROJECT_ROOT)/src/kernel/console-vga.c 
+KERNEL_C_SRCS += $(SHARKIX_PROJECT_ROOT)/src/kernel/../drivers/vga-consoled/kernel/console-vga.c 
 
 USER_OBJECTS += $(VGA_CONSOLED_EMBED_OBJECT)
