@@ -33,8 +33,12 @@ void console_init_late(void) {
      late_drivers_ready = true;
 }
 
+
+static void outb(uint16_t port, uint8_t value) { __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port)); }
+
 void console_putc(char c) {
 
+     outb(0xE9,c);
      sharkix_console_driver_t *driver;
 
       for (driver = __console_early_drivers_start; driver < __console_early_drivers_end; driver++) {

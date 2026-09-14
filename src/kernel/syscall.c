@@ -728,6 +728,9 @@ SHARKIX_SYSCALL_IMPL(PORT_OUTL) {
 
 /* Existing observable syscall 0: write one character and return the trusted
  * caller's SharkKernel ID in RAX. */
+
+static void outb(uint16_t port, uint8_t value) { __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port)); }
+
 SHARKIX_SYSCALL_IMPL(TEST_WRITE) {
     thread_t *caller = thread_current();
     if (!caller) { ctx->rax = UINT64_MAX; return syscall_return(); }
