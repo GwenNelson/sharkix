@@ -13,6 +13,7 @@ KERNEL_DEPFILES := $(KERNEL_OBJECTS:.o=.d)
 .SECONDARY: $(USER_ASM_OBJECTS) $(USER_ELFS)
 .DEFAULT_GOAL := all
 -include $(KERNEL_DEPFILES)
+-include $(DRIVER_DEPFILES)
 
 all: kernel.elf
 kernel.elf: $(KERNEL_ELF)
