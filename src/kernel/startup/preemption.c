@@ -1,6 +1,5 @@
+#include <stddef.h>
 #include <stdint.h>
-#include "FreeRTOS.h"
-#include "task.h"
 #include "console.h"
 #include "startup.h"
 
@@ -60,14 +59,14 @@ static void preemption_monitor(void *argument)
     };
     uint64_t last_a = 0;
     uint64_t last_b = 0;
-    UBaseType_t initial_high_water_a;
-    UBaseType_t initial_high_water_b;
+    size_t initial_high_water_a;
+    size_t initial_high_water_b;
     unsigned passes = 0;
     unsigned reported_stable = 0;
     (void)argument;
 
     /* The reaper also sleeps between passes, so this delay leaves only the
-     * unmanaged FreeRTOS idle task runnable between PIT ticks. */
+     * scheduler's idle thread runnable between PIT ticks. */
     if (thread_delay_current(2) != 0) {
         console_write("idle scheduling test failed\n");
         for (;;) __asm__ volatile ("cli; hlt");
@@ -103,10 +102,8 @@ static void preemption_monitor(void *argument)
         for (;;) __asm__ volatile ("cli; hlt");
     }
     console_write("kernel preemption verified: non-cooperative A/B workers time-sliced\n");
-    initial_high_water_a = uxTaskGetStackHighWaterMark(
-        (TaskHandle_t)worker_a_thread->scheduler_private);
-    initial_high_water_b = uxTaskGetStackHighWaterMark(
-        (TaskHandle_t)worker_b_thread->scheduler_private);
+    initial_high_water_a = thread_stack_high_water_words(worker_a_thread);
+    initial_high_water_b = thread_stack_high_water_words(worker_b_thread);
     console_write("kernel stack high water words: A ");
     console_decimal(initial_high_water_a);
     console_write(" B ");
@@ -121,10 +118,8 @@ static void preemption_monitor(void *argument)
             last_b = current_b;
             if (++passes == 32) {
                 if (!reported_stable) {
-                    UBaseType_t later_a = uxTaskGetStackHighWaterMark(
-                        (TaskHandle_t)worker_a_thread->scheduler_private);
-                    UBaseType_t later_b = uxTaskGetStackHighWaterMark(
-                        (TaskHandle_t)worker_b_thread->scheduler_private);
+                    size_t later_a = thread_stack_high_water_words(worker_a_thread);
+                    size_t later_b = thread_stack_high_water_words(worker_b_thread);
                     if (later_a != initial_high_water_a || later_b != initial_high_water_b) {
                         console_write("kernel stack usage did not remain bounded\n");
                         for (;;) __asm__ volatile ("cli; hlt");

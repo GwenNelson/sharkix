@@ -1,8 +1,6 @@
 #include <stddef.h>
 #include <stdint.h>
-#include "FreeRTOS.h"
 #include "sharkix/kernel/boot/multiboot1.h"
-#include "task.h"
 #include "arch.h"
 #include "console.h"
 #include "console-serial.h"
@@ -15,9 +13,6 @@
 #include "sync.h"
 #include "kvalloc.h"
 #include "vmo.h"
-
-void vApplicationMallocFailedHook(void) { for (;;) __asm__ volatile ("cli; hlt"); }
-void vApplicationStackOverflowHook(TaskHandle_t task, char *name) { (void)task; (void)name; for (;;) __asm__ volatile ("cli; hlt"); }
 
 static void kernel_start_task(void *argument)
 {
@@ -38,6 +33,10 @@ void kernel_high_entry(uint32_t magic, uint32_t info)
     memory_init(magic, info);
     arch_init_cpu_local();
     arch_init_syscalls();
+    if (scheduler_init() != 0) {
+        console_write("scheduler initialization failed\n");
+        arch_halt();
+    }
     startup_common_init();
     ksync_init();
     ipc_init();
@@ -48,7 +47,6 @@ void kernel_high_entry(uint32_t magic, uint32_t info)
     kvmo_init();
     kvmoset_new(&(address_space_kernel()->vmoset));
     if (!startup_kernel_thread(kernel_start_task, "kernel-start", THREAD_PRIORITY_NORMAL))
-        for (;;) __asm__ volatile ("cli; hlt");
-    vTaskStartScheduler();
-    for (;;) __asm__ volatile ("cli; hlt");
+        arch_halt();
+    scheduler_start();
 }

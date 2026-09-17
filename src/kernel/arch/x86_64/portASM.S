@@ -1,17 +1,13 @@
-#include "FreeRTOSConfig.h"
 .text
 .code64
-.extern pxCurrentTCB
-.extern vTaskSwitchContext
-.extern xTaskIncrementTick
-.extern thread_prepare_current
+.extern scheduler_on_yield
+.extern scheduler_on_tick
 .extern dispatch_syscall
 .extern thread_block_current
 .extern thread_handle_exception
 .extern thread_handle_kernel_exception
 .extern thread_exit_current
 .extern cpu0
-.extern vPortTaskBootstrap
 
 .macro SAVE_REGS
  pushq %rax; pushq %rbx; pushq %rcx; pushq %rdx; pushq %rbp; pushq %rsi; pushq %rdi
@@ -22,65 +18,40 @@
  popq %rdi; popq %rsi; popq %rbp; popq %rdx; popq %rcx; popq %rbx; popq %rax
 .endm
 
-/* TCB field 2 is thread_t *.  Keep all Thread layout knowledge in C. */
-.macro ACTIVATE_CURRENT_THREAD
- movq pxCurrentTCB(%rip), %rax
- movq 8(%rax), %rdi
- call thread_prepare_current
- movq %cr3, %rdx
- cmpq %rdx, %rax
- je 1f
- movq %rax, %cr3
-1:
-.endm
-
-.global vPortStartFirstTask
-vPortStartFirstTask:
+.global arch_start_first_thread
+arch_start_first_thread:
  cli
- /* xPortStartScheduler called us with RSP == 8 (mod 16). */
- subq $8, %rsp
- ACTIVATE_CURRENT_THREAD
- movq pxCurrentTCB(%rip), %rax
- movq (%rax), %rsp
+ movq %rdi, %rsp
  RESTORE_REGS
  iretq
 
-.global vPortYieldHandler
-vPortYieldHandler:
+.global arch_yield_handler
+arch_yield_handler:
  /* Hardware software-interrupt frame: RIP, CS, RFLAGS[, RSP, SS]. */
  cld
  SAVE_REGS
- movq pxCurrentTCB(%rip), %rax
- movq %rsp, (%rax)
+ movq %rsp, %rdi
  andq $-16, %rsp
- call vTaskSwitchContext
- ACTIVATE_CURRENT_THREAD
- movq pxCurrentTCB(%rip), %rax
- movq (%rax), %rsp
+ call scheduler_on_yield
+ movq %rax, %rsp
  RESTORE_REGS
  iretq
 
-.global vPortTimerHandler
-vPortTimerHandler:
+.global arch_timer_handler
+arch_timer_handler:
  cld
  SAVE_REGS
- movq pxCurrentTCB(%rip), %rax
- movq %rsp, (%rax)
- andq $-16, %rsp
- call xTaskIncrementTick
- testl %eax, %eax
- je 1f
- call vTaskSwitchContext
-1: movb $0x20, %al
+ movq %rsp, %rdi
+ movb $0x20, %al
  outb %al, $0x20
- ACTIVATE_CURRENT_THREAD
- movq pxCurrentTCB(%rip), %rax
- movq (%rax), %rsp
+ andq $-16, %rsp
+ call scheduler_on_tick
+ movq %rax, %rsp
  RESTORE_REGS
  iretq
 
-.global vPortInvalidOpcodeHandler
-vPortInvalidOpcodeHandler:
+.global arch_invalid_opcode_handler
+arch_invalid_opcode_handler:
  testb $3, 8(%rsp)
  jz 1f
  cld
@@ -101,8 +72,8 @@ vPortInvalidOpcodeHandler:
  andq $-16, %rsp
  call thread_handle_kernel_exception
 
-.global vPortPageFaultHandler
-vPortPageFaultHandler:
+.global arch_page_fault_handler
+arch_page_fault_handler:
  /* Error code precedes RIP, so CS is at RSP+16. */
  testb $3, 16(%rsp)
  jz 1f
@@ -124,8 +95,8 @@ vPortPageFaultHandler:
  andq $-16, %rsp
  call thread_handle_kernel_exception
 
-.global vPortGeneralProtectionHandler
-vPortGeneralProtectionHandler:
+.global arch_general_protection_handler
+arch_general_protection_handler:
  /* Error code precedes RIP, so CS is at RSP+16. */
  testb $3, 16(%rsp)
  jz 1f
@@ -147,8 +118,8 @@ vPortGeneralProtectionHandler:
  andq $-16, %rsp
  call thread_handle_kernel_exception
 
-.global vPortSyscallEntry
-vPortSyscallEntry:
+.global arch_syscall_entry
+arch_syscall_entry:
  /* This single-core substrate uses RIP-relative cpu0 accesses.  GS is left
  * untouched until user TLS/SMP need the SWAPGS convention. */
  movq %rsp, cpu0+16(%rip)
@@ -177,7 +148,7 @@ vPortSyscallEntry:
  leaq 0(%rsp), %rdi
  call thread_block_current
  testl %eax, %eax
- jne vPortDefaultHandler
+ jne arch_default_handler
 1:
  movq 0(%rsp), %rax; movq %rax, 224(%rsp)
  movq 8(%rsp), %rax; movq %rax, 216(%rsp)
@@ -192,15 +163,15 @@ vPortSyscallEntry:
  movq (%rsp), %rsp
  sysretq
 
-.global vPortTaskBootstrap
-vPortTaskBootstrap:
+.global arch_thread_bootstrap
+arch_thread_bootstrap:
  movq %r13, %rdi
  call *%r12
  call thread_exit_current
  ud2
 
-.global vPortDefaultHandler
-vPortDefaultHandler:
+.global arch_default_handler
+arch_default_handler:
  cli
 1: hlt
  jmp 1b

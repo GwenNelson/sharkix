@@ -1,5 +1,4 @@
-#include "FreeRTOS.h"
-#include "task.h"
+#include "arch.h"
 #include "console.h"
 #include "startup.h"
 #include "thread.h"
@@ -10,11 +9,10 @@ static void reaper_task(void *argument)
 {
     (void)argument;
     for (;;) {
-        vTaskReapDeleted();
         thread_reap();
         if (thread_delay_current(1) != 0) {
             console_write("reaper delay failed\n");
-            for (;;) __asm__ volatile ("cli; hlt");
+            arch_halt();
         }
     }
 }
@@ -35,7 +33,7 @@ void startup_common_init(void)
     reaper_thread = startup_kernel_thread(reaper_task, "reaper", THREAD_PRIORITY_NORMAL);
     if (!reaper_thread) {
         console_write("reaper creation failed\n");
-        for (;;) __asm__ volatile ("cli; hlt");
+        arch_halt();
     }
 }
 

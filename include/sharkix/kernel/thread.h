@@ -42,8 +42,13 @@ typedef struct thread {
     void *kernel_stack_base;
     uintptr_t kernel_stack_top;
     size_t kernel_stack_size;
-    void *scheduler_private;
+    uintptr_t saved_context;
+    scheduler_tick_t wake_tick;
+    thread_priority_t priority;
+    unsigned in_ready_queue;
+    unsigned in_sleep_queue;
     syscall_ctx_t *blocked_syscall_ctx;
+    struct thread *scheduler_next;
     struct thread *reap_next; /* Intrusive link used by the deferred thread reaper. */
     struct thread *registry_next;
 } thread_t;
@@ -79,11 +84,9 @@ int thread_block_current(syscall_ctx_t *context);
 int thread_wake(thread_t *thread);
 syscall_ctx_t *thread_get_blocked_syscall_context(thread_t *thread);
 
-/* Called by the scheduler port for every selected FreeRTOS task.  The return
- * value is the CR3 root which the assembly port should activate. */
-uint64_t thread_prepare_current(thread_t *thread);
-/* FreeRTOS ready-list hook; association is the TCB's Sharkix thread pointer. */
-void thread_scheduler_task_ready(void *association);
+/* Scheduler-internal activation hook. */
+void thread_prepare_current(thread_t *thread);
+size_t thread_stack_high_water_words(const thread_t *thread);
 void thread_exit_current(void) __attribute__((noreturn));
 void thread_reap(void);
 uint64_t thread_reaped_count(void);
