@@ -1,0 +1,5 @@
+SHARKIX_ERRNO(IRQ_OK,             0, "")
+SHARKIX_ERRNO(IRQ_ERR_INVALID,   -1, "Invalid IRQ operation")
+SHARKIX_ERRNO(IRQ_ERR_NOT_FOUND, -2, "IRQ object not found")
+SHARKIX_ERRNO(IRQ_ERR_PERMISSION,-3, "IRQ permission failure")
+SHARKIX_ERRNO(IRQ_ERR_HW_INVALID,-4, "IRQ invalid on this hardware")

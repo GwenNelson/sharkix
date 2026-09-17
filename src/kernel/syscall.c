@@ -7,6 +7,7 @@
 #include "caps.h"
 #include "portio.h"
 #include "vmo.h"
+#include "irq.h"
 
 static uint64_t announced_a;
 static uint64_t announced_b;
@@ -724,11 +725,35 @@ SHARKIX_SYSCALL_IMPL(PORT_OUTL) {
     return syscall_return();
 }
 
+SHARKIX_SYSCALL_IMPL(IRQ_WAIT) {
+    irq_handle_t handle = IRQ_INVALID_HANDLE;
+    thread_t* caller = thread_current();
+
+    cap_handle_t requested_cap = ((cap_handle_t)ctx->rdi);
+    if(kcapset_resolve_handle(caller->address_space->capset,requested_cap,CAP_TYPE_IRQ,CAP_RIGHT_IRQ_WAIT,&handle) != 0) {
+       ctx->rax = (uint64_t)IRQ_ERR_PERMISSION;
+       return syscall_return();
+    }
+    ctx->rax = kirq_wait(handle);
+    return syscall_return();
+}
+
+SHARKIX_SYSCALL_IMPL(IRQ_ACK) {
+    irq_handle_t handle = IRQ_INVALID_HANDLE;
+    thread_t* caller = thread_current();
+
+    cap_handle_t requested_cap = ((cap_handle_t)ctx->rdi);
+    if(kcapset_resolve_handle(caller->address_space->capset,requested_cap,CAP_TYPE_IRQ,CAP_RIGHT_IRQ_ACK,&handle) != 0) {
+       ctx->rax = (uint64_t)IRQ_ERR_PERMISSION;
+       return syscall_return();
+    }
+    ctx->rax = kirq_ack(handle);
+    return syscall_return();
+}
 
 /* Existing observable syscall 0: write one character and return the trusted
  * caller's SharkKernel ID in RAX. */
 
-static void outb(uint16_t port, uint8_t value) { __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port)); }
 
 SHARKIX_SYSCALL_IMPL(TEST_WRITE) {
     thread_t *caller = thread_current();

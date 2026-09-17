@@ -121,14 +121,10 @@ typedef uint64_t cap_rights_t;
                                  CAP_RIGHT_PORTIO_WRITE)
 
 #define CAP_RIGHT_IRQ_WAIT       (UINT64_C(1) << 10)
-#define CAP_RIGHT_IRQ_ENABLE     (UINT64_C(1) << 11)
-#define CAP_RIGHT_IRQ_DISABLE    (UINT64_C(1) << 12)
-#define CAP_RIGHT_IRQ_ACK        (UINT64_C(1) << 13)
+#define CAP_RIGHT_IRQ_ACK        (UINT64_C(1) << 11)
 
 #define CAP_IRQ_VALID_RIGHTS     (CAP_GENERIC_VALID_RIGHTS | \
                                   CAP_RIGHT_IRQ_WAIT       | \
-                                  CAP_RIGHT_IRQ_ENABLE     | \
-                                  CAP_RIGHT_IRQ_DISABLE    | \
                                   CAP_RIGHT_IRQ_ACK)
 
 

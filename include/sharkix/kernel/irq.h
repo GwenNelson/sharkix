@@ -5,6 +5,14 @@
 #include <sharkix/kernel/uthash.h>
 #include <sharkix/kernel/sync.h>
 
+
+typedef enum irq_status_t {
+#define SHARKIX_ERRNO(name,value,msg) name = value,
+#include <sharkix/kernel/irq_errno.inc>
+#undef SHARKIX_ERRNO
+} irq_status_t;
+
+
 typedef uint64_t irq_handle_t;
 
 #define IRQ_INVALID_HANDLE ((irq_handle_t)UINT64_MAX)

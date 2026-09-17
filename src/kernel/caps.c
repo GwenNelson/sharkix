@@ -37,6 +37,8 @@ static int kcap_validate_rights(cap_type_t type, cap_rights_t rights) {
     case CAP_TYPE_PORTIO:
         return (rights & ~CAP_PORTIO_VALID_RIGHTS) ? -1 : 0;
 
+    case CAP_TYPE_IRQ:
+	return (rights & ~CAP_IRQ_VALID_RIGHTS) ? -1 : 0;
     default:
         return -1;
     }
