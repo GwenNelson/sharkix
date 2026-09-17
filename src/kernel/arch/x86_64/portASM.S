@@ -25,6 +25,53 @@ arch_start_first_thread:
  RESTORE_REGS
  iretq
 
+.extern kirq_handler
+
+.macro IRQ_STUB irq
+.global arch_irq\irq\()_handler
+arch_irq\irq\()_handler:
+    cld
+    SAVE_REGS
+
+    movq %rsp, %rbx        /* preserve saved-frame pointer */
+    andq $-16, %rsp
+
+    movq $\irq, %rdi
+    call kirq_handler
+
+    movq %rbx, %rsp
+
+    .if \irq >= 8
+        movb $0x20, %al
+        outb %al, $0xA0
+    .endif
+
+    movb $0x20, %al
+    outb %al, $0x20
+
+    RESTORE_REGS
+    iretq
+.endm
+
+
+IRQ_STUB 0
+IRQ_STUB 1
+IRQ_STUB 2
+IRQ_STUB 3
+IRQ_STUB 4
+IRQ_STUB 5
+IRQ_STUB 6
+IRQ_STUB 7
+IRQ_STUB 8
+IRQ_STUB 9
+IRQ_STUB 10
+IRQ_STUB 11
+IRQ_STUB 12
+IRQ_STUB 13
+IRQ_STUB 14
+IRQ_STUB 15
+
+
 .global arch_yield_handler
 arch_yield_handler:
  /* Hardware software-interrupt frame: RIP, CS, RFLAGS[, RSP, SS]. */

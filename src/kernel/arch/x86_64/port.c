@@ -54,6 +54,43 @@ extern void arch_default_handler(void), arch_page_fault_handler(void);
 extern void arch_invalid_opcode_handler(void), arch_general_protection_handler(void);
 extern void arch_syscall_entry(void), arch_thread_bootstrap(void);
 
+extern void arch_irq0_handler(void);
+extern void arch_irq1_handler(void);
+extern void arch_irq2_handler(void);
+extern void arch_irq3_handler(void);
+extern void arch_irq4_handler(void);
+extern void arch_irq5_handler(void);
+extern void arch_irq6_handler(void);
+extern void arch_irq7_handler(void);
+extern void arch_irq8_handler(void);
+extern void arch_irq9_handler(void);
+extern void arch_irq10_handler(void);
+extern void arch_irq11_handler(void);
+extern void arch_irq12_handler(void);
+extern void arch_irq13_handler(void);
+extern void arch_irq14_handler(void);
+extern void arch_irq15_handler(void);
+
+static void (*const irq_handlers[16])(void) = {
+    arch_irq0_handler,
+    arch_irq1_handler,
+    arch_irq2_handler,
+    arch_irq3_handler,
+    arch_irq4_handler,
+    arch_irq5_handler,
+    arch_irq6_handler,
+    arch_irq7_handler,
+    arch_irq8_handler,
+    arch_irq9_handler,
+    arch_irq10_handler,
+    arch_irq11_handler,
+    arch_irq12_handler,
+    arch_irq13_handler,
+    arch_irq14_handler,
+    arch_irq15_handler,
+};
+
+
 static inline void outb(uint16_t port, uint8_t value)
 {
     __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
@@ -159,7 +196,11 @@ static void interrupts_init(void)
     idt_set_gate(6, arch_invalid_opcode_handler, 0);
     idt_set_gate(13, arch_general_protection_handler, 0);
     idt_set_gate(14, arch_page_fault_handler, 0);
+    for (unsigned i = 0; i < 16; ++i)
+         idt_set_gate(0x20 + i, irq_handlers[i], 0);
+    
     idt_set_gate(0x20, arch_timer_handler, 0);
+
     idt_set_gate(0x90, arch_yield_handler, 3);
     idtr.limit = (uint16_t)(sizeof(idt) - 1);
     idtr.base = (uint64_t)(uintptr_t)idt;
