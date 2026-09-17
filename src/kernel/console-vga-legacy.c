@@ -263,7 +263,7 @@ void console_vga_init(void) {
          .entry_rip = (uintptr_t)console_vga_server_thread,
          .kernel_stack_size = 64 * PAGE_SIZE,
          .name = "vga-consoled",
-         .priority = tskIDLE_PRIORITY + 2,
+         .priority = THREAD_PRIORITY_NORMAL,
          .argument = (void *)(uintptr_t)vga_server_capset
      };
      vga_server_thread = thread_create(address_space_kernel(),

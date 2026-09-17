@@ -1,7 +1,6 @@
 #include <sharkix/kernel/sync.h>
 #include <sharkix/kernel/thread.h>
-
-#include "FreeRTOS.h"
+#include <sharkix/kernel/arch.h>
 
 #include <libfifo/sync.h>
 
@@ -36,12 +35,12 @@ void kspin_unlock(kspinlock_t *lock)
 
 kirq_flags_t kirq_save(void)
 {
-    return (kirq_flags_t)ulPortSetInterruptMask();
+    return (kirq_flags_t)arch_irq_save();
 }
 
 void kirq_restore(kirq_flags_t flags)
 {
-    vPortClearInterruptMask((uint32_t)flags);
+    arch_irq_restore((uintptr_t)flags);
 }
 
 kirq_flags_t kspin_lock_irqsave(kspinlock_t *lock)
@@ -109,10 +108,10 @@ void ksem_post(ksemaphore_t *semaphore)
 
 void kcritical_enter(void)
 {
-    vPortEnterCritical();
+    arch_critical_enter();
 }
 
 void kcritical_exit(void)
 {
-    vPortExitCritical();
+    arch_critical_exit();
 }

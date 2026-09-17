@@ -1,7 +1,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "FreeRTOS.h"
 #include "caps.h"
 #include "console.h"
 #include "ipc.h"
@@ -114,7 +113,7 @@ static int create_user_task(address_space_t **out_as, thread_t **out_thread, uin
     params = (thread_create_params_t) {
         .entry_rip = PROGRAM_DEFAULT_LOAD_ADDRESS,
         .initial_stack_pointer = stack_top - SERIAL_CONSOLED_STACK_BYTES,
-        .name = "serial-consoled", .priority = tskIDLE_PRIORITY + 2
+        .name = "serial-consoled", .priority = THREAD_PRIORITY_NORMAL
     };
     *out_thread = thread_create(address_space, THREAD_PRIVILEGE_USER, &params);
     if (!*out_thread)
@@ -217,7 +216,7 @@ void console_serial_init(void) {
 
     // Match the user task's priority so the ready waiter cannot starve startup.
     worker_thread = startup_kernel_thread(kernel_worker, "serial-consoled-worker",
-                                          tskIDLE_PRIORITY + 2);
+                                          THREAD_PRIORITY_NORMAL);
     if (!worker_thread || thread_start(user_thread) != 0) {
         console_write("serial-consoled thread startup failed\n");
         return;

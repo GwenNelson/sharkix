@@ -1,7 +1,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include "FreeRTOS.h"
+#include "arch.h"
 #include "console.h"
 #include "memory.h"
 #include "kvalloc.h"
@@ -58,7 +58,6 @@ typedef struct page_walk {
 extern uint64_t bootstrap_pml4[];
 extern uint64_t __kernel_physical_start;
 extern uint64_t __kernel_physical_end;
-extern void vPortInstallKernelGDT(void);
 
 static address_space_t kernel_address_space;
 static bootstrap_allocator_t bootstrap_allocator;
@@ -1153,7 +1152,7 @@ void memory_init(uint32_t multiboot_magic, uint32_t multiboot_info_phys)
     if (multiboot_magic != MULTIBOOT_BOOTLOADER_MAGIC) memory_panic("bad multiboot magic");
     if (!mbi) memory_panic("null multiboot info");
 
-    vPortInstallKernelGDT();
+    arch_install_kernel_gdt();
     kernel_address_space.pml4_phys = (uint64_t)(uintptr_t)bootstrap_pml4;
     kernel_address_space.mappings = NULL;
     kernel_address_space.flags = 0;

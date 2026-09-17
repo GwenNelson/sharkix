@@ -124,9 +124,9 @@ static void thread_release_address_space(thread_t *thread)
 static void thread_release_kernel_resources(thread_t *thread)
 {
     if (!thread) return;
-    if (thread->freertos_task) {
-        kfree(thread->freertos_task);
-        thread->freertos_task = NULL;
+    if (thread->scheduler_private) {
+        kfree(thread->scheduler_private);
+        thread->scheduler_private = NULL;
     }
     if (thread->kernel_stack_base) {
         kernel_stack_free(thread->kernel_stack_base, thread->kernel_stack_size);
@@ -195,7 +195,7 @@ thread_t *thread_create(address_space_t *address_space, thread_privilege_t privi
         return NULL;
     }
 
-    thread->freertos_task = task;
+    thread->scheduler_private = task;
     thread->kernel_stack_base = stack_base;
     thread->kernel_stack_size = stack_words * sizeof(StackType_t);
     thread->kernel_stack_top = (uintptr_t)stack_base + thread->kernel_stack_size;
@@ -214,12 +214,12 @@ int thread_start(thread_t *thread)
 {
     kirq_flags_t interrupt_mask = kirq_save();
 
-    if (!thread || thread->state != THREAD_STATE_READY || !thread->freertos_task ||
+    if (!thread || thread->state != THREAD_STATE_READY || !thread->scheduler_private ||
         thread_transition(thread, THREAD_STATE_READY, THREAD_STATE_RUNNABLE) != 0) {
         kirq_restore(interrupt_mask);
         return -1;
     }
-    vTaskStartSuspended(thread->freertos_task);
+    vTaskStartSuspended((TaskHandle_t)thread->scheduler_private);
     kirq_restore(interrupt_mask);
     return 0;
 }
@@ -231,8 +231,8 @@ void thread_destroy_unstarted(thread_t *thread)
         kcritical_exit();
         return;
     }
-    vTaskSetSharkThread(thread->freertos_task, NULL);
-    vTaskDelete(thread->freertos_task);
+    vTaskSetSharkThread((TaskHandle_t)thread->scheduler_private, NULL);
+    vTaskDelete((TaskHandle_t)thread->scheduler_private);
     thread_release_kernel_resources(thread);
     thread_release_address_space(thread);
     thread_unlink(thread);
@@ -252,7 +252,7 @@ thread_t *thread_create_started(address_space_t *address_space, thread_privilege
     return thread;
 }
 
-int thread_delay_current(TickType_t ticks)
+int thread_delay_current(scheduler_tick_t ticks)
 {
     thread_t *thread = thread_current();
     kirq_flags_t interrupt_mask;
@@ -263,7 +263,7 @@ int thread_delay_current(TickType_t ticks)
         kirq_restore(interrupt_mask);
         return -1;
     }
-    vTaskDelay(ticks);
+    vTaskDelay((TickType_t)ticks);
     if (thread->state != THREAD_STATE_RUNNING)
         for (;;) __asm__ volatile ("cli; hlt");
     kirq_restore(interrupt_mask);
@@ -280,7 +280,7 @@ uint64_t thread_prepare_current(thread_t *thread)
         /* The internal FreeRTOS idle task is an explicit unmanaged kernel
          * task.  It never inherits stale Thread/TSS state. */
         cpu0.kernel_stack_top = 0;
-        vPortSetKernelStack(0);
+        arch_set_kernel_stack(0);
         return address_space_kernel()->pml4_phys;
     }
     if (thread->state != THREAD_STATE_RUNNABLE && thread->state != THREAD_STATE_RUNNING) {
@@ -291,7 +291,7 @@ uint64_t thread_prepare_current(thread_t *thread)
     if (thread->state == THREAD_STATE_RUNNABLE)
         (void)thread_transition(thread, THREAD_STATE_RUNNABLE, THREAD_STATE_RUNNING);
     cpu0.kernel_stack_top = thread->kernel_stack_top;
-    vPortSetKernelStack(thread->kernel_stack_top);
+    arch_set_kernel_stack(thread->kernel_stack_top);
     return thread->address_space->pml4_phys;
 }
 
@@ -305,7 +305,7 @@ void thread_exit_current(void)
     portDISABLE_INTERRUPTS();
     if (thread_transition(thread, THREAD_STATE_RUNNING, THREAD_STATE_TERMINATING) != 0)
         for (;;) __asm__ volatile ("cli; hlt");
-    vTaskSetSharkThread(thread->freertos_task, NULL);
+    vTaskSetSharkThread((TaskHandle_t)thread->scheduler_private, NULL);
     thread->reap_next = dead_threads;
     dead_threads = thread;
     vTaskDelete(NULL);
@@ -370,12 +370,12 @@ int thread_wake(thread_t *thread)
 {
     kirq_flags_t interrupt_mask = kirq_save();
 
-    if (!thread || thread->state != THREAD_STATE_BLOCKED || !thread->freertos_task ||
+    if (!thread || thread->state != THREAD_STATE_BLOCKED || !thread->scheduler_private ||
         thread_transition(thread, THREAD_STATE_BLOCKED, THREAD_STATE_RUNNABLE) != 0) {
         kirq_restore(interrupt_mask);
         return -1;
     }
-    vTaskResume(thread->freertos_task);
+    vTaskResume((TaskHandle_t)thread->scheduler_private);
     kirq_restore(interrupt_mask);
     return 0;
 }

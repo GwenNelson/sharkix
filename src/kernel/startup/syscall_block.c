@@ -1,6 +1,5 @@
 #include <stddef.h>
 #include <stdint.h>
-#include "FreeRTOS.h"
 #include "console.h"
 #include "program.h"
 #include "startup.h"
@@ -42,7 +41,7 @@ void kernel_startup_profile(void)
                               (size_t)(syscall_waker_image_end - syscall_waker_image_start) };
     program_start_options_t options = {
         .privilege = THREAD_PRIVILEGE_USER, .name = "blocker",
-        .priority = tskIDLE_PRIORITY + 2, .kernel_stack_size = 4 * PAGE_SIZE,
+        .priority = THREAD_PRIORITY_NORMAL, .kernel_stack_size = 4 * PAGE_SIZE,
         .reap_on_exit = 1
     };
     thread_t *blocker_thread;
@@ -57,7 +56,7 @@ void kernel_startup_profile(void)
     console_write("syscall_block threads "); console_decimal(blocker_id); console_putc(' ');
     console_decimal(waker_id); console_write("\n");
     startup_reaper();
-    if (!startup_kernel_thread(block_monitor, "block-monitor", tskIDLE_PRIORITY + 2)) goto failed;
+    if (!startup_kernel_thread(block_monitor, "block-monitor", THREAD_PRIORITY_NORMAL)) goto failed;
     return;
 failed:
     console_write("syscall_block setup failed\n");

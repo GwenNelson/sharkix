@@ -1,5 +1,4 @@
 #include <stdint.h>
-#include "FreeRTOS.h"
 #include "console.h"
 #include "thread.h"
 #include "syscall.h"

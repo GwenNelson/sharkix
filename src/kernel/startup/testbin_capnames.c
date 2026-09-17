@@ -1,7 +1,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "FreeRTOS.h"
 #include "caps.h"
 #include "console.h"
 #include "ipc.h"
@@ -72,7 +71,7 @@ static int create_user_task(address_space_t **out_as, thread_t **out_thread,
     params = (thread_create_params_t) {
         .entry_rip = PROGRAM_DEFAULT_LOAD_ADDRESS,
         .initial_stack_pointer = stack_top - TESTBIN_CAPNAMES_STACK_BYTES,
-        .name = "testbin-capnames", .priority = tskIDLE_PRIORITY + 2
+        .name = "testbin-capnames", .priority = THREAD_PRIORITY_NORMAL
     };
     *out_thread = thread_create(address_space, THREAD_PRIVILEGE_USER, &params);
     if (!*out_thread)
@@ -108,7 +107,7 @@ void kernel_startup_profile(void)
     bootstrap[3] = 0;
 
     worker_thread = startup_kernel_thread(kernel_worker, "capnames-worker",
-                                          tskIDLE_PRIORITY + 2);
+                                          THREAD_PRIORITY_NORMAL);
     if (!worker_thread || thread_start(user_thread) != 0) {
         console_write("testbin_capnames thread startup failed\n");
         for (;;) __asm__ volatile ("cli; hlt");

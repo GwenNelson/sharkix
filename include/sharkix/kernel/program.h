@@ -22,7 +22,7 @@ typedef struct program_start_options {
     size_t kernel_stack_size;
     thread_privilege_t privilege;
     const char *name;
-    UBaseType_t priority;
+    thread_priority_t priority;
     unsigned reap_on_exit;
 } program_start_options_t;
 

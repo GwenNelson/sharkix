@@ -1,4 +1,5 @@
 #include "FreeRTOS.h"
+#include "task.h"
 #include "console.h"
 #include "startup.h"
 #include "thread.h"
@@ -18,7 +19,8 @@ static void reaper_task(void *argument)
     }
 }
 
-thread_t *startup_kernel_thread(TaskFunction_t entry, const char *name, UBaseType_t priority)
+thread_t *startup_kernel_thread(thread_entry_t entry, const char *name,
+                                thread_priority_t priority)
 {
     thread_create_params_t params = {
         .entry_rip = (uintptr_t)entry, .initial_stack_pointer = 0,
@@ -30,7 +32,7 @@ thread_t *startup_kernel_thread(TaskFunction_t entry, const char *name, UBaseTyp
 void startup_common_init(void)
 {
     if (reaper_thread) return;
-    reaper_thread = startup_kernel_thread(reaper_task, "reaper", tskIDLE_PRIORITY + 2);
+    reaper_thread = startup_kernel_thread(reaper_task, "reaper", THREAD_PRIORITY_NORMAL);
     if (!reaper_thread) {
         console_write("reaper creation failed\n");
         for (;;) __asm__ volatile ("cli; hlt");

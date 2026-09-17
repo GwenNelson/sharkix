@@ -1,7 +1,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "FreeRTOS.h"
 #include "caps.h"
 #include "console.h"
 #include "ipc.h"
@@ -78,7 +77,7 @@ create_user_task(const program_image_t *image,
         .entry_rip = PROGRAM_DEFAULT_LOAD_ADDRESS,
         .initial_stack_pointer = stack_top - sizeof(uint64_t),
         .name = name,
-        .priority = tskIDLE_PRIORITY + 2
+        .priority = THREAD_PRIORITY_NORMAL
     };
 
     thread = thread_create(address_space, THREAD_PRIVILEGE_USER, &params);

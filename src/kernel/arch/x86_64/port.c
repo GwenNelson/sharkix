@@ -58,9 +58,12 @@ static inline uint64_t rdmsr(uint32_t msr)
     return ((uint64_t)high << 32) | low;
 }
 
-void vPortSetKernelStack(uintptr_t top) { tss.rsp0 = top; }
+void arch_set_kernel_stack(uintptr_t top) { tss.rsp0 = top; }
 
-void vPortInstallKernelGDT(void)
+/* Temporary compatibility entry points while FreeRTOS still owns dispatch. */
+void vPortSetKernelStack(uintptr_t top) { arch_set_kernel_stack(top); }
+
+void arch_install_kernel_gdt(void)
 {
     uint64_t base = (uint64_t)(uintptr_t)&tss;
     uint64_t limit = sizeof(tss) - 1;
@@ -69,6 +72,8 @@ void vPortInstallKernelGDT(void)
     descriptor_ptr_t gdtr = { (uint16_t)(sizeof(kernel_gdt) - 1), (uint64_t)(uintptr_t)kernel_gdt };
     __asm__ volatile ("lgdt %0; mov $0x38, %%ax; ltr %%ax" : : "m"(gdtr) : "rax", "memory");
 }
+
+void vPortInstallKernelGDT(void) { arch_install_kernel_gdt(); }
 
 void arch_init_cpu_local(void)
 {
@@ -146,20 +151,44 @@ StackType_t *pxPortInitialiseStack(StackType_t *top, StackType_t *end, TaskFunct
 
 BaseType_t xPortStartScheduler(void) { ulCriticalNesting = 0; port_init_interrupts(); vPortStartFirstTask(); return 0; }
 void vPortEndScheduler(void) { for (;;) __asm__ volatile ("cli; hlt"); }
-void vPortEnterCritical(void)
+uintptr_t arch_irq_save(void)
 {
     uint64_t flags;
 
     __asm__ volatile ("pushfq; cli; popq %0" : "=r"(flags) : : "memory");
+    return (uintptr_t)(flags & (1ULL << 9));
+}
+
+void arch_irq_restore(uintptr_t flags)
+{
+    if (flags & (1ULL << 9)) __asm__ volatile ("sti" : : : "memory");
+}
+
+void arch_interrupts_disable(void)
+{
+    __asm__ volatile ("cli" : : : "memory");
+}
+
+void arch_halt(void)
+{
+    for (;;) __asm__ volatile ("cli; hlt" : : : "memory");
+}
+
+void arch_critical_enter(void)
+{
+    uintptr_t flags;
+
+    flags = arch_irq_save();
     if (ulCriticalNesting == 0) critical_outer_flags = flags;
     ++ulCriticalNesting;
 }
-void vPortExitCritical(void)
+void arch_critical_exit(void)
 {
     configASSERT(ulCriticalNesting != 0);
     --ulCriticalNesting;
-    if (ulCriticalNesting == 0 && (critical_outer_flags & (1ULL << 9)))
-        portENABLE_INTERRUPTS();
+    if (ulCriticalNesting == 0) arch_irq_restore(critical_outer_flags);
 }
-uint32_t ulPortSetInterruptMask(void) { uint64_t flags; __asm__ volatile ("pushfq; popq %0; cli" : "=r"(flags) : : "memory"); return (uint32_t)(flags & (1u << 9)); }
-void vPortClearInterruptMask(uint32_t value) { if (value) portENABLE_INTERRUPTS(); }
+void vPortEnterCritical(void) { arch_critical_enter(); }
+void vPortExitCritical(void) { arch_critical_exit(); }
+uint32_t ulPortSetInterruptMask(void) { return (uint32_t)arch_irq_save(); }
+void vPortClearInterruptMask(uint32_t value) { arch_irq_restore(value); }

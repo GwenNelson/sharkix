@@ -17,7 +17,7 @@ void kernel_startup_profile(void)
     const program_start_options_t options = {
         .privilege = THREAD_PRIVILEGE_USER,
         .name = "testbin",
-        .priority = tskIDLE_PRIORITY + 2,
+        .priority = THREAD_PRIORITY_NORMAL,
         .reap_on_exit = 1
     };
 

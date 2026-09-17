@@ -1,14 +1,12 @@
 #pragma once
 
-#include <sharkix/kernel/freertos/FreeRTOS.h>
-
 #include <stddef.h>
 #include <stdint.h>
 #include "memory.h"
-#include "task.h"
+#include "scheduler.h"
 
 #define THREAD_DEFAULT_KERNEL_STACK_WORDS 2048U
-#define THREAD_DEFAULT_KERNEL_STACK_SIZE (THREAD_DEFAULT_KERNEL_STACK_WORDS * sizeof(StackType_t))
+#define THREAD_DEFAULT_KERNEL_STACK_SIZE (THREAD_DEFAULT_KERNEL_STACK_WORDS * sizeof(uintptr_t))
 
 typedef enum thread_privilege {
     THREAD_PRIVILEGE_KERNEL,
@@ -32,7 +30,7 @@ typedef struct thread_create_params {
     uintptr_t initial_stack_pointer;
     size_t kernel_stack_size;
     const char *name;
-    UBaseType_t priority;
+    thread_priority_t priority;
     void *argument;
 } thread_create_params_t;
 
@@ -44,7 +42,7 @@ typedef struct thread {
     void *kernel_stack_base;
     uintptr_t kernel_stack_top;
     size_t kernel_stack_size;
-    TaskHandle_t freertos_task;
+    void *scheduler_private;
     syscall_ctx_t *blocked_syscall_ctx;
     struct thread *reap_next; /* Intrusive link used by the deferred thread reaper. */
     struct thread *registry_next;
@@ -74,7 +72,7 @@ int thread_start(thread_t *thread);
 thread_t *thread_create_started(address_space_t *address_space, thread_privilege_t privilege,
                                 const thread_create_params_t *params);
 void thread_destroy_unstarted(thread_t *thread);
-int thread_delay_current(TickType_t ticks);
+int thread_delay_current(scheduler_tick_t ticks);
 /* The context points into the current thread's syscall frame on its dedicated
  * kernel stack, and remains valid until that blocked syscall resumes. */
 int thread_block_current(syscall_ctx_t *context);

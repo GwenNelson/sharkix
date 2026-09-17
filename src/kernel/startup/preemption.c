@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include "FreeRTOS.h"
+#include "task.h"
 #include "console.h"
 #include "startup.h"
 
@@ -54,7 +55,7 @@ static void preemption_monitor(void *argument)
         .initial_stack_pointer = 0,
         .kernel_stack_size = 64 * PAGE_SIZE,
         .name = "preempt-a",
-        .priority = tskIDLE_PRIORITY + 2,
+        .priority = THREAD_PRIORITY_NORMAL,
         .argument = &worker_a_args
     };
     uint64_t last_a = 0;
@@ -102,8 +103,10 @@ static void preemption_monitor(void *argument)
         for (;;) __asm__ volatile ("cli; hlt");
     }
     console_write("kernel preemption verified: non-cooperative A/B workers time-sliced\n");
-    initial_high_water_a = uxTaskGetStackHighWaterMark(worker_a_thread->freertos_task);
-    initial_high_water_b = uxTaskGetStackHighWaterMark(worker_b_thread->freertos_task);
+    initial_high_water_a = uxTaskGetStackHighWaterMark(
+        (TaskHandle_t)worker_a_thread->scheduler_private);
+    initial_high_water_b = uxTaskGetStackHighWaterMark(
+        (TaskHandle_t)worker_b_thread->scheduler_private);
     console_write("kernel stack high water words: A ");
     console_decimal(initial_high_water_a);
     console_write(" B ");
@@ -118,8 +121,10 @@ static void preemption_monitor(void *argument)
             last_b = current_b;
             if (++passes == 32) {
                 if (!reported_stable) {
-                    UBaseType_t later_a = uxTaskGetStackHighWaterMark(worker_a_thread->freertos_task);
-                    UBaseType_t later_b = uxTaskGetStackHighWaterMark(worker_b_thread->freertos_task);
+                    UBaseType_t later_a = uxTaskGetStackHighWaterMark(
+                        (TaskHandle_t)worker_a_thread->scheduler_private);
+                    UBaseType_t later_b = uxTaskGetStackHighWaterMark(
+                        (TaskHandle_t)worker_b_thread->scheduler_private);
                     if (later_a != initial_high_water_a || later_b != initial_high_water_b) {
                         console_write("kernel stack usage did not remain bounded\n");
                         for (;;) __asm__ volatile ("cli; hlt");
@@ -141,7 +146,7 @@ static void preemption_monitor(void *argument)
 
 void kernel_startup_profile(void)
 {
-    if (!startup_kernel_thread(preemption_monitor, "preempt-mon", tskIDLE_PRIORITY + 2)) {
+    if (!startup_kernel_thread(preemption_monitor, "preempt-mon", THREAD_PRIORITY_NORMAL)) {
         console_write("kernel preemption profile task creation failed\n");
         for (;;) __asm__ volatile ("cli; hlt");
     }

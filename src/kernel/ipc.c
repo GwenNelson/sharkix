@@ -1,5 +1,3 @@
-#include "FreeRTOS.h"
-
 #include <string.h>
 
 #include <sharkix/kernel/ipc.h>

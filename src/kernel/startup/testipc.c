@@ -1,4 +1,4 @@
-#include "FreeRTOS.h"
+#include "arch.h"
 #include "startup.h"
 #include "thread.h"
 
@@ -436,11 +436,11 @@ static void test_ipc_threads(void *argument) {
              */
             startup_kernel_thread(test_ipc_consumer,
                                   "ipc-consumer",
-                                  tskIDLE_PRIORITY + 2);
+                                  THREAD_PRIORITY_NORMAL);
 
             startup_kernel_thread(test_ipc_producer,
                                   "ipc-producer",
-                                  tskIDLE_PRIORITY + 2);
+                                  THREAD_PRIORITY_NORMAL);
 }
 
 /*
@@ -469,10 +469,7 @@ static void sharkloop_fail(const char *message)
             console_write("[SHARKLOOP] FAIL: ");
             console_write(message);
             console_putc('\n');
-            vTaskSuspendAll();
-            __asm__ volatile ("cli" ::: "memory");
-            for (;;)
-                __asm__ volatile ("hlt");
+            arch_halt();
 }
 
 static void sharkloop_fail_value(const char *message, unsigned worker, uint64_t value)
@@ -484,10 +481,7 @@ static void sharkloop_fail_value(const char *message, unsigned worker, uint64_t 
             console_write(" value=");
             console_hex(value);
             console_putc('\n');
-            vTaskSuspendAll();
-            __asm__ volatile ("cli" ::: "memory");
-            for (;;)
-                __asm__ volatile ("hlt");
+            arch_halt();
 }
 
 static void sharkloop_data_message(ipc_message_t *message, uint64_t sequence,
@@ -679,7 +673,7 @@ static void test_sharkloop(void* argument) {
             memset(&params, 0, sizeof(params));
             params.entry_rip = (uintptr_t)sharkloop_worker;
             params.kernel_stack_size = 64 * PAGE_SIZE;
-            params.priority = tskIDLE_PRIORITY + 2;
+            params.priority = THREAD_PRIORITY_NORMAL;
             for (i = 0; i < SHARKLOOP_WORKERS; ++i) {
                 sharkloop_worker_indices[i] = i;
                 params.name = "sharkloop";
@@ -734,6 +728,6 @@ static void run_tests(void* argument) {
 
 void kernel_startup_profile(void) {
      // we need to be inside a thread to run these things
-     startup_kernel_thread(run_tests,"testipc-run_tests",tskIDLE_PRIORITY+2);
+     startup_kernel_thread(run_tests,"testipc-run_tests",THREAD_PRIORITY_NORMAL);
 
 }

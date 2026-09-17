@@ -1,6 +1,5 @@
 #include <stddef.h>
 #include <stdint.h>
-#include "FreeRTOS.h"
 #include "console.h"
 #include "memory.h"
 #include "program.h"
@@ -20,7 +19,7 @@ static void lifecycle_task(void *argument)
         uint64_t reaped = thread_reaped_count();
         program_image_t image = { exit_image_start, (size_t)(exit_image_end - exit_image_start) };
         program_start_options_t options = {
-            .privilege = THREAD_PRIVILEGE_USER, .name = "exit", .priority = tskIDLE_PRIORITY + 2,
+            .privilege = THREAD_PRIVILEGE_USER, .name = "exit", .priority = THREAD_PRIORITY_NORMAL,
             .reap_on_exit = 1
         };
         if (program_load_and_start(&image, &options, NULL, NULL) != 0) break;
@@ -31,7 +30,7 @@ static void lifecycle_task(void *argument)
      * program container from disappearing with its last Thread. */
     program_image_t retained_image = { exit_image_start, (size_t)(exit_image_end - exit_image_start) };
     program_start_options_t retained_options = {
-        .privilege = THREAD_PRIVILEGE_USER, .name = "held", .priority = tskIDLE_PRIORITY + 2,
+        .privilege = THREAD_PRIVILEGE_USER, .name = "held", .priority = THREAD_PRIORITY_NORMAL,
         .reap_on_exit = 1
     };
     address_space_t *held_as = NULL;
@@ -52,7 +51,7 @@ static void lifecycle_task(void *argument)
 void kernel_startup_profile(void)
 {
     startup_reaper();
-    if (!startup_kernel_thread(lifecycle_task, "lifecycle", tskIDLE_PRIORITY + 2)) {
+    if (!startup_kernel_thread(lifecycle_task, "lifecycle", THREAD_PRIORITY_NORMAL)) {
         console_write("lifecycle startup failed\n");
         for (;;) __asm__ volatile ("cli; hlt");
     }

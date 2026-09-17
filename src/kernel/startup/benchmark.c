@@ -1,7 +1,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "FreeRTOS.h"
+#include "arch.h"
 #include "caps.h"
 #include "console.h"
 #include "ipc.h"
@@ -40,9 +40,7 @@ static void benchmark_halt(const char *message)
     console_write("BENCHMARK FAIL: ");
     console_write(message);
     console_putc('\n');
-    vTaskSuspendAll();
-    __asm__ volatile("cli");
-    for (;;) __asm__ volatile("hlt");
+    arch_halt();
 }
 
 static ipc_handle_t raw_endpoints[BENCH_WORKERS];
@@ -121,7 +119,7 @@ static void run_raw_benchmark(void)
         params = (thread_create_params_t) {
             .entry_rip = (uintptr_t)raw_worker,
             .kernel_stack_size = 64 * PAGE_SIZE,
-            .name = "raw-bench", .priority = tskIDLE_PRIORITY + 2,
+            .name = "raw-bench", .priority = THREAD_PRIORITY_NORMAL,
             .argument = &indices[i]
         };
         thread_t *thread = thread_create_started(address_space_kernel(),
@@ -180,7 +178,7 @@ static int create_user_bench_task(const program_image_t *image,
     params = (thread_create_params_t) {
         .entry_rip = PROGRAM_DEFAULT_LOAD_ADDRESS,
         .initial_stack_pointer = stack_top - 3 * sizeof(uint64_t),
-        .name = "user-bench", .priority = tskIDLE_PRIORITY + 2
+        .name = "user-bench", .priority = THREAD_PRIORITY_NORMAL
     };
     task->thread = thread_create(task->address_space, THREAD_PRIVILEGE_USER, &params);
     if (!task->thread)

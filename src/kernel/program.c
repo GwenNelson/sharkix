@@ -1,6 +1,5 @@
 #include <stddef.h>
 #include <stdint.h>
-#include "FreeRTOS.h"
 #include "program.h"
 
 int program_map_flat_image(address_space_t *address_space, const program_image_t *image,

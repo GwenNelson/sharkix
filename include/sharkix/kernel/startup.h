@@ -7,6 +7,7 @@ void kernel_startup_profile(void);
 void startup_common_init(void);
 void startup_reaper(void);
 void startup_kernel_spinner(char marker);
-thread_t *startup_kernel_thread(TaskFunction_t entry, const char *name, UBaseType_t priority);
+thread_t *startup_kernel_thread(thread_entry_t entry, const char *name,
+                                thread_priority_t priority);
 
 #endif
