@@ -224,7 +224,7 @@ static void internal_console_vga_putc(char c) {
 }
 
 
-void vga_consoled_main(uint64_t *bootstrap) {
+void driver_user_main(uint64_t *bootstrap) {
     uint64_t handles[4];
     char *capv[] = {
         "vga.output",

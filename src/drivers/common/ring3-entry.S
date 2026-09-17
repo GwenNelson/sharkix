@@ -3,12 +3,12 @@
 
 .global _start
 .type _start, @function
-.extern vga_consoled_main
+.extern driver_user_main
 
 _start:
     movq %rsp, %rdi
     andq $-16, %rsp
-    call vga_consoled_main
+    call driver_user_main
 
 1:
     pause

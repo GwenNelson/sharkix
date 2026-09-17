@@ -139,7 +139,7 @@ void run_serial_service(void) {
 	
 }
 
-void serial_consoled_main(uint64_t *bootstrap) {
+void driver_user_main(uint64_t *bootstrap) {
     uint64_t handles[8];
     char *capv[] = {
         "serial.out",
