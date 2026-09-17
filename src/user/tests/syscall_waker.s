@@ -6,7 +6,7 @@ _start:
     syscall
     testq %rax, %rax
     jz 1f
-    int $0x21
+    int $0x90
     jmp _start
 1:  movq $0, %rax
     movq $'B', %rdi

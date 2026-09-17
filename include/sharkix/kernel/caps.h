@@ -120,6 +120,19 @@ typedef uint64_t cap_rights_t;
                                  CAP_RIGHT_PORTIO_READ | \
                                  CAP_RIGHT_PORTIO_WRITE)
 
+#define CAP_RIGHT_IRQ_WAIT       (UINT64_C(1) << 10)
+#define CAP_RIGHT_IRQ_ENABLE     (UINT64_C(1) << 11)
+#define CAP_RIGHT_IRQ_DISABLE    (UINT64_C(1) << 12)
+#define CAP_RIGHT_IRQ_ACK        (UINT64_C(1) << 13)
+
+#define CAP_IRQ_VALID_RIGHTS     (CAP_GENERIC_VALID_RIGHTS | \
+                                  CAP_RIGHT_IRQ_WAIT       | \
+                                  CAP_RIGHT_IRQ_ENABLE     | \
+                                  CAP_RIGHT_IRQ_DISABLE    | \
+                                  CAP_RIGHT_IRQ_ACK)
+
+
+
 // helpers
 #define CAP_HAS_ALL(cap, required) \
     ((((cap)->rights) & (required)) == (required))
@@ -156,6 +169,7 @@ typedef enum cap_type_t {
 	CAP_TYPE_PMEM         = 2,
 	CAP_TYPE_VMO          = 3,
 	CAP_TYPE_PORTIO       = 4,
+	CAP_TYPE_IRQ          = 5,
 } cap_type_t;
 
 // represents an inividual cap

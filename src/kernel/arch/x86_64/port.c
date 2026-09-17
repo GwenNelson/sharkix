@@ -160,7 +160,7 @@ static void interrupts_init(void)
     idt_set_gate(13, arch_general_protection_handler, 0);
     idt_set_gate(14, arch_page_fault_handler, 0);
     idt_set_gate(0x20, arch_timer_handler, 0);
-    idt_set_gate(0x21, arch_yield_handler, 3);
+    idt_set_gate(0x90, arch_yield_handler, 3);
     idtr.limit = (uint16_t)(sizeof(idt) - 1);
     idtr.base = (uint64_t)(uintptr_t)idt;
     __asm__ volatile ("lidt %0" : : "m"(idtr));
@@ -209,7 +209,7 @@ void arch_scheduler_start(uintptr_t saved_context)
 
 void arch_scheduler_yield(void)
 {
-    __asm__ volatile ("int $0x21" : : : "memory");
+    __asm__ volatile ("int $0x90" : : : "memory");
 }
 
 void arch_wait_for_interrupt(void)

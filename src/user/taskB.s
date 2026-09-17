@@ -5,5 +5,5 @@ _start:
 1:  movq $0, %rax
     movq $'B', %rdi
     syscall
-    int $0x21
+    int $0x90
     jmp 1b
