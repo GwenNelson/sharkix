@@ -1,6 +1,8 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <stdbool.h>
+
 #include <sharkix/kernel/memory.h>
 #include <sharkix/kernel/irq.h>
 #include <sharkix/kernel/portio.h>
@@ -22,6 +24,8 @@ static kmutex_t global_irq_table_lock;
 
 static irq_t *hwirq_table[IRQ_COUNT];
 static kspinlock_t hwirq_table_lock;
+
+static bool irq_subsys_ready = false;
 
 static irq_t *kirq_find_locked(irq_handle_t handle) {
     irq_t *irq = NULL;
@@ -101,6 +105,7 @@ void kirq_init(void) {
         console_write("kirq_init() - failed to obtain PortIO for slave PIC!\n");
         for (;;);
     }
+    irq_subsys_ready = true;
 }
 
 int kirq_create(irq_handle_t *out, uint32_t hwirq) {
@@ -278,5 +283,5 @@ int kirq_ack(irq_handle_t handle) {
 }
 
 void kirq_handler(uint64_t irq) {
-     pic_eoi(irq);
+     if(irq_subsys_ready) kirq_handle(irq);
 }

@@ -13,6 +13,7 @@
 #include "sync.h"
 #include "kvalloc.h"
 #include "vmo.h"
+#include "irq.h"
 
 static void kernel_start_task(void *argument)
 {
@@ -42,6 +43,7 @@ void kernel_high_entry(uint32_t magic, uint32_t info)
     ipc_init();
     kpmem_init();
     kportio_init();
+    kirq_init();
     kinit_caps();
     kvalloc_init();
     kvmo_init();
