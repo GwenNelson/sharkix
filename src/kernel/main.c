@@ -14,6 +14,7 @@
 #include "kvalloc.h"
 #include "vmo.h"
 #include "irq.h"
+#include "ipc_registry.h"
 
 static void kernel_start_task(void *argument)
 {
@@ -41,6 +42,7 @@ void kernel_high_entry(uint32_t magic, uint32_t info)
     startup_common_init();
     ksync_init();
     ipc_init();
+    kipc_registry_init();
     kpmem_init();
     kportio_init();
     kirq_init();

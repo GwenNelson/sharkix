@@ -5,5 +5,5 @@ endif
 QEMU_DISPLAY ?= -display none
 QEMU_ARGS += $(QEMU_ACCEL_FLAGS) -m 512M -debugcon stdio $(QEMU_DISPLAY) -no-reboot
 
-PLATFORM_DRIVERS += vga-consoled serial-consoled
+PLATFORM_DRIVERS += vga-consoled serial-consoled ps2-bus
 
