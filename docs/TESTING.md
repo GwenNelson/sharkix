@@ -1,15 +1,16 @@
 # Sharkix Kernel Testing Plan
 
-This document proposes a systematic kernel testing plan for the current Sharkix tree as inspected on 2026-08-30. It is derived from the code that currently exists under `src/kernel/`, `src/user/`, `include/sharkix/kernel/`, `bootstub32/`, the build system, and the current startup profiles.
+This document proposes a systematic kernel testing plan for the current Sharkix tree. It is derived from the code that currently exists under `src/kernel/`, `src/user/`, `include/sharkix/kernel/`, `bootstub32/`, the build system, and the current startup profiles.
 
-The current tree is a higher-half x86_64 kernel using a custom FreeRTOS port. It already contains:
+The current tree is a higher-half x86_64 kernel using the Sharkix-owned portable scheduler. It already contains:
 
 - Multiboot-1 boot and higher-half transition via [`src/kernel/boot.S`](/home/gwen/sharkix/src/kernel/boot.S)
 - Physical-memory discovery and allocator setup in [`src/kernel/memory.c`](/home/gwen/sharkix/src/kernel/memory.c)
 - Address-space creation, mapping, unmapping, translation, activation, and destruction
 - Dynamic kernel heap via `ksbrk()`, `kmalloc()`, `kfree()`
 - Guarded kernel-stack allocation
-- Sharkix-owned `thread_t` lifecycle on top of FreeRTOS in [`src/kernel/thread.c`](/home/gwen/sharkix/src/kernel/thread.c)
+- Sharkix-owned `thread_t` lifecycle in [`src/kernel/thread.c`](/home/gwen/sharkix/src/kernel/thread.c)
+- Strict round-robin scheduling in [`src/kernel/scheduler.c`](/home/gwen/sharkix/src/kernel/scheduler.c)
 - x86_64 syscall entry/return and exception routing in [`src/kernel/arch/x86_64/portASM.S`](/home/gwen/sharkix/src/kernel/arch/x86_64/portASM.S) and [`src/kernel/arch/x86_64/port.c`](/home/gwen/sharkix/src/kernel/arch/x86_64/port.c)
 - Flat user-image loading in [`src/kernel/program.c`](/home/gwen/sharkix/src/kernel/program.c)
 - Current startup profiles:
@@ -77,6 +78,10 @@ Major subsystems and interfaces currently present in the tree:
   - `program_image_t`
 
 - Threads and scheduler integration
+  - `scheduler_init()`
+  - `scheduler_start()`
+  - `scheduler_on_yield()`
+  - `scheduler_on_tick()`
   - `thread_current()`
   - `thread_current_id()`
   - `thread_lookup()`
@@ -86,7 +91,6 @@ Major subsystems and interfaces currently present in the tree:
   - `thread_create_started()`
   - `thread_destroy_unstarted()`
   - `thread_prepare_current()`
-  - `thread_timer_may_preempt_current()`
   - `thread_exit_current()`
   - `thread_reap()`
   - `thread_reaped_count()`
@@ -100,9 +104,9 @@ Major subsystems and interfaces currently present in the tree:
 - x86_64 architecture code
   - `arch_init_cpu_local()`
   - `arch_init_syscalls()`
-  - `vPortInstallKernelGDT()`
-  - `vPortSetKernelStack()`
-  - FreeRTOS entry, yield, timer, syscall, and exception assembly paths
+  - `arch_install_kernel_gdt()`
+  - `arch_set_kernel_stack()`
+  - Native entry, yield, timer, syscall, and exception assembly paths
   - GDT, TSS, IDT setup
   - CR3 switching and CPL3 return
 
@@ -241,7 +245,7 @@ Purpose:
 The allocator depends on correct interpretation of usable vs reserved memory. This catches bugs where total RAM is miscomputed, reserved regions are accidentally managed, or allocator metadata overlaps usable pages.
 
 Setup:
-Construct synthetic `multiboot_info_t` plus `multiboot_mmap_entry_t` arrays in host memory. Stub architecture hooks such as `vPortInstallKernelGDT()` and CR3 reloads. Provide a synthetic backing array for physmap-visible pages.
+Construct synthetic `multiboot_info_t` plus `multiboot_mmap_entry_t` arrays in host memory. Stub architecture hooks such as `arch_install_kernel_gdt()` and CR3 reloads. Provide a synthetic backing array for physmap-visible pages.
 
 Assertions / pseudocode:
 ```text
@@ -772,7 +776,7 @@ Purpose:
 This catches accidental state corruption and false-success lifecycle operations.
 
 Setup:
-Stub FreeRTOS creation/suspend/resume/delete hooks in a host harness.
+Stub architecture context creation and the small scheduler API in a host harness.
 
 Assertions / pseudocode:
 ```text
@@ -864,7 +868,7 @@ Purpose:
 These are the substrate for future blocking syscalls and later IPC.
 
 Setup:
-Host harness with stubbed suspend/resume/yield and a fake current thread.
+Host harness with stubbed scheduler block/wake/yield operations and a fake current thread.
 
 Assertions / pseudocode:
 ```text
@@ -885,47 +889,39 @@ Failure cases:
 - Wake of non-blocked thread succeeds.
 - Block loses the authoritative syscall context pointer.
 
-## Scheduler Preparation And Preemption Policy
+## Scheduler Round-Robin Policy
 
 Summary:
-Verify `thread_prepare_current()` and `thread_timer_may_preempt_current()` maintain Sharkix thread state coherently across managed and unmanaged tasks.
+Verify that the single FIFO run queue implements strict round robin for both cooperative yields and timer preemption.
 
 Purpose:
-These hooks are the bridge between FreeRTOS scheduling and Sharkix state, so contradictions here can invalidate many higher-level tests.
+`scheduler_choose_next_locked()` is the one policy point. Queue corruption or policy logic elsewhere would make later scheduler work much harder to reason about.
 
 Setup:
-Host harness with synthetic `thread_t` objects and one unmanaged-idle case.
+Host harness with synthetic runnable threads plus a booted preemption profile.
 
 Assertions / pseudocode:
 ```text
-cpu0.current_thread = running_kernel_thread
-ASSERT(thread_prepare_current(runnable_user_thread) == runnable_user_thread->address_space->pml4_phys)
-ASSERT(running_kernel_thread.state == THREAD_STATE_RUNNABLE)
-ASSERT(runnable_user_thread.state == THREAD_STATE_RUNNING)
-ASSERT(cpu0.current_thread == runnable_user_thread)
-ASSERT(cpu0.kernel_stack_top == runnable_user_thread->kernel_stack_top)
-
-ASSERT(thread_prepare_current(NULL) == address_space_kernel()->pml4_phys)
-ASSERT(thread_current() == NULL)
-ASSERT(cpu0.kernel_stack_top == 0)
-
-cpu0.current_thread = kernel_thread
-ASSERT(thread_timer_may_preempt_current() == 0)
-cpu0.current_thread = user_thread
-ASSERT(thread_timer_may_preempt_current() == 1)
-cpu0.current_thread = NULL
-ASSERT(thread_timer_may_preempt_current() == 1)
+enqueue(A); enqueue(B); enqueue(C)
+ASSERT(sequence_after_yields == A, B, C, A, B, C)
+block(B)
+ASSERT(sequence_after_yields == A, C, A, C)
+wake(B)
+ASSERT(sequence_after_yields == A, C, B, A, C, B)
+sleep(A, 2_ticks)
+ASSERT(A is not selected before its deadline)
+ASSERT(A joins the ready-queue tail at its deadline)
 ```
 
 Success cases:
-- Running thread becomes runnable when switched away.
-- Incoming runnable thread becomes running.
-- Unmanaged idle task clears stale Sharkix current-thread state.
-- PIT preemption policy matches current kernel-vs-user rule.
+- Yielding and preempted runnable threads move to the FIFO tail.
+- Blocked and sleeping threads are never selected.
+- The managed idle thread runs only when the FIFO is empty.
 
 Failure cases:
-- READY/BLOCKED/DEAD thread is accidentally treated as runnable.
-- Idle execution inherits stale managed-thread state.
+- READY/BLOCKED/DEAD thread is accidentally selected.
+- Priority fields influence the current strict-round-robin policy.
+- Idle runs while a normal thread is ready.
 
 # 2. Booted Kernel-Space Tests
 
@@ -981,7 +977,7 @@ make PROFILE=normal
 ASSERT(thread_dependent_objects_rebuilt)
 ASSERT(unrelated_objects_not_rebuilt_unnecessarily)
 
-touch include/FreeRTOSConfig.h
+touch include/sharkix/kernel/scheduler.h
 make PROFILE=normal
 ASSERT(all_or_expected_global_dependents_rebuilt)
 ```
@@ -1078,13 +1074,13 @@ Success cases:
 Failure cases:
 - CPL0 thread is forced onto kernel CR3.
 
-## Idle Task Current-Thread Semantics
+## Idle Thread Current-Thread Semantics
 
 Summary:
-Verify the unmanaged FreeRTOS idle task does not inherit stale Sharkix thread identity, kernel stack top, or TSS state.
+Verify the managed Sharkix idle thread has its own identity, kernel stack, and TSS state.
 
 Purpose:
-`thread_prepare_current(NULL)` is a deliberate part of the current design and should be tested explicitly.
+The idle thread is the scheduler's fallback whenever no ordinary thread is runnable.
 
 Setup:
 Boot a profile where all managed work quiesces long enough for idle to run, plus a monitor thread.
@@ -1092,16 +1088,16 @@ Boot a profile where all managed work quiesces long enough for idle to run, plus
 Assertions / pseudocode:
 ```text
 wait_until_idle_executes
-ASSERT(thread_current() == NULL while idle is active)
-ASSERT(cpu_local.kernel_stack_top == 0 while idle is active)
+ASSERT(thread_current() != NULL while idle is active)
+ASSERT(cpu_local.kernel_stack_top == thread_current()->kernel_stack_top)
 ASSERT(active_cr3 == address_space_kernel()->pml4_phys)
 ```
 
 Success cases:
-- Idle execution has coherent unmanaged semantics.
+- Idle execution has coherent managed-thread semantics.
 
 Failure cases:
-- Idle sees stale current-thread identity from a prior managed task.
+- Idle sees stale current-thread identity or stack state from a prior thread.
 
 ## Kernel Stack Guard Fault
 
@@ -1538,7 +1534,7 @@ Summary:
 Verify kernel threads and user threads can coexist, yield, and continue making progress without corrupting one another’s CR3, stack, or identity state.
 
 Purpose:
-The current kernel intentionally runs both CPL0 and CPL3 Sharkix threads under one FreeRTOS scheduler. Mixed scheduling deserves explicit coverage.
+The current kernel intentionally runs both CPL0 and CPL3 Sharkix threads under one scheduler. Mixed scheduling deserves explicit coverage.
 
 Setup:
 One kernel spinner thread, one shared-AS user thread, and one separate-AS user thread.
@@ -1876,7 +1872,6 @@ The following areas should be called out explicitly instead of silently assuming
 - `phys_total_ram_bytes()` is as accurate as the Multiboot-1 handoff allows. Tests should define expectations in terms of current code:
   - with `MB_INFO_MMAP`, it is the sum of entries whose type is `MULTIBOOT_MEMORY_AVAILABLE`
   - with `MB_INFO_MEMORY`, it is `(mem_lower + mem_upper) * 1024`
-- FreeRTOS internal behaviour outside Sharkix’s explicit wrapper points should not be treated as Sharkix API contracts unless Sharkix code documents them.
 - No current public kernel interface exposes post-boot Multiboot module handoff to ordinary kernel code. That path should not receive a detailed test plan until the kernel-side interface is defined.
 
 ## Coverage Matrix

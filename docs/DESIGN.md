@@ -1,4 +1,4 @@
-Basic FreeRTOS-derived core for x86_64
+Small Sharkix-owned kernel core with a portable scheduler and an x86_64 port
 
 Kernel has only Tasks and Address spaces - Tasks can run in any address space at either ring0 or ring3, with one exception - ring3 tasks can't run in plain kernel address space
 
