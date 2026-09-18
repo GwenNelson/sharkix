@@ -4,13 +4,15 @@
 #include <sharkix/libsharkix/syscalls.h>
 
 static uint64_t ps2_irq1_cap;
-static uint64_t ps2_irq12_cap;
 
 static uint64_t ps2_pio_data_cap;
 static uint64_t ps2_pio_cmd_cap;
 
 static uint64_t ps2_port1_ep_cap;
-static uint64_t ps2_port2_ep_cap;
+static uint64_t ps2bus_ready_cap;
+
+#define PS2_STATUS_OUTPUT_FULL  (1u << 0)
+#define PS2_STATUS_INPUT_FULL   (1u << 1)
 
 static uint64_t syscall_call(uint64_t number, uint64_t arg0, uint64_t arg1)
 {
@@ -32,7 +34,7 @@ static void test_exit(void)
 }
 
 static void ps2bus_log(char* msg) {
-	sharkix_debug_puts("ps2bus-consoled:");
+	sharkix_debug_puts("ps2bus:");
 	sharkix_debug_puts(msg);
 	sharkix_debug_puts("\n");
 }
@@ -88,87 +90,119 @@ static uint8_t ps2bus_port_inb(uint64_t cap)
     return (uint8_t)regs.rdx;
 }
 
-static void internal_console_ps2bus_putc(char c) {
-	// LSR bit 5 indicates that the transmit holding register can accept a byte.
-	while((ps2bus_port_inb(ps2bus_lsr_cap) & 0x20) == 0) {}
-	if(c == '\n') {
-		ps2bus_port_outb(ps2bus_com1_cap,'\r');
-	}
-	ps2bus_port_outb(ps2bus_com1_cap,c);
+static void ps2_wait_read(void) {
+	while (!(ps2bus_port_inb(ps2_pio_cmd_cap) & PS2_STATUS_OUTPUT_FULL));
 }
 
+static void ps2_wait_write(void) {
+	while (ps2bus_port_inb(ps2_pio_cmd_cap) & PS2_STATUS_INPUT_FULL);
+}
 
+static void ps2_wait_irq1(void) {
+	sharkix_syscall_regs_t regs = { 0 };
+	regs.rax = SYSCALL_IRQ_WAIT;
+	regs.rdi = ps2_irq1_cap;
+	sharkix_syscall(&regs);
+	if(regs.rax != 0) ps2bus_panic("ps2_wait_irq1() failed!");
+}
+
+static void ps2_ack_irq1(void) {
+	sharkix_syscall_regs_t regs = { 0 };
+	regs.rax = SYSCALL_IRQ_ACK;
+	regs.rdi = ps2_irq1_cap;
+	sharkix_syscall(&regs);
+	if(regs.rax != 0) ps2bus_panic("ps2_ack_irq1() failed!");
+}
+
+static void ps2_send_scancode(uint8_t scan_code) {
+	sharkix_syscall_regs_t regs = { 0 };
+	regs.rax = SYSCALL_IPC_SEND;
+	regs.rdi = ps2_port1_ep_cap;
+	regs.rsi = (uint64_t)scan_code;
+	sharkix_syscall(&regs);
+	if(regs.rax != 0) {
+		ps2bus_panic("Failed IPC!");
+	}
+}
 
 void run_ps2bus_service(void) {
-	// setup the ps2bus port first
-	ps2bus_port_outb(ps2bus_ier_cap,0);
-	ps2bus_port_outb(ps2bus_lcr_cap,0x80);
-	ps2bus_port_outb(ps2bus_com1_cap,3);
-	ps2bus_port_outb(ps2bus_ier_cap,0);
-	ps2bus_port_outb(ps2bus_lcr_cap,3);
-	ps2bus_port_outb(ps2bus_iir_cap,0xc7);
-	ps2bus_port_outb(ps2bus_mcr_cap,0x0b);
+	ps2bus_log("Disable port1");
+	// first, disable port1 (so we can reconfigure everything)
+	ps2_wait_write();
+	ps2bus_port_outb(ps2_pio_cmd_cap,0xAD);
+
+	ps2bus_log("Disable port2");
+	// turn off port2 too for now
+	ps2_wait_write();
+	ps2bus_port_outb(ps2_pio_cmd_cap,0xA7);
+
+	ps2bus_log("Consume stuck input");
+	while (ps2bus_port_inb(ps2_pio_cmd_cap) & PS2_STATUS_OUTPUT_FULL) {
+		(void)ps2bus_port_inb(ps2_pio_data_cap);
+	}
+
+	ps2bus_log("Configure controller");
+	ps2_wait_write();
+	ps2bus_port_outb(ps2_pio_cmd_cap, 0x20); // read config byte
+	ps2_wait_read();
+	uint8_t config = ps2bus_port_inb(ps2_pio_data_cap);
+
+	config |=  (1 << 0); // IRQ1 enable
+	config &= ~(1 << 4); // port1 clock enable
+
+	ps2_wait_write();
+	ps2bus_port_outb(ps2_pio_cmd_cap,0x60); // write config byte
+	ps2_wait_write();
+	ps2bus_port_outb(ps2_pio_data_cap,config);
+
+	ps2bus_log("Enable port1");
+
+	ps2_wait_write();
+	ps2bus_port_outb(ps2_pio_cmd_cap,0xAE);
 	
 	ps2bus_log("READY!");
 	ps2bus_signal_ready();
 
-	sharkix_syscall_regs_t regs = { 0 };
-        regs.rax = SYSCALL_IPC_RECV;
-        regs.rdi = ps2bus_output_cap;
-        for (;;) {
-            uint64_t words[4];
-            uint64_t count;
-
-            sharkix_syscall(&regs);
-            if (regs.rax != 0) {   /* loop until we get an actual message */
-                regs.rax = SYSCALL_IPC_RECV;
-                regs.rdi = ps2bus_output_cap;
-                continue;
-            }
-            count = regs.rsi;
-            if (count > 32) count = 32;
-            words[0] = regs.rdx;
-            words[1] = regs.r10;
-            words[2] = regs.r8;
-            words[3] = regs.r9;
-            for (uint64_t i = 0; i < count; ++i)
-                 internal_console_ps2bus_putc((char)(words[i / 8] >> ((i % 8) * 8)));
-            regs.rax = SYSCALL_IPC_RECV;
-            regs.rdi = ps2bus_output_cap;
-        }
-	
+	for(;;) {
+		ps2_wait_irq1();
+		ps2_wait_read();
+		uint8_t scancode = ps2bus_port_inb(ps2_pio_data_cap);
+		ps2_send_scancode(scancode);
+		ps2_ack_irq1();
+	}
 }
 
+
+static uint64_t ps2_irq1_cap;
+
+static uint64_t ps2_pio_data_cap;
+static uint64_t ps2_pio_cmd_cap;
+
+static uint64_t ps2_port1_ep_cap;
 void driver_user_main(uint64_t *bootstrap) {
-    uint64_t handles[8];
+    uint64_t handles[5];
     char *capv[] = {
-        "ps2bus.out",
-        "ps2bus.ready",
-        "ps2bus.ier",
-        "ps2bus.lcr",
-	"ps2bus.mcr",
-	"ps2bus.iir",
-	"ps2bus.lsr",
-	"ps2bus.com1",
+        "ps2bus.irq.1",
+	"ps2bus.pio.data",
+	"ps2bus.pio.cmd",
+	"ps2bus.port1",
+	"ps2bus.ready",
     };
 
-    if (!bootstrap || bootstrap[0] != 8) {
+    if (!bootstrap || bootstrap[0] != 5) {
 	ps2bus_panic("invalid bootstrap!");
     }
 
-    if (sharkix_get_bootstrap(handles, capv, 8, bootstrap) !=
+    if (sharkix_get_bootstrap(handles, capv, 5, bootstrap) !=
         SHARKIX_BOOTSTRAP_OK) {
         ps2bus_panic("bootstrap discovery failed\n");
     }
 
-    ps2bus_output_cap = handles[0];
-    ps2bus_ready_cap  = handles[1];
-    ps2bus_ier_cap    = handles[2];
-    ps2bus_lcr_cap    = handles[3];
-    ps2bus_mcr_cap    = handles[4];
-    ps2bus_iir_cap    = handles[5];
-    ps2bus_lsr_cap    = handles[6];
-    ps2bus_com1_cap   = handles[7];
+    ps2_irq1_cap     = handles[0];
+    ps2_pio_data_cap = handles[1];
+    ps2_pio_cmd_cap  = handles[2];
+    ps2_port1_ep_cap = handles[3];
+    ps2bus_ready_cap = handles[4];
 
     ps2bus_log("obtained required caps");
     
