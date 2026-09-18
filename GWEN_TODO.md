@@ -1,8 +1,13 @@
-Implement PS/2 port1 in ps2-bus (for keyboard)
+Finish off various stubs
+Lose IPC_CALL
+Pay attention to results of lifetime audit
 IRQ multiwait via notification object with bitmasks and binding
     Add the ability to wait on one or several IRQs
     This does mean a generic notification subsystem
 Implement PUBSUB stuff
+    make console use PUBSUB
+    perhaps lose the current special-casing for console drivers?
+        instead have drivers work entirely with the IPC registry and some kind of dependency tracking?
 Make late-stage console I/O use the new IPC registry
 Implement userspace thread spawning via CPU and AS caps
 Implement ELF loader for drivers
