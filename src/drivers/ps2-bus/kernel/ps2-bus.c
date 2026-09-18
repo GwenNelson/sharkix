@@ -7,6 +7,7 @@
 #include "memory.h"
 #include "program.h"
 #include "thread.h"
+#include <sharkix/kernel/ipc_registry.h>
 #include <sharkix/kernel/irq.h>
 #include <sharkix/kernel/portio.h>
 
@@ -130,7 +131,8 @@ void ps2bus_init(void)
         kcapset_addcap(user_as->capset, ps2bus_data_port_cap) != 0 ||
         kcapset_addcap(user_as->capset, ps2bus_command_port_cap) != 0 ||
         kcapset_addcap(user_as->capset, ps2bus_port1_cap) != 0 ||
-        kcapset_addcap(user_as->capset, ps2bus_ready_cap) != 0) {
+        kcapset_addcap(user_as->capset, ps2bus_ready_cap) != 0 ||
+        kipc_registry_register("ps2.port1", ps2bus_port1_endpoint) != 0) {
         console_write("ps2bus task setup failed\n");
         for (;;) __asm__ volatile ("cli; hlt");
     }
