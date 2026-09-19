@@ -641,12 +641,15 @@ int kvmo_map(vmo_handle_t handle,
     return 0;
 }
 
-int kvmo_unmap(vmo_handle_t handle,
-               address_space_t *as,
-               uintptr_t va,
-               size_t length)
+static int kvmo_unmap_exact(vmo_handle_t handle,
+                            address_space_t *as,
+                            uintptr_t va,
+                            size_t length,
+                            bool check_length)
 {
-    vmoset_entry_t entry;
+    vmoset_t *set;
+    vmoset_entry_t *entry;
+    size_t entry_length;
 
     if (as == NULL)
         return -1;
@@ -654,14 +657,31 @@ int kvmo_unmap(vmo_handle_t handle,
     if (handle == VMO_INVALID_HANDLE)
         return -1;
 
-    if (length == 0)
+    if (check_length && length == 0)
         return -1;
 
     /*
-     * Find the VMO mapping containing this address.
+     * Keep the mapping record locked through page-table teardown.  This
+     * prevents a concurrent unmap from invalidating the length or removing
+     * the entry between lookup and removal.
      */
-    if (kvmoset_find(as->vmoset, va, &entry) != 0)
+    kspin_lock(&vmosets_lock);
+
+    set = vmoset_lookup_locked(as->vmoset);
+    if (set == NULL) {
+        kspin_unlock(&vmosets_lock);
         return -1;
+    }
+
+    kspin_lock(&set->spinlock);
+    kspin_unlock(&vmosets_lock);
+
+    HASH_FIND(hh, set->entries, &va, sizeof(va), entry);
+    if (entry == NULL || entry->vmo != handle ||
+        (check_length && entry->length != length)) {
+        kspin_unlock(&set->spinlock);
+        return -1;
+    }
 
     /*
      * For now, unmapping operates on one complete recorded mapping.
@@ -669,14 +689,7 @@ int kvmo_unmap(vmo_handle_t handle,
      * Partial unmapping will require splitting vmoset entries and is
      * deliberately not supported yet.
      */
-    if (entry.vmo != handle)
-        return -1;
-
-    if (entry.virtual_address != va)
-        return -1;
-
-    if (entry.length != length)
-        return -1;
+    entry_length = entry->length;
 
     /*
      * Tear down the actual page-table mapping first.
@@ -684,20 +697,36 @@ int kvmo_unmap(vmo_handle_t handle,
      * If this fails, leave the vmoset entry intact: it still describes
      * the mapping we believe exists.
      */
-    if (address_space_unmap_range(as, va, length) != 0)
+    if (address_space_unmap_range(as, va, entry_length) != 0) {
+        kspin_unlock(&set->spinlock);
         return -1;
+    }
 
     /*
      * The mapping no longer exists, so its bookkeeping entry must now
-     * disappear as well.
-     *
-     * Failure here would violate the fundamental vmoset invariant and
-     * isn't something the caller can sensibly recover from.
+     * disappear as well.  We still hold the entry's set lock, so removal
+     * cannot fail after the page-table mapping has gone away.
      */
-    if (kvmoset_remove(as->vmoset, va) != 0)
-        memory_panic("VMO unmap bookkeeping removal failed");
+    HASH_DEL(set->entries, entry);
+    kspin_unlock(&set->spinlock);
+    kfree(entry);
 
     return 0;
+}
+
+int kvmo_unmap(vmo_handle_t handle,
+               address_space_t *as,
+               uintptr_t va,
+               size_t length)
+{
+    return kvmo_unmap_exact(handle, as, va, length, true);
+}
+
+int kvmo_unmap_at(vmo_handle_t handle,
+                  address_space_t *as,
+                  uintptr_t va)
+{
+    return kvmo_unmap_exact(handle, as, va, 0, false);
 }
 
 int kvmo_protect(vmo_handle_t handle,

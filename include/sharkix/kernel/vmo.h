@@ -190,6 +190,14 @@ int kvmo_unmap(vmo_handle_t handle,
                uintptr_t va,
                size_t length);
 
+/*
+ * Remove the complete VMO mapping beginning at va.  The mapping lookup,
+ * page-table teardown, and vmoset removal are one atomic operation.
+ */
+int kvmo_unmap_at(vmo_handle_t handle,
+                  address_space_t *as,
+                  uintptr_t va);
+
 
 /*
  * Change the permissions of an existing VMO mapping.

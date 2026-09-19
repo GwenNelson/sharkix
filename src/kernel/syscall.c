@@ -361,7 +361,6 @@ SHARKIX_SYSCALL_IMPL(VM_UNMAP) {
     /*
      * Resolve the exact supplied capability in the caller's address
      * space. Userspace never gets the underlying VMO handle.
-     * Should also only allow this if the cap has CAP_RIGHT_VMO_MAP
      */
     if (kcapset_resolve_handle(caller->address_space->capset,
                                vmo_cap,
@@ -380,34 +379,11 @@ SHARKIX_SYSCALL_IMPL(VM_UNMAP) {
 	goto done;
     }
 
-    vmoset_entry_t out_entry;
-    // check if the VMO is actually currently mapped at all at that address
-    if (kvmoset_find(caller->address_space->vmoset,
-		     va,
-		     &out_entry) != 0) {
-	ctx->rax = VM_ERR_ADDRESS;
-	goto done;
+    if (kvmo_unmap_at(vmo_handle, caller->address_space, va) != 0) {
+        ctx->rax = VM_ERR_ADDRESS;
+        goto done;
     }
-    if(out_entry.vmo != vmo_handle) {
-       ctx->rax = VM_ERR_INVALID;
-       goto done;
-    }
-    if(out_entry.virtual_address != va) {
-       ctx->rax = VM_ERR_ADDRESS; // should never get here, but just in case...
-       goto done;
-    }
-    // if we get here, it's actually mapped into the caller, so let's do what they want
-    // first, we unmap
-    if(kvmo_unmap(vmo_handle,
-	          caller->address_space,
-                  va,
-		  out_entry.length) != 0) {
-       // if we get HERE, something is really fucked up, at some point should probably add a proper kpanic or at least kill the caller
-       // for now, just loop forever and hold it up
-            console_write("PANIC! Somehow we can't unmap a VMO!\n");
-     	    for(;;) {}
-    }
-    // if we get here, YAY!
+
     ctx->rax = VM_OK;
 done:
     return syscall_return();
