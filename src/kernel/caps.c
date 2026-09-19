@@ -668,6 +668,80 @@ bool kcapset_hascap(capset_handle_t set_handle, cap_handle_t cap_handle)
     return entry != NULL;
 }
 
+int kcapset_move_cap(capset_handle_t src, capset_handle_t dst, cap_handle_t cap) {
+    capset_t *src_set;
+    capset_t *dst_set;
+    capset_t *first_set;
+    capset_t *second_set;
+    capset_entry_t *src_entry = NULL;
+    capset_entry_t *dst_entry = NULL;
+    uint32_t hashv = (uint32_t)cap;
+
+    kmutex_lock(&global_capsets_table_lock);
+
+    src_set = kcapset_find_locked(src);
+    dst_set = kcapset_find_locked(dst);
+    if (!src_set || !dst_set) {
+        kmutex_unlock(&global_capsets_table_lock);
+        return -1;
+    }
+
+    if (src_set == dst_set) {
+        kspin_lock(&src_set->spinlock);
+        HASH_FIND_BYHASHVALUE(hh,
+                              src_set->caps,
+                              &cap,
+                              sizeof(cap),
+                              hashv,
+                              src_entry);
+        kspin_unlock(&src_set->spinlock);
+        kmutex_unlock(&global_capsets_table_lock);
+        return src_entry ? 0 : -1;
+    }
+
+    first_set = src < dst ? src_set : dst_set;
+    second_set = src < dst ? dst_set : src_set;
+    kspin_lock(&first_set->spinlock);
+    kspin_lock(&second_set->spinlock);
+
+    HASH_FIND_BYHASHVALUE(hh,
+                          src_set->caps,
+                          &cap,
+                          sizeof(cap),
+                          hashv,
+                          src_entry);
+    if (!src_entry) {
+        kspin_unlock(&second_set->spinlock);
+        kspin_unlock(&first_set->spinlock);
+        kmutex_unlock(&global_capsets_table_lock);
+        return -1;
+    }
+
+    HASH_FIND_BYHASHVALUE(hh,
+                          dst_set->caps,
+                          &cap,
+                          sizeof(cap),
+                          hashv,
+                          dst_entry);
+
+    HASH_DEL(src_set->caps, src_entry);
+    if (!dst_entry) {
+        HASH_ADD_BYHASHVALUE(hh,
+                             dst_set->caps,
+                             cap_handle,
+                             sizeof(src_entry->cap_handle),
+                             hashv,
+                             src_entry);
+    }
+
+    kspin_unlock(&second_set->spinlock);
+    kspin_unlock(&first_set->spinlock);
+    kmutex_unlock(&global_capsets_table_lock);
+    if (dst_entry)
+        kfree(src_entry);
+    return 0;
+}
+
 int kcapset_resolve_cap(capset_handle_t set_handle,
                         cap_type_t req_type,
                         cap_rights_t req_rights,

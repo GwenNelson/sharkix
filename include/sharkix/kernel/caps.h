@@ -246,6 +246,11 @@ int  kcapset_delcap(capset_handle_t set, cap_handle_t cap);
 // check if a capset has a particular cap
 bool kcapset_hascap(capset_handle_t set, cap_handle_t cap);
 
+// move a cap from src to dst
+// this is an atomic operation and must NOT leave the cap in both
+// either it succeeds and the cap is now in dst, or it fails and an appropriate error is returned
+int kcapset_move_cap(capset_handle_t src, capset_handle_t dst, cap_handle_t cap);
+
 // check if a capset has any caps of a particular type with particular rights
 // if so, return it in *out
 int kcapset_resolve_cap(capset_handle_t set, cap_type_t req_type, cap_rights_t req_rights, cap_t *out);
