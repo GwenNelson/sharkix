@@ -190,17 +190,6 @@ SHARKIX_SYSCALL_IMPL(IPC_RECV) {
 	return syscall_return();
 }
 
-// still need to implement the below
-// should also look at how to integrate the scheduler properly - wake up the other thread and switch to it when something is sent to a thread that's currently blocked on a receive
-
-SHARKIX_SYSCALL_IMPL(IPC_CALL) {
-	return syscall_return();
-}
-
-SHARKIX_SYSCALL_IMPL(IPC_REPLY) {
-	return syscall_return();
-}
-
 /*
  * input:
  *     RDI = VMO cap

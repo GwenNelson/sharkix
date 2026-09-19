@@ -436,12 +436,3 @@ ipc_status_t ipc_recv_nb(ipc_handle_t handle, ipc_message_t *message) {
              return IPC_OK;
 }
 
-
-ipc_status_t ipc_call(thread_t *caller, ipc_handle_t handle, const ipc_message_t *request, ipc_message_t *reply) {
-             (void)caller;
-             (void)handle;
-             (void)request;
-             (void)reply;
-
-             return IPC_ERR_CANCELLED;
-}

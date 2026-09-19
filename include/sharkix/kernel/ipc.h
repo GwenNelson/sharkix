@@ -86,10 +86,6 @@ void ipc_init(void);
 ipc_status_t ipc_create(ipc_handle_t *handle);
 ipc_status_t ipc_destroy(ipc_handle_t handle);
 
-
-ipc_status_t ipc_call(thread_t* caller, ipc_handle_t handle, const ipc_message_t *request, ipc_message_t *reply);
-
-
 ipc_status_t ipc_send(thread_t* caller, ipc_handle_t handle, const ipc_message_t *message);
 ipc_status_t ipc_send_nb(thread_t* caller, ipc_handle_t handle, const ipc_message_t *message);
 
