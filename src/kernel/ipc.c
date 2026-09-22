@@ -299,36 +299,20 @@ ipc_status_t ipc_destroy(ipc_handle_t handle) {
 
 
 /*
- * Blocking send.
- *
- * If the queue is full, wait until a receiver makes room.
+ * Queue a message on an already referenced endpoint. A full queue waits for
+ * a receiver to make room. The caller owns and releases the endpoint reference.
  */
-ipc_status_t ipc_send(thread_t *caller, ipc_handle_t handle, const ipc_message_t *message) {
-             ipc_endpoint_t *endpoint;
-             ipc_message_t queued;
-
-             if (!caller || !handle || !message)
-                 return IPC_ERR_INVALID;
-
-             endpoint = ipc_acquire(handle);
-             if (!endpoint)
-                 return IPC_ERR_NOT_FOUND;
-
-             queued = *message;
-             queued.sender_tid = caller->id;
-
+static ipc_status_t ipc_enqueue_blocking(ipc_endpoint_t *endpoint,
+                                         const ipc_message_t *queued) {
              for (;;) {
                  kmutex_lock(&endpoint->lock);
 
                  if (endpoint->is_shutting_down) {
                      kmutex_unlock(&endpoint->lock);
-
-                     ipc_release(endpoint);
-
                      return IPC_ERR_ENDPOINT_CLOSED;
                  }
 
-                 if (ipc_queue_push(endpoint, &queued)) {
+                 if (ipc_queue_push(endpoint, queued)) {
                      /*
                       * Wake exactly one receiver if one is waiting.
                       *
@@ -342,8 +326,6 @@ ipc_status_t ipc_send(thread_t *caller, ipc_handle_t handle, const ipc_message_t
                      }
 
                      kmutex_unlock(&endpoint->lock);
-
-                     ipc_release(endpoint);
                      return IPC_OK;
                  }
 
@@ -372,6 +354,98 @@ ipc_status_t ipc_send(thread_t *caller, ipc_handle_t handle, const ipc_message_t
              }
 }
 
+/* Queue without waiting for space. The caller holds an endpoint reference. */
+static ipc_status_t ipc_enqueue_nonblocking(ipc_endpoint_t *endpoint,
+                                            const ipc_message_t *queued) {
+             kmutex_lock(&endpoint->lock);
+
+             if (endpoint->is_shutting_down) {
+                 kmutex_unlock(&endpoint->lock);
+                 return IPC_ERR_ENDPOINT_CLOSED;
+             }
+
+             if (!ipc_queue_push(endpoint, queued)) {
+                 kmutex_unlock(&endpoint->lock);
+                 return IPC_ERR_CANCELLED;
+             }
+
+             if (endpoint->waiting_receivers) {
+                 endpoint->waiting_receivers--;
+                 ksem_post(&endpoint->receiver_sem);
+             }
+
+             kmutex_unlock(&endpoint->lock);
+             return IPC_OK;
+}
+
+/* Subscription links are only prepended; no current path removes or frees one. */
+static ipc_status_t ipc_publish(ipc_endpoint_t *publisher,
+                                const ipc_message_t *queued) {
+             ipc_subscription_t *subscription = NULL;
+
+             for (;;) {
+                 ipc_handle_t subscriber_handle;
+                 ipc_endpoint_t *subscriber;
+
+                 kmutex_lock(&publisher->lock);
+                 if (publisher->is_shutting_down) {
+                     kmutex_unlock(&publisher->lock);
+                     return IPC_ERR_ENDPOINT_CLOSED;
+                 }
+
+                 subscription = subscription ? subscription->next
+                                             : publisher->subscribers;
+                 if (!subscription) {
+                     kmutex_unlock(&publisher->lock);
+                     return IPC_OK;
+                 }
+                 subscriber_handle = subscription->subscriber;
+                 kmutex_unlock(&publisher->lock);
+
+                 subscriber = ipc_acquire(subscriber_handle);
+                 if (!subscriber)
+                     continue;
+
+                 if (subscriber->ep_type == IPC_ENDPOINT_SUBSCRIBER)
+                     (void)ipc_enqueue_nonblocking(subscriber, queued);
+
+                 ipc_release(subscriber);
+             }
+}
+
+/*
+ * Blocking send to a normal endpoint, or non-blocking fan-out from a
+ * publisher. Direct sends to subscriber endpoints are rejected.
+ */
+ipc_status_t ipc_send(thread_t *caller, ipc_handle_t handle, const ipc_message_t *message) {
+             ipc_endpoint_t *endpoint;
+             ipc_message_t queued;
+             ipc_status_t status;
+
+             if (!caller || !handle || !message)
+                 return IPC_ERR_INVALID;
+
+             endpoint = ipc_acquire(handle);
+             if (!endpoint)
+                 return IPC_ERR_NOT_FOUND;
+
+             if (endpoint->ep_type == IPC_ENDPOINT_SUBSCRIBER) {
+                 ipc_release(endpoint);
+                 return IPC_ERR_INVALID;
+             }
+
+             queued = *message;
+             queued.sender_tid = caller->id;
+
+             if (endpoint->ep_type == IPC_ENDPOINT_PUBLISHER)
+                 status = ipc_publish(endpoint, &queued);
+             else
+                 status = ipc_enqueue_blocking(endpoint, &queued);
+
+             ipc_release(endpoint);
+             return status;
+}
+
 
 /*
  * Non-blocking send.
@@ -381,6 +455,7 @@ ipc_status_t ipc_send(thread_t *caller, ipc_handle_t handle, const ipc_message_t
 ipc_status_t ipc_send_nb(thread_t *caller, ipc_handle_t handle, const ipc_message_t *message) {
              ipc_endpoint_t *endpoint;
              ipc_message_t queued;
+             ipc_status_t status;
 
              if (!caller || !handle || !message)
                  return IPC_ERR_INVALID;
@@ -391,35 +466,9 @@ ipc_status_t ipc_send_nb(thread_t *caller, ipc_handle_t handle, const ipc_messag
 
              queued = *message;
              queued.sender_tid = caller->id;
-
-             kmutex_lock(&endpoint->lock);
-
-             if (endpoint->is_shutting_down) {
-                 kmutex_unlock(&endpoint->lock);
-
-                 ipc_release(endpoint);
-
-                 return IPC_ERR_ENDPOINT_CLOSED;
-             }
-
-             if (!ipc_queue_push(endpoint, &queued)) {
-                 kmutex_unlock(&endpoint->lock);
-
-                 ipc_release(endpoint);
-
-                 return IPC_ERR_CANCELLED;
-             }
-
-             if (endpoint->waiting_receivers) {
-                 endpoint->waiting_receivers--;
-                 ksem_post(&endpoint->receiver_sem);
-             }
-
-             kmutex_unlock(&endpoint->lock);
-
+             status = ipc_enqueue_nonblocking(endpoint, &queued);
              ipc_release(endpoint);
-
-             return IPC_OK;
+             return status;
 }
 
 
