@@ -226,9 +226,10 @@ int kcap_destroy_obj(cap_handle_t handle) {
 	 * IRQ objects can't actually be destroyed, because that makes no sense.
 	 * Attempting to do so will still return a 0 though, because
 	 * sometimes you might want to destroy a cap in other code.
-	 * For now, kirq_destroy() is actually a NOP, but we still call it.
+	 * For now, kirq_destroy() is mostly a NOP, but we still call it.
 	 * That's because at some point the subsystem may be redesigned.
-	 * Also, we don't want waiters to block FOREVER
+	 * It also does basic checks too, which are important.
+	 * For example, trying to destroy an invalid handle is still wrong!
 	 */
 	status = kirq_destroy(found->obj_handle);
         break;

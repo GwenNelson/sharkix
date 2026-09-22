@@ -108,12 +108,37 @@ void kirq_init(void) {
     irq_subsys_ready = true;
 }
 
+static int kirq_find_by_hwirq(irq_handle_t* out, uint32_t hwirq) {
+	irq_t *irq;
+	irq_t *tmp;
+
+	if (!out || hwirq >= IRQ_COUNT)
+	    return -1;
+
+	HASH_ITER(hh, global_irq_table, irq, tmp) {
+	    if (irq->hwirq == hwirq) {
+	        *out = irq->handle;
+	        return 0;
+	    }
+	}
+
+	return -1;
+}
+
 int kirq_create(irq_handle_t *out, uint32_t hwirq) {
+    if (!out || hwirq >= IRQ_COUNT)
+         return -1;
+
+    kmutex_lock(&global_irq_table_lock);
+
+    // if there's already another irq_t, just return the same handle
+    if (kirq_find_by_hwirq(out, hwirq) == 0) {
+	    kmutex_unlock(&global_irq_table_lock);
+	    return 0;
+    }
+    
     irq_t *irq;
     int result;
-
-    if (!out || hwirq >= IRQ_COUNT)
-        return -1;
 
     irq = kmalloc(sizeof(*irq));
     if (!irq)
@@ -123,8 +148,6 @@ int kirq_create(irq_handle_t *out, uint32_t hwirq) {
 
     irq->hwirq = hwirq;
     ksem_init(&irq->sem, 0);
-
-    kmutex_lock(&global_irq_table_lock);
 
     result = kirq_insert_locked(irq);
 
@@ -189,40 +212,24 @@ int kirq_wait(irq_handle_t handle) {
 }
 
 int kirq_destroy(irq_handle_t handle) {
-    irq_t *irq;
+    // NOTE TO FUTURE GWEN, FUTURE OTHER DEVS (HUMAN OR AI):
+    // don't change this to be more than the "mostly NOP" it currently is without asking
+    // that would be a huge redesign, don't do it!
 
+    // this function is mostly a NOP,  but should still do some basic checks for correctness
     if (handle == IRQ_INVALID_HANDLE)
         return -1;
 
-    kmutex_lock(&global_irq_table_lock);
-
-    irq = kirq_find_locked(handle);
-    if (!irq) {
-        kmutex_unlock(&global_irq_table_lock);
-        return -1;
+    // if it doesn't exist, we should still error out
+    irq_t irq;
+    if(kirq_get(handle, &irq) != 0) {
+       return -1;
     }
 
-    /*
-     * Remove it from hardware dispatch first. Once this lock is released,
-     * kirq_handle() can no longer discover this object.
-     */
-    kspin_lock(&hwirq_table_lock);
-    kirq_detach_hwirq_locked(irq);
-    kspin_unlock(&hwirq_table_lock);
-
-    /*
-     * Remove the handle, making the object inaccessible through the normal
-     * IRQ subsystem API.
-     */
-    HASH_DEL(global_irq_table, irq);
-
-    kmutex_unlock(&global_irq_table_lock);
-
-    /*
-     * Do not free yet. A thread may already have resolved this object and
-     * be sleeping in ksem_wait(). Proper reclamation needs lifetime
-     * management/refcounting.
-     */
+    // we don't actually destroy IRQs, because that's nonsense
+    // but we should still do the above checks
+    // at some point we might "detatch" pending waiters or something here
+    // but for now, we just return 0
     return 0;
 }
 
