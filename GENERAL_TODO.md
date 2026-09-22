@@ -357,6 +357,153 @@ start task
 
 Get ordinary eager ELF loading working before clever paging.
 
+# 6. POST-ELF DRIVER / SERVICE CLEANUP
+
+Once ordinary ELF loading works, stop treating the current userspace
+drivers and services as bootstrap-era special cases.
+
+Migrate the existing userspace drivers and core services to normal ELF
+executables loaded through the real loader.
+
+Cleanup goals:
+
+-   remove flat-binary/bootstrap-specific launch scaffolding once
+    nothing needs it
+-   make initial capability handoff systematic
+-   keep named capabilities useful for discovery within a task's initial
+    capset
+-   clean up ad-hoc driver startup code
+-   make driver startup configuration-driven rather than hard-coded
+-   keep hardware-resource creation/delegation separate from driver
+    policy
+-   preserve the early-console path needed before userspace
+    infrastructure exists
+-   migrate VGA, serial and other userspace drivers/services to the
+    normal service-startup model
+
+# 7. INIT / DRIVER SERVICE MANAGER
+
+Build a deliberately boring ring3 init/service manager once the ELF
+loader is usable.
+
+Init is responsible for orchestrating startup. It should not become a
+giant driver framework or universal object system.
+
+Initial responsibilities:
+
+``` text
+read boot/service configuration
+        ↓
+determine required services/drivers
+        ↓
+resolve dependencies
+        ↓
+prepare initial capabilities/resources
+        ↓
+load ELF
+        ↓
+start task
+        ↓
+wait for service readiness where required
+        ↓
+start dependants
+```
+
+## Dependency resolution
+
+Allow services/drivers to declare the services or resources they
+require.
+
+Examples may include:
+
+-   another named service
+-   `console.output`
+-   `console.input`
+-   PortIO authority
+-   IRQ / notification authority
+-   PCI or other bus authority
+-   PMEM / VMO resources
+-   configuration-specific capabilities
+
+Keep the dependency model simple. Do not invent a package manager,
+general-purpose graph language, or IDL system merely to start drivers.
+
+## Capability distribution
+
+Configuration determines which initial capabilities a service receives.
+
+Init/bootstrap should arrange only the authority required by that
+service.
+
+Use the existing named-cap/bootstrap machinery rather than relying on
+positional cap slots where practical.
+
+Longer term, privileged boot configuration is part of the system's
+authority boundary. Ordinary runtime administration should not
+automatically imply authority to rewrite the next boot's capability
+distribution.
+
+## Service readiness
+
+A service that other services depend on needs a simple way to announce
+that it is ready.
+
+Conceptually:
+
+``` text
+start service
+    ↓
+service initializes hardware/state
+    ↓
+service registers/binds required names/endpoints
+    ↓
+service signals READY
+    ↓
+init may start dependants
+```
+
+Do not confuse process creation with service readiness.
+
+## Driver startup
+
+Keep the split between mechanism and policy:
+
+``` text
+privileged bootstrap/init side
+    -> creates/delegates authorized hardware/resource caps
+
+ring3 driver
+    -> receives those caps
+    -> initializes device
+    -> registers/provides service
+    -> announces readiness
+```
+
+Drivers should not need arbitrary global authority merely to discover or
+manufacture resources.
+
+## Failure / restart
+
+Do not overdesign supervision initially.
+
+First version only needs clear startup failure reporting and
+deterministic dependency handling.
+
+Later, where appropriate, init may restart failed services or rebind
+persistent service names. Define this only when there is a concrete
+consumer.
+
+## Cleanup boundary
+
+Once drivers and core services are running through ELF + init:
+
+-   remove obsolete bootstrap launch paths
+-   remove temporary flat-binary driver machinery
+-   remove hard-coded driver startup ordering
+-   consolidate duplicated initial-cap setup
+-   make the configured init/service graph the normal userspace boot
+    path
+
 # LATER: USERSPACE EXCEPTION / PAGE-FAULT HANDLING
 
 DO NOT IMPLEMENT THIS YET.
@@ -713,6 +860,12 @@ NOTIFICATIONS
 CONSOLE.INPUT + REMAINING CONSOLE CLEANUP
         ↓
 ELF LOADER
+        ↓
+DRIVER / SERVICE CLEANUP
+        ↓
+INIT + DEPENDENCY-ORDERED DRIVER STARTUP
+        ↓
+REMOVE OBSOLETE BOOTSTRAP / FLAT-BINARY PATHS
         ↓
 PERSONALITY LAYER
         ↓
