@@ -997,3 +997,11 @@ Useful rules:
 And, critically:
 
 > Don't implement the cool fucking pager before the boring fucking ELF loader works.
+
+
+
+
+
+
+NOTE:
+    Should fix the error number system so we have more meaningful error numbers instead of using -1 all over the place as we do right now

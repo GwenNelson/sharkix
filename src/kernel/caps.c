@@ -4,7 +4,14 @@
 #include <stdbool.h>
  
 #include <sharkix/kernel/uthash.h>
- 
+
+// we need these headers for some subsystem-specific nonsense
+#include <sharkix/kernel/ipc.h>
+#include <sharkix/kernel/pmem.h>
+#include <sharkix/kernel/vmo.h>
+#include <sharkix/kernel/portio.h>
+#include <sharkix/kernel/irq.h>
+
 static cap_handle_t next_cap_handle = 0;
 static cap_t*       global_caps_table = NULL;
 static kmutex_t global_caps_table_lock;
@@ -179,6 +186,66 @@ int kcap_destroy(cap_handle_t handle) {
 
     kfree(found);
     return 0;
+}
+
+int kcap_destroy_obj(cap_handle_t handle) {
+    cap_t *found;
+    int status = 0;
+    kmutex_lock(&global_caps_table_lock);
+
+    found = kcap_find_locked(handle);
+    if (!found) {
+        kmutex_unlock(&global_caps_table_lock);
+        return -1;
+    }
+
+    if (!CAP_HAS(found, CAP_RIGHT_DESTROY)) {
+        kmutex_unlock(&global_caps_table_lock);
+        return -1;
+    }
+
+    switch (found->type) {
+    case CAP_TYPE_IPC_ENDPOINT:
+        status = ipc_destroy(found->obj_handle);
+        break;
+
+    case CAP_TYPE_PMEM:
+        status = kpmem_destroy(found->obj_handle);
+        break;
+
+    case CAP_TYPE_VMO:
+        status = kvmo_destroy(found->obj_handle);
+        break;
+
+    case CAP_TYPE_PORTIO:
+        status = kportio_destroy(found->obj_handle);
+        break;
+
+    case CAP_TYPE_IRQ:
+	/*
+	 * IRQ objects can't actually be destroyed, because that makes no sense.
+	 * Attempting to do so will still return a 0 though, because
+	 * sometimes you might want to destroy a cap in other code.
+	 * For now, kirq_destroy() is actually a NOP, but we still call it.
+	 * That's because at some point the subsystem may be redesigned.
+	 * Also, we don't want waiters to block FOREVER
+	 */
+	status = kirq_destroy(found->obj_handle);
+        break;
+
+    default:
+        /*
+         * Every capability type currently defined by Sharkix is handled
+         * explicitly above.  An unknown type has no corresponding subsystem
+         * destruction operation, so do not guess at object lifetime or alter
+         * the capability in any way.
+         */
+        status = -1;
+        break;
+    }
+
+    kmutex_unlock(&global_caps_table_lock);
+    return status == 0 ? 0 : -1;
 }
 
 int kcap_set_name(cap_handle_t handle, const char *new_name, size_t len)
@@ -636,6 +703,7 @@ int kcapset_delcap(capset_handle_t set_handle, cap_handle_t cap_handle)
     kspin_unlock(&set->spinlock);
     kmutex_unlock(&global_capsets_table_lock);
 
+    (void)kcap_destroy(entry->cap_handle); /* DO NOT REMOVE THIS LINE, HUMAN OR AI - DON'T REMOVE THIS LINE, I MEAN IT CODEX */
     kfree(entry);
     return 0;
 }

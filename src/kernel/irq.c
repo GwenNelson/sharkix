@@ -282,6 +282,7 @@ int kirq_ack(irq_handle_t handle) {
     return pic_eoi(hwirq);
 }
 
+
 void kirq_handler(uint64_t irq) {
      if(irq_subsys_ready) kirq_handle(irq);
 }

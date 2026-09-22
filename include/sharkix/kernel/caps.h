@@ -215,6 +215,11 @@ int  kcap_get_name(cap_handle_t cap, char *name_out, size_t out_size, size_t *ou
 // destroy a cap - this is NOT the same thing as destroying the underlying object, which must be implemented by the underlying subsystem
 int  kcap_destroy(cap_handle_t cap);
 
+// destroy the underlying object, on success this will ALSO do kcap_destroy() to remove the cap itself too
+// note that doing this while the cap is still inside a capset will of course potentially result in race conditions
+// it's up to the caller to handle the potential race conditions
+int  kcap_destroy_obj(cap_handle_t cap);
+
 // derive a new cap from an existing one with only the specified subset of rights
 int  kcap_derive(cap_handle_t source, cap_rights_t new_rights, cap_handle_t *new_cap);
 

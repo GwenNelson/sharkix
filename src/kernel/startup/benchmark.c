@@ -232,8 +232,6 @@ static void run_user_benchmark(void)
         (void)ipc_destroy(endpoints[i]);
     wait_for_threads(thread_ids);
     for (i = 0; i < BENCH_WORKERS; ++i) {
-        (void)kcap_destroy(tasks[i].receive_cap);
-        (void)kcap_destroy(tasks[i].send_cap);
         address_space_release(tasks[i].address_space);
     }
 

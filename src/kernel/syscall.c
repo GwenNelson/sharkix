@@ -405,32 +405,63 @@ SHARKIX_SYSCALL_IMPL(CAP_DERIVE) {
 }
 
 SHARKIX_SYSCALL_IMPL(CAP_DESTROY) {
-    portio_handle_t handle;
+    thread_t *caller = thread_current();
     cap_handle_t cap = (cap_handle_t)ctx->rdi;
-    portio_status_t status;
 
-    status = syscall_portio_resolve(ctx, CAP_RIGHT_DESTROY, false, &handle);
-    if (status != PORTIO_OK) {
-        ctx->rax = (uint64_t)status;
+    cap_t resolved_cap;
+
+    if(kcapset_resolve_record(caller->address_space->capset,cap,CAP_RIGHT_DESTROY,&resolved_cap) != 0) {
+      ctx->rax = (uint64_t)EPERM; // TODO: do we want to consider returning a different value if the cap DOES exist but not with that flag vs doesn't etc?
+      return syscall_return();
+    }
+
+    // if we get here, they actually have the cap AND they have the right to destroy it
+
+    // first, try to destroy the object
+    if(kcap_destroy_obj(cap) != 0) {
+       ctx->rax = (uint64_t)EINTERNAL; // TODO: find a better set of error values to use
+       return syscall_return();
+    }
+
+    // now we got here, we should be able to remove it from the caller's capset
+    // if THIS fails somehow, fuckery is afoot
+
+    if (kcapset_delcap(caller->address_space->capset, cap) != 0) {
+        ctx->rax = (uint64_t)EINTERNAL;
         return syscall_return();
     }
 
-    if (kportio_destroy(handle) != 0) {
-        ctx->rax = PORTIO_ERR_NOT_FOUND;
-        return syscall_return();
-    }
+    // if we got here, kcapset_delcap() should have handled global removal for us
 
-    if (kcap_destroy(cap) != 0) {
-        ctx->rax = PORTIO_ERR_INVALID;
-        return syscall_return();
-    }
-
-    ctx->rax = PORTIO_OK;
-	return syscall_return();
+    ctx->rax = 0; // TODO: again, we should have some better error numbers - perhaps a set specifically for the caps subsystem
+    return syscall_return();
 }
 
 SHARKIX_SYSCALL_IMPL(CAP_REMOVE) {
-	(void)ctx;
+	thread_t*    caller = thread_current();
+	cap_handle_t cap    = (cap_handle_t)ctx->rdi;
+
+	cap_t resolved_cap;
+
+        if(kcapset_resolve_record(caller->address_space->capset,cap,CAP_RIGHT_REMOVE,&resolved_cap) != 0) {
+           ctx->rax = (uint64_t)EBADHANDLE;
+           return syscall_return();
+        }
+
+	// if we got here, we can remove the cap globally, but we should NOT destroy the underlying object!
+	if(kcap_destroy(cap) != 0) {
+	   ctx->rax = (uint64_t)EINTERNAL;
+	   return syscall_return();
+	}
+
+	// now we've removed it globally, drop it from the caller's capset too
+	if(kcapset_delcap(caller->address_space->capset, cap) != 0) {
+           ctx->rax = (uint64_t)EINTERNAL;
+	   return syscall_return();
+	}
+
+	// and now we're done
+	ctx->rax = 0;
 	return syscall_return();
 }
 
@@ -895,7 +926,7 @@ syscall_disposition_t dispatch_syscall(syscall_ctx_t *ctx)
 	 return sys_test_wake(ctx);
 	 break;*/
     default:
-        ctx->rax = UINT64_MAX;
+        ctx->rax = ENOSYS;
         return syscall_return();
     }
 }

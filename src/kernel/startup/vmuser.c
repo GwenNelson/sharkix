@@ -196,12 +196,6 @@ void kernel_startup_profile(void)
     (void)ipc_destroy(completion);
     (void)ipc_destroy(control_a);
     (void)ipc_destroy(control_b);
-    (void)kcap_destroy(a_vmo_cap);
-    (void)kcap_destroy(b_vmo_cap);
-    (void)kcap_destroy(a_completion_cap);
-    (void)kcap_destroy(b_completion_cap);
-    (void)kcap_destroy(a_control_cap);
-    (void)kcap_destroy(b_control_cap);
     (void)kvmo_destroy(vmo);
     (void)kpmem_destroy(pmem);
     phys_page_put(backing_page);
