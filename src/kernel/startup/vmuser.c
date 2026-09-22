@@ -206,6 +206,6 @@ void kernel_startup_profile(void)
     (void)kpmem_destroy(pmem);
     phys_page_put(backing_page);
 
-    console_write("vmuser verified\n");
+    console_write("\n\nvmuser verified\n");
     for (;;) thread_yield();
 }

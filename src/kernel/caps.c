@@ -532,7 +532,8 @@ int kcapset_destroy(capset_handle_t set_handle)
 
     HASH_ITER(hh, set->caps, entry, tmp) {
         HASH_DEL(set->caps, entry);
-        kfree(entry);
+        kcap_destroy(entry->cap_handle);
+    	kfree(entry);
     }
 
     kfree(set);
