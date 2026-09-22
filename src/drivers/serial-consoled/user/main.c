@@ -32,15 +32,15 @@ static void test_exit(void)
 }
 
 static void serial_log(char* msg) {
-	sharkix_debug_puts("serial-consoled:");
+/*	sharkix_debug_puts("serial:");
 	sharkix_debug_puts(msg);
-	sharkix_debug_puts("\n");
+	sharkix_debug_puts("\n");*/
 }
 
 static void serial_panic(char* msg) {
-	serial_log("PANIC!");
-	serial_log(msg);
-	serial_log("Can not continue, terminating...");
+	sharkix_debug_puts("PANIC! ");
+	sharkix_debug_puts(msg);
+	sharkix_debug_puts("Can not continue, terminating...");
 	test_exit();
 }
 

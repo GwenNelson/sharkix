@@ -60,15 +60,11 @@ static void test_exit(void)
 
 
 static void vga_log(char* msg) {
-	sharkix_debug_puts("vga-consoled:");
-	sharkix_debug_puts(msg);
-	sharkix_debug_puts("\n");
 }
 
 static void vga_panic(char* msg) {
-	vga_log("PANIC!");
-	vga_log(msg);
-	vga_log("Can not continue, terminating...");
+	sharkix_debug_puts("VGA PANIC! ");
+	sharkix_debug_puts(msg);
 	test_exit();
 }
 

@@ -4,6 +4,7 @@
 #include "ipc.h"
 #include "ipc_registry.h"
 #include "thread.h"
+#include "sync.h"
 
 #include <sharkix/ddk/console-driver.h>
 
@@ -29,7 +30,10 @@ static ipc_handle_t console_output_pub;
 static ipc_handle_t console_input_pub;
 static thread_t*    init_thread;
 
+static kspinlock_t console_lock;
+
 void console_init_late(void) {
+     kspin_init(&console_lock);
      init_thread = thread_current();
      ipc_status_t status = ipc_create_publisher(&console_output_pub);
      if(status != IPC_OK) {
@@ -76,7 +80,11 @@ void console_putc(char c) {
 
 }
 
-void console_write(const char *text) { while (*text) console_putc(*text++); }
+void console_write(const char *text) { 
+     kspin_lock(&console_lock);
+   	while (*text) console_putc(*text++); 
+     kspin_unlock(&console_lock);
+}
 
 void console_hex(uint64_t value)
 {

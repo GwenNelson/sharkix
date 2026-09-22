@@ -45,7 +45,6 @@ static ipc_handle_t    vga_ready_endpoint     = IPC_INVALID_HANDLE;
 static cap_handle_t    vga_ready_endpoint_cap = CAP_INVALID_HANDLE;
 
 static void kernel_worker(void *argument) {
-    console_write("vga-consoled: trying to run!\n");
     ipc_message_t message = { 0 };
 
     (void)argument;
@@ -54,33 +53,9 @@ static void kernel_worker(void *argument) {
         return;
     }
 
-    console_write("[vga-consoled] VGA driver ready\n");
     vga_ready = true;
 
     for(;;) thread_yield();
-    // for now, this just does a simple loop of spamming ABABABAB over and over
-/*    message = (ipc_message_t) {
-        .type = IPC_MSGTYPE_SEND,
-        .words = { 1, (uint64_t)'A', 0, 0, 0 }
-    };
-    for (;;) {
-        if (ipc_send(thread_current(), vga_endpoint, &message) != IPC_OK) {
-            console_write("vga-consoled output send failed\n");
-            return;
-        }
-        message.words[1] = (uint64_t)'B';
-        if (ipc_send(thread_current(), vga_endpoint, &message) != IPC_OK) {
-            console_write("vga-consoled output send failed\n");
-            return;
-        }
-        message.words[1] = (uint64_t)'A';
-    }*/
-}
-
-void console_vga_putc(char c) {
-	ipc_message_t msg = { .type = IPC_MSGTYPE_SEND,
-		              .words = {1,(uint64_t)c,0,0,0 }};
-	ipc_send_nb(thread_current(),vga_endpoint,&msg);
 }
 
 // utility function that does what the name implies
@@ -207,4 +182,4 @@ bool console_vga_isready(void) {
      return vga_ready;
 }
 
-REGISTER_CONSOLE_DRIVER(vga,console_vga_init,console_vga_isready,console_vga_putc);
+REGISTER_CONSOLE_DRIVER(vga,console_vga_init,console_vga_isready);

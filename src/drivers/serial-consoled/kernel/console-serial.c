@@ -49,7 +49,6 @@ static cap_handle_t    serial_com1_cap = CAP_INVALID_HANDLE;  // THR/RBR/DLL
 static portio_handle_t serial_com1     = PORTIO_INVALID_HANDLE;
 
 static void kernel_worker(void *argument) {
-    console_write("serial-consoled: trying to run!\n");
     ipc_message_t message = { 0 };
 
     (void)argument;
@@ -58,16 +57,9 @@ static void kernel_worker(void *argument) {
         return;
     }
 
-    console_write("[serial-consoled] serial driver ready\n");
     serial_ready = true;
 
     for(;;) thread_yield();
-}
-
-void console_serial_putc(char c) {
-	ipc_message_t msg = { .type = IPC_MSGTYPE_SEND,
-		              .words = {1,(uint64_t)c,0,0,0 }};
-	ipc_send_nb(thread_current(),serial_endpoint,&msg);
 }
 
 // utility function that does what the name implies
@@ -218,4 +210,4 @@ bool console_serial_isready(void) {
      return serial_ready;
 }
 
-REGISTER_CONSOLE_DRIVER(serial,console_serial_init,console_serial_isready,console_serial_putc);
+REGISTER_CONSOLE_DRIVER(serial,console_serial_init,console_serial_isready);

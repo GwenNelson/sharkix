@@ -21,7 +21,7 @@ typedef struct sharkix_console_driver_t {
  *
  * This macro must be used at global scope.
  */
-#define REGISTER_CONSOLE_DRIVER(driver_name, init_fn, ready_fn, putc_fn)       \
+#define REGISTER_CONSOLE_DRIVER(driver_name, init_fn, ready_fn)       \
     static sharkix_console_driver_t                                            \
         __attribute__((section(".console_drivers")))                           \
         __attribute__((used))                                                  \
@@ -30,7 +30,6 @@ typedef struct sharkix_console_driver_t {
             .name  = #driver_name,                                             \
             .init  = init_fn,                                                  \
             .ready = ready_fn,                                                 \
-            .putc  = putc_fn,                                                  \
         }
 
 
