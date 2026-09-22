@@ -19,13 +19,14 @@ typedef uint64_t ipc_handle_t;
 // initial sane-ish capacity
 #define IPC_QUEUE_CAPACITY 64
 
+// This is being kept for now because we will eventually use it for stuff like caps transfer over IPC
+// Originally it was going to include SEND vs CALL, but that's been scrapped for now
 typedef enum ipc_message_type_t {
 	IPC_MSGTYPE_SEND = 0,
-	IPC_MSGTYPE_CALL = 1,
 } ipc_message_type_t;
 
 typedef struct ipc_message_t {
-	ipc_message_type_t type; // SEND or CALL
+	ipc_message_type_t type;
 	uint64_t sender_tid;
 	uint64_t words[5];
 } ipc_message_t;

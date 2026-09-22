@@ -74,13 +74,11 @@ typedef uint64_t cap_rights_t;
 
 // IPC specific perms - these can overlap with other object's bits, to be precise
 #define CAP_RIGHT_IPC_SEND	(UINT64_C(1) << 10)
-#define CAP_RIGHT_IPC_CALL	(UINT64_C(1) << 11)
-#define CAP_RIGHT_IPC_RECV	(UINT64_C(1) << 12)
+#define CAP_RIGHT_IPC_RECV	(UINT64_C(1) << 11)
 
 // all rights that make sense for an IPC endpoint
 #define CAP_IPC_VALID_RIGHTS	(CAP_GENERIC_VALID_RIGHTS | \
 				 CAP_RIGHT_IPC_SEND | \
-				 CAP_RIGHT_IPC_CALL | \
 				 CAP_RIGHT_IPC_RECV)
 
 // physical-memory specific perms
