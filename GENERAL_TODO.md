@@ -1000,7 +1000,11 @@ And, critically:
 
 
 
-
+Other important stuff:
+    Want to implement cap transfer - which means caps for address spaces, threads, CPU cores and such
+    Then of course sending caps over IPC - something like SYS_IPC_SEND_CAPS and SYS_IPC_RECV_CAPS which just exchange a number of words plus some caps
+        I'm pondering if i can make a number of syscalls like SYS_IPC_SEND_CAP, SYS_IPC_SEND_2CAPS, ...
+            Then just wrap it in libsharkix
 
 
 NOTE:
