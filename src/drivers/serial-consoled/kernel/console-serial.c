@@ -4,6 +4,7 @@
 #include "caps.h"
 #include "console.h"
 #include "ipc.h"
+#include "ipc_registry.h"
 #include "memory.h"
 #include "program.h"
 #include "startup.h"
@@ -61,23 +62,6 @@ static void kernel_worker(void *argument) {
     serial_ready = true;
 
     for(;;) thread_yield();
-    // for now, this just does a simple loop of spamming ABABABAB over and over
-    /*message = (ipc_message_t) {
-        .type = IPC_MSGTYPE_SEND,
-        .words = { 1, (uint64_t)'A', 0, 0, 0 }
-    };
-    for (;;) {
-        if (ipc_send(thread_current(), serial_endpoint, &message) != IPC_OK) {
-            console_write("serial-consoled output send failed\n");
-            return;
-        }
-        message.words[1] = (uint64_t)'B';
-        if (ipc_send(thread_current(), serial_endpoint, &message) != IPC_OK) {
-            console_write("serial-consoled output send failed\n");
-            return;
-        }
-        message.words[1] = (uint64_t)'A';
-    }*/
 }
 
 void console_serial_putc(char c) {
@@ -131,8 +115,14 @@ void console_serial_init(void) {
   
      thread_t *worker_thread;
 
+     // find the global console.output
+     ipc_handle_t console_output_pub;
+     if(kipc_registry_lookup("console.output",&console_output_pub)!=0) {
+       console_write("serial-consoled: can't find console.output endpoint\n");
+     }
+
      // setup the endpoints
-     if (ipc_create(&serial_endpoint) != IPC_OK ||
+     if (ipc_subscribe(console_output_pub,&serial_endpoint) != IPC_OK ||
          kcap_create(serial_endpoint, CAP_TYPE_IPC_ENDPOINT,
                      CAP_RIGHT_IPC_RECV | CAP_RIGHT_GETNAME,
                      &serial_output_cap) != 0 ||

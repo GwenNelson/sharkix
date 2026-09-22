@@ -4,6 +4,7 @@
 #include "caps.h"
 #include "console.h"
 #include "ipc.h"
+#include "ipc_registry.h"
 #include "memory.h"
 #include "program.h"
 #include "startup.h"
@@ -137,8 +138,15 @@ void console_vga_init(void) {
          for (;;) __asm__ volatile ("cli; hlt");
      }
 
+     // locate the global console.output endpoint
+     ipc_handle_t console_output_pub;
+     if(kipc_registry_lookup("console.output",&console_output_pub)!=0) {
+       console_write("serial-consoled: can't find console.output endpoint\n");
+     }
+
+
      // setup the endpoints
-     if (ipc_create(&vga_endpoint) != IPC_OK ||
+     if (ipc_subscribe(console_output_pub,&vga_endpoint) != IPC_OK ||
          kcap_create(vga_endpoint, CAP_TYPE_IPC_ENDPOINT,
                      CAP_RIGHT_IPC_RECV | CAP_RIGHT_GETNAME,
                      &vga_endpoint_cap) != 0 ||

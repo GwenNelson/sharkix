@@ -1,6 +1,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "console.h"
+#include "ipc.h"
+#include "ipc_registry.h"
+#include "thread.h"
 
 #include <sharkix/ddk/console-driver.h>
 
@@ -22,7 +25,21 @@ void console_init_early(void) {
      }	
 }
 
+static ipc_handle_t console_output_pub;
+static ipc_handle_t console_input_pub;
+static thread_t*    init_thread;
+
 void console_init_late(void) {
+     init_thread = thread_current();
+     ipc_status_t status = ipc_create_publisher(&console_output_pub);
+     if(status != IPC_OK) {
+	console_write("console.c:console_init_late() - could not create the IPC endpoint!\n");
+        console_write("Can not continue");
+	for(;;);
+     }
+     kipc_registry_register("console.output", console_output_pub);
+     kipc_registry_register("console.input",  console_input_pub);
+
      sharkix_console_driver_t *driver;
 
      for (driver = __console_drivers_start; driver < __console_drivers_end; driver++) {
@@ -53,20 +70,9 @@ void console_putc(char c) {
 
 
      if(late_drivers_ready) {
-
-        for (driver = __console_drivers_start; driver < __console_drivers_end; driver++) {
-            if (driver->ready) {
-               if(driver->ready()) {
-                    if(driver->putc) {
-                        driver->putc(c);
-		    }
-	       }
-            }
-        }
-
+        ipc_message_t msg = { .type = IPC_MSGTYPE_SEND, .words = {1,(uint64_t)c,0,0,0 }};
+	ipc_send(init_thread,console_output_pub,&msg);
      }
-
-
 
 }
 
