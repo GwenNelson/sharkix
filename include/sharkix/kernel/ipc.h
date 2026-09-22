@@ -37,6 +37,14 @@ typedef enum ipc_endpoint_type_t {
 	IPC_ENDPOINT_SUBSCRIBER = 2,
 } ipc_endpoint_type_t;
 
+
+typedef struct ipc_subscription_t ipc_subscription_t;
+
+typedef struct ipc_subscription_t {
+	ipc_handle_t subscriber;
+	ipc_subscription_t *next;
+} ipc_subscription_t;
+
 // it is important to NOT directly mess with the contents of this struct outside of the IPC functions for multiple reasons
 typedef struct ipc_endpoint_t {
 	ipc_handle_t  handle;
@@ -78,6 +86,10 @@ typedef struct ipc_endpoint_t {
 	size_t waiting_receivers;
 	
 
+	/*
+	 * This is used only by IPC_ENDPOINT_PUBLISHER
+	 */
+	ipc_subscription_t *subscribers;
 
 	UT_hash_handle hh;
 } ipc_endpoint_t;
@@ -93,6 +105,12 @@ void ipc_init(void);
 
 ipc_status_t ipc_create(ipc_handle_t *handle);
 ipc_status_t ipc_destroy(ipc_handle_t handle);
+
+// creates a new PUBSUB publisher endpoint
+ipc_status_t ipc_create_publisher(ipc_handle_t *handle);
+
+// creates a new PUBSUB subscriber endpoint, subscribed to an existing publisher
+ipc_status_t ipc_subscribe(ipc_handle_t publisher, ipc_handle_t* new_subscriber);
 
 ipc_status_t ipc_send(thread_t* caller, ipc_handle_t handle, const ipc_message_t *message);
 ipc_status_t ipc_send_nb(thread_t* caller, ipc_handle_t handle, const ipc_message_t *message);

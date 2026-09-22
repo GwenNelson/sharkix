@@ -115,6 +115,7 @@ ipc_status_t ipc_create(ipc_handle_t *handle) {
              endpoint->queue_count = 0;
 
 	     endpoint->ep_type     = IPC_ENDPOINT_NORMAL;
+	     endpoint->subscribers = NULL;
 
              kmutex_init(&endpoint->lock);
              ksem_init(&endpoint->sender_sem, 0);
@@ -141,6 +142,87 @@ ipc_status_t ipc_create(ipc_handle_t *handle) {
              return IPC_OK;
 }
 
+ipc_status_t ipc_create_publisher(ipc_handle_t* handle) {
+	     ipc_handle_t new_ep_handle;
+	     ipc_status_t status;
+	     status = ipc_create(&new_ep_handle);
+	     if(status != IPC_OK) return status;
+	     
+	     ipc_endpoint_t* new_ep = ipc_acquire(new_ep_handle);
+	     if(!new_ep) return IPC_ERR_INVALID; // this shouldn't really happen
+	    
+	     new_ep->ep_type = IPC_ENDPOINT_PUBLISHER;
+	     ipc_release(new_ep);
+             *handle = new_ep_handle;
+	     return IPC_OK;
+}
+
+ipc_status_t ipc_subscribe(ipc_handle_t publisher, ipc_handle_t* new_subscriber) {
+	     ipc_endpoint_t *pub = ipc_acquire(publisher);
+
+	     if(!pub) {
+		return IPC_ERR_NOT_FOUND;
+	     }
+   	     if(pub->is_shutting_down) {
+	        ipc_release(pub);
+		return IPC_ERR_ENDPOINT_CLOSED;
+	     }
+	     if(pub->ep_type != IPC_ENDPOINT_PUBLISHER) {
+	        ipc_release(pub);
+		return IPC_ERR_INVALID;
+	     }
+
+	     ipc_handle_t new_sub_handle;
+	     ipc_status_t status;
+
+	     status = ipc_create(&new_sub_handle);
+             if(status != IPC_OK) {
+		ipc_release(pub);
+		return status;
+	     }
+
+	     ipc_endpoint_t* new_sub = ipc_acquire(new_sub_handle);
+	     if(!new_sub) {
+		ipc_release(pub); // TODO - should we cleanup new_sub here?
+		return IPC_ERR_INVALID;
+	     }
+	     
+	     new_sub->ep_type = IPC_ENDPOINT_SUBSCRIBER;
+	     ipc_subscription_t *subscription = kmalloc(sizeof(*subscription));
+	     if (!subscription) {
+		ipc_release(new_sub);
+		ipc_release(pub);
+		ipc_destroy(new_sub_handle);
+		return IPC_ERR_NO_MEMORY;
+	     }
+
+	     subscription->subscriber = new_sub_handle;
+	     subscription->next = NULL;
+
+	     kmutex_lock(&pub->lock);
+
+             if (pub->is_shutting_down) {
+                kmutex_unlock(&pub->lock);
+                kfree(subscription);
+                ipc_release(new_sub);
+                ipc_release(pub);
+                ipc_destroy(new_sub_handle);
+                return IPC_ERR_ENDPOINT_CLOSED;
+             }
+
+	     if (!pub->subscribers) {
+		pub->subscribers = subscription;
+	     } else {
+		subscription->next = pub->subscribers;
+		pub->subscribers   = subscription;
+	     }
+	     kmutex_unlock(&pub->lock);
+
+	     *new_subscriber = new_sub_handle;
+	     ipc_release(new_sub);
+	     ipc_release(pub);
+	     return IPC_OK;
+}
 
 ipc_status_t ipc_destroy(ipc_handle_t handle) {
              ipc_endpoint_t *endpoint;
@@ -437,4 +519,3 @@ ipc_status_t ipc_recv_nb(ipc_handle_t handle, ipc_message_t *message) {
 
              return IPC_OK;
 }
-
