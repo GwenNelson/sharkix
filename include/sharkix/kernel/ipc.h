@@ -31,10 +31,18 @@ typedef struct ipc_message_t {
 	uint64_t words[5];
 } ipc_message_t;
 
+typedef enum ipc_endpoint_type_t {
+	IPC_ENDPOINT_NORMAL     = 0,
+	IPC_ENDPOINT_PUBLISHER  = 1,
+	IPC_ENDPOINT_SUBSCRIBER = 2,
+} ipc_endpoint_type_t;
+
 // it is important to NOT directly mess with the contents of this struct outside of the IPC functions for multiple reasons
 typedef struct ipc_endpoint_t {
 	ipc_handle_t  handle;
 	thread_t     *owner;
+
+	ipc_endpoint_type_t ep_type;
 
 	ipc_message_t queue[IPC_QUEUE_CAPACITY];
 	size_t queue_head;
@@ -45,7 +53,6 @@ typedef struct ipc_endpoint_t {
 	 * Protects endpoint state below and serialises queue-state decisions.
 	 */
     kmutex_t lock;
-
 	/*
 	 * Used to wake blocked senders/receivers.
 	 */

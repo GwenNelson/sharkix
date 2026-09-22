@@ -110,9 +110,11 @@ ipc_status_t ipc_create(ipc_handle_t *handle) {
 
              memset(endpoint, 0, sizeof(*endpoint));
 
-             endpoint->queue_head = 0;
-             endpoint->queue_tail = 0;
+             endpoint->queue_head  = 0;
+             endpoint->queue_tail  = 0;
              endpoint->queue_count = 0;
+
+	     endpoint->ep_type     = IPC_ENDPOINT_NORMAL;
 
              kmutex_init(&endpoint->lock);
              ksem_init(&endpoint->sender_sem, 0);
