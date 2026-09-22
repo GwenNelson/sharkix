@@ -126,6 +126,63 @@ SHARKIX_SYSCALL_IMPL(IPC_CREATE) {
 	return syscall_return();
 }
 
+SHARKIX_SYSCALL_IMPL(IPC_CREATE_PUB) {
+	thread_t* caller = thread_current();
+	ipc_handle_t endpoint;
+	cap_handle_t cap;
+	ipc_status_t status = ipc_create_publisher(&endpoint);
+	
+	ctx->rax = (uint64_t)status;
+	if(status != IPC_OK) {
+	   ctx->rdi = (uint64_t)IPC_INVALID_HANDLE;
+	   return syscall_return();
+	}
+
+	if(kcap_create((kobject_handle_t)endpoint,
+			CAP_TYPE_IPC_ENDPOINT,
+			CAP_IPC_VALID_RIGHTS,
+			&cap) != 0) {
+		ipc_destroy(endpoint);
+		ctx->rax = IPC_ERR_FAILED_CAP_CREATE;
+		ctx->rdx = (uint64_t)IPC_INVALID_HANDLE;
+		return syscall_return();
+	}
+	if(kcapset_addcap(caller->address_space->capset, cap) != 0) {
+		ipc_destroy(endpoint);
+		kcap_destroy(cap);
+		ctx->rax = IPC_ERR_FAILED_CAP_CREATE;
+		ctx->rdi = (uint64_t)IPC_INVALID_HANDLE;
+		return syscall_return();
+	}
+	if(status==IPC_OK) {
+		ctx->rdi = (uint64_t)cap;
+	} else {
+		ctx->rdi = (uint64_t)IPC_INVALID_HANDLE;
+	}
+	return syscall_return();
+}
+
+SHARKIX_SYSCALL_IMPL(IPC_SUBSCRIBE) {
+	thread_t* caller = thread_current();
+	cap_handle_t dest_cap = (cap_handle_t)ctx->rdi;
+
+	kobject_handle_t obj_handle;
+	if (kcapset_resolve_handle(caller->address_space->capset,
+				   dest_cap,
+				   CAP_TYPE_IPC_ENDPOINT,
+				   CAP_RIGHT_IPC_SUBSCRIBE,
+				   &obj_handle) != 0) {
+		ctx->rax = IPC_ERR_PERMISSION;
+		return syscall_return();
+	}
+	ipc_handle_t dest_endpoint = (ipc_handle_t)obj_handle;
+	ipc_handle_t new_sub       = IPC_INVALID_HANDLE;
+	ipc_status_t status        = ipc_subscribe(dest_endpoint,&new_sub);
+	ctx->rax = (uint64_t)status;
+	ctx->rdi = (uint64_t)new_sub;
+	return syscall_return();
+}
+
 SHARKIX_SYSCALL_IMPL(IPC_SEND) {
 	thread_t* caller = thread_current();
 	ipc_message_t msg;
@@ -141,6 +198,7 @@ SHARKIX_SYSCALL_IMPL(IPC_SEND) {
 	cap_handle_t dest_cap = (cap_handle_t)ctx->rdi;
 	kobject_handle_t obj_handle;
 
+	// TODO - should probably be accounting for PUBSUB here
 	if (kcapset_resolve_handle(thread_current()->address_space->capset,
 				   dest_cap,
 				   CAP_TYPE_IPC_ENDPOINT,
@@ -164,6 +222,7 @@ SHARKIX_SYSCALL_IMPL(IPC_RECV) {
 	cap_handle_t src_cap = (cap_handle_t)ctx->rdi;
 	kobject_handle_t obj_handle;
 
+	// TODO - as above, should be accounting for PUBSU here eventually
 	if (kcapset_resolve_handle(caller->address_space->capset,
 				   src_cap,
 				   CAP_TYPE_IPC_ENDPOINT,
