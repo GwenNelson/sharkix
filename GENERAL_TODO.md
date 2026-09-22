@@ -2,176 +2,23 @@
 
 ## CURRENT STATE
 
-### DONE: VMO capability / unmap / page-fault test
-
-The deterministic A/B VMO test is implemented and committed.
-
-It proves:
-
-- A can map a page-backed VMO with `VMO_MAP | VMO_READ`.
-- B cannot map it without the required rights.
-- B specifically receives `VM_ERR_PERMISSION`.
-- A can successfully `SYS_VM_UNMAP` the mapping.
-- Accessing the old virtual address afterwards causes a real vector 14 page fault.
-- The existing kernel exception path terminates the faulting userspace thread.
-- Test sequencing is deterministic using separate A-control, B-control and completion IPC endpoints.
-
-No more work needed here unless later VM changes break the test.
-
+This file tracks remaining work only. Completed work is removed rather
+than marked done.
 
 # NEXT CODING SESSION
 
-## 1. Fix cap / capset ownership semantics
-
-Keep this simple.
-
-### Fundamental cap ownership invariant
-
-A live cap normally belongs to exactly ONE capset.
-
-A cap may temporarily be unowned during:
-
-- construction
-- kernel setup
-- tests
-- transactional operations
-
-In that case, the code currently holding the cap handle is responsible for either:
-
-- transferring it into a capset, or
-- destroying it on failure.
-
-Do NOT add cap refcounting merely to support temporary unowned caps.
-
-Temporary unowned caps are an exceptional construction state, not the normal ownership model.
-
-### Capset owns its caps
-
-Change capset destruction semantics:
-
-```text
-destroy capset
-    -> destroy/free every cap owned by capset
-    -> free membership structures
-    -> destroy capset
-```
-
-The current behaviour where membership disappears but caps themselves survive should go away.
-
-### CAP_REMOVE
-
-Semantics:
-
-```text
-CAP_REMOVE(cap)
-    -> remove cap from owning capset
-    -> destroy/free cap
-```
-
-This does NOT automatically mean destruction of the underlying target object.
-
-Target lifetime is governed by that object's own lifetime policy.
-
-### CAP_MOVE / kcapset_move
-
-Add something conceptually like:
-
-```c
-int kcapset_move(
-    capset_handle_t src,
-    capset_handle_t dst,
-    cap_handle_t cap);
-```
-
-MOVE transfers the SAME cap object:
-
-```text
-before:
-
-capset A
-    cap 42
-
-capset B
-
-
-after:
-
-capset A
-
-capset B
-    cap 42
-```
-
-Properties:
-
-- same cap handle
-- same target
-- same rights
-- no derive
-- no target refcount change merely because ownership moved
-
-Failure semantics MUST be:
-
-```text
-SUCCESS:
-    A no longer owns cap
-    B owns cap
-
-FAILURE:
-    A still owns cap
-    B does not own cap
-```
-
-Never:
-
-```text
-remove from A
-try adding to B
-oops
-cap is fucking homeless
-```
-
-Validate first and/or hold both relevant locks while transferring ownership.
-
-If both capsets need locking simultaneously, use deterministic lock ordering.
-
-### COPY / DERIVE vs MOVE
-
-```text
-DERIVE/COPY
-    creates a NEW cap object
-    new cap gets its own handle
-    original remains where it is
-    new cap belongs to destination capset
-
-MOVE
-    SAME cap object
-    SAME cap handle
-    ownership changes capset
-
-REMOVE
-    cap leaves capset
-    cap object is destroyed
-
-TEMPORARILY UNOWNED
-    allowed during construction/setup/tests
-    caller owns cleanup responsibility
-```
-
-No cap refcount needed while this invariant holds.
-
-
-# 2. Continue lifetime audit / fixes
+# 1. Continue lifetime audit / fixes
 
 Do this object-by-object.
 
-Do NOT invent a universal kobject framework merely because everything happens to have a handle.
+Do NOT invent a universal kobject framework merely because everything
+happens to have a handle.
 
 Different object types are allowed to have different lifetime policies.
 
 Useful distinction:
 
-```text
+``` text
 handles identify
 caps authorize
 refs keep REFCOUNTED objects alive
@@ -179,95 +26,39 @@ refs keep REFCOUNTED objects alive
 
 Not every object needs refs.
 
-
-## IRQ
-
-Desired model:
-
-- IRQ objects represent canonical physical interrupt sources.
-- Lazy creation.
-- First request for hardware IRQ N creates its canonical object.
-- Subsequent requests for hardware IRQ N return the existing handle.
-- No IRQ refcount.
-- IRQ object exists for kernel lifetime.
-- Physical IRQ cannot meaningfully be destroyed.
-- Destroying/removing an IRQ cap does not destroy the IRQ object.
-- `CAP_DESTROY` against an IRQ therefore does nothing to the underlying IRQ.
-
-This should eliminate the current awkward IRQ destruction/waiter lifetime problems.
-
-CPU objects will probably follow the same canonical/permanent pattern.
-
-
 ## IPC endpoints
 
-IPC endpoints ARE refcounted.
+Core endpoint lifetime/refcounting has been audited and is working.
 
-Broad model:
+Remaining lifetime work is around persistent relationships introduced by
+PUBSUB:
 
-- endpoint table owns a reference
-- active operations may temporarily retain endpoint
-- destruction marks shutdown/removes public lookup
-- blocked operations are woken appropriately
-- actual storage disappears when final reference disappears
+-   subscription-list lifetime
+-   unsubscribe
+-   publisher destruction / subscription cleanup
+-   eventual pending-publication state once backpressure policies exist
 
-Need settle all persistent cross-object ownership relationships.
-
+Do not make ordinary cap removal implicitly destroy an endpoint target.
 
 ## IPC registry
 
 Registry names IPC rendezvous points.
 
-For now it deals only in IPC endpoints, not arbitrary caps.
+For now it deals only in IPC endpoint handles, not arbitrary caps.
 
-Important invariant:
+Current behaviour may return a stale handle after an endpoint has been
+destroyed; the subsequent IPC operation safely returns NOT_FOUND.
+Registry removal is a separate operation.
 
-> Registry must never return a dangling endpoint handle.
+Future questions:
 
-While a registry entry is bound:
-
-```text
-registry entry
-    -> retains endpoint ref
-```
-
-When it stops referring to that endpoint:
-
-```text
-registry
-    -> endpoint ref--
-```
-
-Potential future registration policies:
-
-```text
-EPHEMERAL
-    endpoint dies
-    -> registration disappears
-
-PERSISTENT
-    endpoint dies
-    -> registration remains but becomes UNBOUND
-```
-
-Potential future reanimation:
-
-```text
-service dies
-    ↓
-endpoint dies
-    ↓
-registry name remains unbound
-    ↓
-replacement service starts
-    ↓
-proves appropriate authority/identity somehow
-    ↓
-rebinds registration to new endpoint
-```
+-   whether the registry eventually becomes a more generic
+    capability/name registry
+-   EPHEMERAL vs PERSISTENT registrations
+-   rebinding/reanimation of a service name after the old service dies
+-   authorization for rebinding
 
 Do NOT solve rebind authorization yet.
-
 
 ## PMEM
 
@@ -275,7 +66,7 @@ PMEM should be refcounted.
 
 A VMO backed by PMEM retains that PMEM object.
 
-```text
+``` text
 VMO acquires PMEM
     -> pmem_ref_inc()
 
@@ -285,7 +76,6 @@ VMO stops using PMEM / dies
 
 Need ensure PMEM cannot disappear while a live VMO still relies upon it.
 
-
 ## VMO
 
 VMOs should be refcounted.
@@ -294,13 +84,12 @@ Persistent relationships that rely on a VMO must keep it alive.
 
 Examples:
 
-- mappings
-- VMO sets
-- relevant capabilities, depending final cap-target lifetime semantics
-- other kernel objects storing the VMO handle long-term
+-   mappings
+-   VMO sets
+-   relevant capabilities, depending final cap-target lifetime semantics
+-   other kernel objects storing the VMO handle long-term
 
 VMO retains its backing PMEM.
-
 
 ## VMO sets
 
@@ -308,7 +97,7 @@ VMO sets are not necessarily permanently private/embedded objects.
 
 Future intended use includes:
 
-```text
+``` text
 userspace creates VMO set
     ↓
 populates/configures it
@@ -324,7 +113,6 @@ An address space retains its VMO set.
 
 VMO-set entries/mappings retain the VMOs upon which they depend.
 
-
 ## Address spaces
 
 Address spaces already have useful refcount machinery.
@@ -333,14 +121,14 @@ Turn them into proper handle/cap-accessible kobjects.
 
 An address space owns/retains things such as:
 
-- page tables
-- capset
-- VMO set
+-   page tables
+-   capset
+-   VMO set
 
 Threads retain their address space.
 
-Eventually sufficiently privileged userspace can create/configure address spaces.
-
+Eventually sufficiently privileged userspace can create/configure
+address spaces.
 
 ## Factory authority
 
@@ -348,14 +136,14 @@ Eventually add some special factory object/capability.
 
 Concept:
 
-```text
+``` text
 factory cap
     -> authority to create selected kernel objects
 ```
 
 Potential examples:
 
-```text
+``` text
 create address space
 create task
 create VMO
@@ -369,56 +157,58 @@ It does NOT permanently own everything created through it.
 
 Do not overdesign this yet.
 
-
 ## PortIO
 
 KEEP IT SIMPLE.
 
-Do not automatically add target refcounting merely because PortIO is represented by a handle.
+Do not automatically add target refcounting merely because PortIO is
+represented by a handle.
 
 Caps authorize access to PortIO objects.
 
-Need eventually decide exactly when/how PortIO object storage is reclaimed, but don't invent machinery until an actual lifetime requirement demands it.
-
+Need eventually decide exactly when/how PortIO object storage is
+reclaimed, but don't invent machinery until an actual lifetime
+requirement demands it.
 
 ## Threads
 
-If threads become proper exposed kobjects, give them sensible lifetime semantics.
+If threads become proper exposed kobjects, give them sensible lifetime
+semantics.
 
 Important:
 
-```text
+``` text
 DEAD != FREE
 ```
 
-Scheduler/kernel/other relationships may still retain a dead thread object.
+Scheduler/kernel/other relationships may still retain a dead thread
+object.
 
 Review raw `thread_lookup()` pointer lifetime eventually.
-
 
 ## Sync primitives
 
 Mutexes/semaphores are currently embedded in their owning objects.
 
-Do NOT turn them into independently refcounted kobjects merely for architectural symmetry.
+Do NOT turn them into independently refcounted kobjects merely for
+architectural symmetry.
 
-The owning subsystem is responsible for ensuring they remain alive while waiters may access them.
+The owning subsystem is responsible for ensuring they remain alive while
+waiters may access them.
 
 Revisit only if they later become independently exposed.
-
 
 ## CPU objects
 
 Likely:
 
-- canonical
-- one object per CPU
-- permanent/kernel lifetime
-- no target refcount
-- caps merely authorize access/operations
+-   canonical
+-   one object per CPU
+-   permanent/kernel lifetime
+-   no target refcount
+-   caps merely authorize access/operations
 
-
-# 3. Notifications
+# 2. Notifications
 
 AFTER lifetime work is boring and stable.
 
@@ -426,7 +216,7 @@ Notification is a separate generic kobject.
 
 Basic concept:
 
-```text
+``` text
 notification
     pending bitmask
     wait()
@@ -435,12 +225,12 @@ notification
 
 Architectural rule:
 
-> Notification never knows what signals it.
-> Producers know how to signal notifications.
+> Notification never knows what signals it. Producers know how to signal
+> notifications.
 
 Possible source APIs:
 
-```c
+``` c
 kirq_bind_notification(
     irq_handle_t irq,
     notification_handle_t notification,
@@ -456,29 +246,27 @@ Persistent source binding retains notification ref.
 
 Removing binding releases it.
 
-
 ## IPC notification semantics
 
 Notification means approximately:
 
-```text
+``` text
 endpoint is readable / needs servicing
 ```
 
 NOT:
 
-```text
+``` text
 one notification event for every message
 ```
 
 Consumer wakes and drains endpoint using recv/try-recv semantics.
 
-
 ## IRQ notification semantics
 
 Notification bit means:
 
-```text
+``` text
 IRQ source requires servicing
 ```
 
@@ -486,12 +274,11 @@ It does not need to count every interrupt occurrence.
 
 ACK remains an IRQ-specific operation.
 
-
 ## PS/2 eventual use
 
 One PS/2 bus task could wait on:
 
-```text
+``` text
 bit 0 = IRQ1
 bit 1 = IRQ12
 bit 2 = port1 request endpoint readable
@@ -500,61 +287,49 @@ bit 3 = port2 request endpoint readable
 
 One thread, one notification wait, multiple event sources.
 
+# 3. PUBSUB FOLLOW-UP
 
-# 4. PUBSUB
+Basic publisher/subscriber IPC exists and works from ring3.
 
-AFTER notifications.
+Keep the current first implementation simple while extending it.
 
-PUBSUB is its own kobject.
+Remaining work:
 
-Do NOT merge IPC, PUBSUB and notifications.
+-   unsubscribe
+-   subscription-list cleanup when publishers/subscribers are destroyed
+-   define safe traversal once subscription nodes can be removed/freed
+-   publisher backlog / active-publication state
+-   track which subscribers have already received the current
+    publication
+-   backpressure policies: RELIABLE / TIMEOUT / LOSSY
+-   missed-publication accounting/status
+-   preserve publication ordering while allowing progressive delivery
+-   revisit publication authorization only when there is a concrete need
 
-```text
-IPC endpoint
-    queued point-to-point messages
+Current simple fan-out uses non-blocking subscriber enqueue.
+Full/closed/missing subscribers are skipped for now.
 
-notification
-    readiness/state aggregation
+Do NOT turn PUBSUB into a separate universal object framework. It is
+built on the IPC endpoint machinery.
 
-PUBSUB
-    one-to-many message distribution
-```
+# 4. CONSOLE FOLLOW-UP
 
-PUBSUB will probably retain subscriber endpoint objects while subscriptions exist.
+Late userspace console output now uses the global `console.output`
+publisher. Console drivers subscribe to it.
 
-Unsubscribe/destruction releases those references.
+Bochs E9 remains an early/kernel debug console using the direct
+old-fashioned path. Keep it independent of late userspace PUBSUB so it
+still works when higher-level infrastructure is unavailable or broken.
 
+Remaining console work:
 
-# 5. Convert console system to PUBSUB
+-   hook up `console.input`
+-   decide the input-side routing/ownership model without
+    overengineering it
+-   runtime console selection/configuration if still useful
+-   keep the early/late console boundary explicit and boring
 
-Make console output the first useful PUBSUB consumer.
-
-Conceptually:
-
-```text
-console publisher
-       |
-       +----> VGA console
-       |
-       +----> serial console
-       |
-       +----> Bochs E9
-       |
-       +----> whatever else
-```
-
-Retain the distinction between early kernel console and later userspace console infrastructure.
-
-Console backlog:
-
-- finish `console-seriald`
-- add Bochs E9 debug console
-- userspace E9 console
-- runtime console selection
-- clean early/late console design
-
-
-# 6. ELF LOADER
+# 5. ELF LOADER
 
 Do this once the infrastructure underneath it is boring.
 
@@ -564,7 +339,7 @@ No demand paging required.
 
 Initial model:
 
-```text
+``` text
 parse ELF
     ↓
 create/configure address space
@@ -582,19 +357,18 @@ start task
 
 Get ordinary eager ELF loading working before clever paging.
 
-
 # LATER: USERSPACE EXCEPTION / PAGE-FAULT HANDLING
 
 DO NOT IMPLEMENT THIS YET.
 
-Keep the idea around because it fits the eventual personality architecture.
-
+Keep the idea around because it fits the eventual personality
+architecture.
 
 ## Default behaviour
 
 Kernel's default remains:
 
-```text
+``` text
 userspace exception
         ↓
 is an authorized userspace handler ALREADY waiting?
@@ -607,22 +381,23 @@ is an authorized userspace handler ALREADY waiting?
 delegate   kill task
 ```
 
-No queue of unresolved faults waiting indefinitely for a handler that may never appear.
+No queue of unresolved faults waiting indefinitely for a handler that
+may never appear.
 
 If nobody has explicitly volunteered to handle the fault:
 
-```text
+``` text
 task dies
 ```
 
 Simple and safe.
 
-
 ## Handler runs in another address space
 
-Pager/personality handler should normally live in a DIFFERENT AS from the faulting task.
+Pager/personality handler should normally live in a DIFFERENT AS from
+the faulting task.
 
-```text
+``` text
 Personality / pager AS
         ▲
         │ exception delivery
@@ -634,8 +409,8 @@ Kernel ─┼──────────── target AS
         └── fault information
 ```
 
-This lets personality layers implement their own VM/exception policy independently.
-
+This lets personality layers implement their own VM/exception policy
+independently.
 
 ## Exception source object
 
@@ -643,7 +418,7 @@ Do NOT literally make CPU exceptions IRQ objects.
 
 Instead, use a similar small-object pattern.
 
-```text
+``` text
 IRQ object
     canonical hardware source
     WAIT
@@ -662,7 +437,7 @@ Fault context/token
 
 Possible primitive:
 
-```c
+``` c
 SYS_EXCEPTION_WAIT(exception_cap, &fault);
 ```
 
@@ -670,7 +445,7 @@ Handler blocks in advance.
 
 When a matching user exception happens:
 
-```text
+``` text
 fault
     ↓
 kernel finds authorized waiting handler
@@ -684,16 +459,15 @@ handler receives fault information
 
 No waiter:
 
-```text
+``` text
 kill faulting task
 ```
-
 
 ## Fault information
 
 Something roughly like:
 
-```c
+``` c
 struct fault_event {
     fault_token_t token;
 
@@ -706,16 +480,16 @@ struct fault_event {
 };
 ```
 
-For page faults, include enough information to distinguish things such as:
+For page faults, include enough information to distinguish things such
+as:
 
-- read/write
-- present/not-present
-- userspace
-- instruction fetch
-- reserved-bit violation
+-   read/write
+-   present/not-present
+-   userspace
+-   instruction fetch
+-   reserved-bit violation
 
 Don't overabstract this until actually implementing it.
-
 
 ## Resolving faults
 
@@ -723,14 +497,14 @@ Handler uses NORMAL Sharkix VM mechanisms.
 
 For example:
 
-```c
+``` c
 SYS_VM_MAP(target_as_cap, vmo_cap, ...);
 SYS_VM_UNMAP(...);
 ```
 
 Then:
 
-```c
+``` c
 SYS_FAULT_RESUME(token);
 ```
 
@@ -740,14 +514,13 @@ Faulting instruction retries naturally.
 
 If the handler got it wrong, it faults again.
 
-
 ## Killing a faulted task
 
 Do NOT invent `SYS_FAULT_KILL` unless a concrete need appears.
 
 Use the ordinary task-kill mechanism.
 
-```text
+``` text
 recoverable fault:
     repair state
     SYS_FAULT_RESUME(token)
@@ -758,26 +531,25 @@ unrecoverable fault:
 
 Task death invalidates any outstanding fault token.
 
-
 ## Fault token
 
 Opaque and one-shot.
 
 It represents:
 
-```text
+``` text
 authority to resume this particular suspended exception
 ```
 
 It is NOT:
 
-- a raw thread pointer
-- a raw exception-frame pointer
-- permanent control over the thread
+-   a raw thread pointer
+-   a raw exception-frame pointer
+-   permanent control over the thread
 
 Conceptually:
 
-```c
+``` c
 fault_context {
     token;
     thread;
@@ -788,7 +560,7 @@ fault_context {
 
 Successful resume:
 
-```text
+``` text
 SYS_FAULT_RESUME(token)
     -> consume token
     -> resume thread
@@ -796,19 +568,18 @@ SYS_FAULT_RESUME(token)
 
 Second attempt:
 
-```text
+``` text
 SYS_FAULT_RESUME(token)
     -> INVALID
 ```
 
 If the task dies first, token becomes invalid.
 
-
 ## Personality-layer use
 
 Eventually this could permit:
 
-```text
+``` text
 Linux personality
     #PF -> Linux VM / SIGSEGV-like semantics
     #UD -> SIGILL-like semantics
@@ -825,7 +596,6 @@ Other personality
 
 Kernel does not need to know what Unix signals are.
 
-
 ## Default ring3 pager
 
 Could eventually ship a boring standard Sharkix pager in ring3.
@@ -834,11 +604,10 @@ It handles common/native VMO-backed faults.
 
 Personality implementations could:
 
-- implement paging entirely themselves, or
-- delegate boring cases to the standard pager
+-   implement paging entirely themselves, or
+-   delegate boring cases to the standard pager
 
 Don't design pager chaining until actually needed.
-
 
 ## Pager capabilities
 
@@ -848,7 +617,7 @@ It receives only the authority it needs.
 
 Potentially:
 
-```text
+``` text
 target AS cap
     appropriate VM operations
 
@@ -866,18 +635,17 @@ Ordinary capability checks still apply.
 
 A pager cannot turn:
 
-```text
+``` text
 read-only VMO authority
 ```
 
 into:
 
-```text
+``` text
 RWX mapping
 ```
 
 merely because it's handling a fault.
-
 
 ## Multiple simultaneous faults
 
@@ -885,7 +653,7 @@ Don't solve scalability prematurely.
 
 Simple initial semantics could be:
 
-```text
+``` text
 handler A waiting
 handler B waiting
 
@@ -900,8 +668,8 @@ thread Z faults
     -> default behaviour: kill
 ```
 
-If a personality eventually needs hundreds of concurrent unresolved faults, solve that when it exists.
-
+If a personality eventually needs hundreds of concurrent unresolved
+faults, solve that when it exists.
 
 ## Exceptions and notifications
 
@@ -909,52 +677,49 @@ Do NOT force exceptions through notifications initially.
 
 Notification semantics are roughly:
 
-```text
+``` text
 something is ready; come service it
 ```
 
 Exception interception semantics are initially:
 
-```text
+``` text
 I am already blocked here and volunteering
 to take responsibility for the next matching exception
 ```
 
 That distinction makes:
 
-```text
+``` text
 no waiter -> kill
 ```
 
 trivial.
 
-Exception sources can integrate with notifications later if a real use case demands it.
-
+Exception sources can integrate with notifications later if a real use
+case demands it.
 
 # DEVELOPMENT ORDER
 
 Current rough order:
 
-```text
-CAP/CAPSET OWNERSHIP
-        ↓
-KOBJECT LIFETIME AUDIT/FIXES
+``` text
+REMAINING KOBJECT LIFETIME / OWNERSHIP CLEANUP
         ↓
 ADDRESS SPACE / VMO OBJECT CLEANUP
         ↓
 NOTIFICATIONS
         ↓
-PUBSUB
-        ↓
-CONSOLES USING PUBSUB
+CONSOLE.INPUT + REMAINING CONSOLE CLEANUP
         ↓
 ELF LOADER
         ↓
 PERSONALITY LAYER
         ↓
+PUBSUB BACKPRESSURE / POLICY WORK AS NEEDED
+        ↓
 FANCY EXCEPTION/PAGER STUFF
 ```
-
 
 # GENERAL SHARKIX RULES
 
@@ -962,17 +727,18 @@ Keep Sharkix stupid where stupid works.
 
 Do NOT add:
 
-- universal abstractions without a concrete consumer
-- refcounts to permanent/canonical objects
-- rights merely because a mechanism can theoretically be subdivided
-- IPC when what is actually wanted is readiness notification
-- notifications when actual message data needs transporting
-- fake IPC endpoints merely to represent hardware IRQs
-- a giant generic kobject framework just because several subsystems use handles
+-   universal abstractions without a concrete consumer
+-   refcounts to permanent/canonical objects
+-   rights merely because a mechanism can theoretically be subdivided
+-   IPC when what is actually wanted is readiness notification
+-   notifications when actual message data needs transporting
+-   fake IPC endpoints merely to represent hardware IRQs
+-   a giant generic kobject framework just because several subsystems
+    use handles
 
 Prefer:
 
-```text
+``` text
 small typed subsystems
 simple uint64 handles
 caps for authority
@@ -984,28 +750,57 @@ minimal ring0 mechanism
 
 Useful rules:
 
-> If object A stores a handle to REFCOUNTED object B beyond the current operation, A should normally retain B and release it when that relationship ends.
+> If object A stores a handle to REFCOUNTED object B beyond the current
+> operation, A should normally retain B and release it when that
+> relationship ends.
 
 > A cap object normally has exactly one owner: its capset.
 
-> Moving a cap changes ownership. Deriving/copying a cap creates a new cap.
+> Moving a cap changes ownership. Deriving/copying a cap creates a new
+> cap.
 
-> Notifications never know who signals them. Producers know how to signal notifications.
+> Notifications never know who signals them. Producers know how to
+> signal notifications.
 
-> DEAD and FREE are different states for objects where outstanding references can exist.
+> DEAD and FREE are different states for objects where outstanding
+> references can exist.
 
 And, critically:
 
-> Don't implement the cool fucking pager before the boring fucking ELF loader works.
+> Don't implement the cool fucking pager before the boring fucking ELF
+> loader works.
 
+# OTHER IMPORTANT WORK
 
+## Capability transfer
 
-Other important stuff:
-    Want to implement cap transfer - which means caps for address spaces, threads, CPU cores and such
-    Then of course sending caps over IPC - something like SYS_IPC_SEND_CAPS and SYS_IPC_RECV_CAPS which just exchange a number of words plus some caps
-        I'm pondering if i can make a number of syscalls like SYS_IPC_SEND_CAP, SYS_IPC_SEND_2CAPS, ...
-            Then just wrap it in libsharkix
+Want to implement cap transfer. This means exposing appropriate
+capability-controlled objects such as address spaces, threads, CPU
+cores, and related objects as needed.
 
+Then support sending capabilities over IPC, conceptually something like:
 
-NOTE:
-    Should fix the error number system so we have more meaningful error numbers instead of using -1 all over the place as we do right now
+``` text
+SYS_IPC_SEND_CAPS
+SYS_IPC_RECV_CAPS
+```
+
+These would exchange the ordinary message words plus capabilities.
+
+Possible deliberately simple syscall surface:
+
+``` text
+SYS_IPC_SEND_CAP
+SYS_IPC_SEND_2CAPS
+...
+```
+
+with nicer wrapping in libsharkix.
+
+Do not settle the exact syscall family until the object/cap-transfer
+semantics underneath it are clear.
+
+## Error numbers
+
+Fix the error-number system so Sharkix has meaningful typed/defined
+errors instead of returning `-1` all over the place.
