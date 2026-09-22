@@ -141,8 +141,10 @@ int kirq_create(irq_handle_t *out, uint32_t hwirq) {
     int result;
 
     irq = kmalloc(sizeof(*irq));
-    if (!irq)
-        return -1;
+    if (!irq) {
+        kmutex_unlock(&global_irq_table_lock);
+	return -1; // TODO: we should probably return a memory allocation error or consider a kpanic or a generic OOM or something here
+    }
 
     memset(irq, 0, sizeof(*irq));
 
@@ -151,11 +153,10 @@ int kirq_create(irq_handle_t *out, uint32_t hwirq) {
 
     result = kirq_insert_locked(irq);
 
-    kmutex_unlock(&global_irq_table_lock);
-
-    if (result != 0) {
-        kfree(irq);
-        return -1;
+    if(result != 0) {
+       kfree(irq);
+       kmutex_unlock(&global_irq_table_lock);
+       return -1;
     }
 
     kspin_lock(&hwirq_table_lock);
@@ -165,6 +166,7 @@ int kirq_create(irq_handle_t *out, uint32_t hwirq) {
     kspin_unlock(&hwirq_table_lock);
 
     *out = irq->handle;
+    kmutex_unlock(&global_irq_table_lock);
     return 0;
 }
 
