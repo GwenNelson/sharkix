@@ -80,7 +80,7 @@ int knotify_create(notify_handle_t *out) {
 
     memset(notify, 0, sizeof(*notify));
     notify->references = 1; /* The global table owns the initial reference. */
-    kmutex_init(&notify->lock);
+    kspin_init(&notify->lock);
     ksem_init(&notify->sem, 0);
 
     kmutex_lock(&global_notify_table_lock);
@@ -129,6 +129,19 @@ int knotify_destroy(notify_handle_t handle) {
     return 0;
 }
 
+void knotify_signal_ref(notify_t *notify, uint64_t bits) {
+    kirq_flags_t flags;
+
+    if (!notify || bits == 0)
+        return;
+
+    flags = kspin_lock_irqsave(&notify->lock);
+    notify->pending |= bits;
+    kspin_unlock_irqrestore(&notify->lock, flags);
+
+    ksem_post(&notify->sem);
+}
+
 int knotify_signal(notify_handle_t handle, uint64_t bits) {
     notify_t *notify;
 
@@ -136,17 +149,10 @@ int knotify_signal(notify_handle_t handle, uint64_t bits) {
         return -1;
 
     notify = knotify_acquire(handle);
-
     if (!notify)
         return -1;
 
-    kmutex_lock(&notify->lock);
-    notify->pending |= bits;
-    kmutex_unlock(&notify->lock);
-
-    if (bits)
-        ksem_post(&notify->sem);
-
+    knotify_signal_ref(notify, bits);
     knotify_release(notify);
     return 0;
 }
@@ -163,13 +169,13 @@ int knotify_wait(notify_handle_t handle, uint64_t bits) {
         return -1;
 
     for (;;) {
-        kmutex_lock(&notify->lock);
+        kirq_flags_t flags = kspin_lock_irqsave(&notify->lock);
         if (notify->pending & bits) {
-            kmutex_unlock(&notify->lock);
+            kspin_unlock_irqrestore(&notify->lock, flags);
             knotify_release(notify);
             return 0;
         }
-        kmutex_unlock(&notify->lock);
+        kspin_unlock_irqrestore(&notify->lock, flags);
 
         ksem_wait(&notify->sem);
     }
@@ -186,9 +192,9 @@ int knotify_poll(notify_handle_t handle, uint64_t *out_bits) {
     if (!notify)
         return -1;
 
-    kmutex_lock(&notify->lock);
+    kirq_flags_t flags = kspin_lock_irqsave(&notify->lock);
     *out_bits = notify->pending;
-    kmutex_unlock(&notify->lock);
+    kspin_unlock_irqrestore(&notify->lock, flags);
 
     knotify_release(notify);
     return 0;
@@ -205,9 +211,9 @@ int knotify_ack(notify_handle_t handle, uint64_t bits) {
     if (!notify)
         return -1;
 
-    kmutex_lock(&notify->lock);
+    kirq_flags_t flags = kspin_lock_irqsave(&notify->lock);
     notify->pending &= ~bits;
-    kmutex_unlock(&notify->lock);
+    kspin_unlock_irqrestore(&notify->lock, flags);
 
     knotify_release(notify);
     return 0;

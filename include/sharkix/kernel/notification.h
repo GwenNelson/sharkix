@@ -16,7 +16,7 @@ typedef struct notify_t {
 
 	uint64_t pending;
 
-	kmutex_t     lock;
+	kspinlock_t  lock;
 	ksemaphore_t sem;
     
 	UT_hash_handle hh;
@@ -30,6 +30,8 @@ int knotify_destroy(notify_handle_t handle);
 // Notification-specific lifetime references for persistent kernel bindings
 notify_t *knotify_acquire(notify_handle_t handle);
 void knotify_release(notify_t *notify);
+/* Caller must hold a reference; this operation is safe from IRQ context. */
+void knotify_signal_ref(notify_t *notify, uint64_t bits);
 
 // raise the bits specified
 int knotify_signal(notify_handle_t handle, uint64_t bits);

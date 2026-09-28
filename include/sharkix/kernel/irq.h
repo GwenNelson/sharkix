@@ -19,6 +19,12 @@ typedef uint64_t irq_handle_t;
 #define IRQ_INVALID_HANDLE ((irq_handle_t)UINT64_MAX)
 #define IRQ_COUNT          16
 
+typedef struct irq_notify_binding {
+    notify_t *notify;
+    uint64_t bits;
+    struct irq_notify_binding *next;
+} irq_notify_binding_t;
+
 typedef struct irq_t {
     irq_handle_t handle;
     uint32_t     hwirq;
@@ -34,6 +40,9 @@ typedef struct irq_t {
 
     /* Per-hardware-IRQ listener list. */
     struct irq_t *irq_next;
+
+    /* Protected by the hardware IRQ table spinlock. */
+    irq_notify_binding_t *notify_bindings;
 } irq_t;
 
 void kirq_init(void);
@@ -44,6 +53,12 @@ int kirq_destroy(irq_handle_t handle);
 
 int kirq_wait(irq_handle_t handle);
 int kirq_ack(irq_handle_t handle);
+
+int kirq_bind_notify(irq_handle_t irq,
+                     notify_handle_t notify,
+                     uint64_t bits);
+int kirq_unbind_notify(irq_handle_t irq,
+                       notify_handle_t notify);
 
 
 

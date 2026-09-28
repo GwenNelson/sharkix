@@ -83,6 +83,16 @@ static void kirq_detach_hwirq_locked(irq_t *irq) {
     }
 }
 
+static void kirq_free_notify_bindings(irq_notify_binding_t *bindings) {
+    while (bindings) {
+        irq_notify_binding_t *next = bindings->next;
+
+        knotify_release(bindings->notify);
+        kfree(bindings);
+        bindings = next;
+    }
+}
+
 void kirq_init(void) {
     global_irq_table = NULL;
     next_irq_handle = 1;
@@ -126,6 +136,8 @@ static int kirq_find_by_hwirq(irq_handle_t* out, uint32_t hwirq) {
 }
 
 int kirq_create(irq_handle_t *out, uint32_t hwirq) {
+    kirq_flags_t flags;
+
     if (!out || hwirq >= IRQ_COUNT)
          return -1;
 
@@ -159,11 +171,11 @@ int kirq_create(irq_handle_t *out, uint32_t hwirq) {
        return -1;
     }
 
-    kspin_lock(&hwirq_table_lock);
+    flags = kspin_lock_irqsave(&hwirq_table_lock);
 
     kirq_attach_hwirq_locked(irq);
 
-    kspin_unlock(&hwirq_table_lock);
+    kspin_unlock_irqrestore(&hwirq_table_lock, flags);
 
     *out = irq->handle;
     kmutex_unlock(&global_irq_table_lock);
@@ -222,11 +234,24 @@ int kirq_destroy(irq_handle_t handle) {
     if (handle == IRQ_INVALID_HANDLE)
         return -1;
 
-    // if it doesn't exist, we should still error out
-    irq_t irq;
-    if(kirq_get(handle, &irq) != 0) {
-       return -1;
+    irq_t *irq;
+    irq_notify_binding_t *free_bindings = NULL;
+    kirq_flags_t flags;
+
+    kmutex_lock(&global_irq_table_lock);
+    irq = kirq_find_locked(handle);
+    if (!irq) {
+        kmutex_unlock(&global_irq_table_lock);
+        return -1;
     }
+
+    flags = kspin_lock_irqsave(&hwirq_table_lock);
+    free_bindings = irq->notify_bindings;
+    irq->notify_bindings = NULL;
+    kspin_unlock_irqrestore(&hwirq_table_lock, flags);
+    kmutex_unlock(&global_irq_table_lock);
+
+    kirq_free_notify_bindings(free_bindings);
 
     // we don't actually destroy IRQs, because that's nonsense
     // but we should still do the above checks
@@ -237,20 +262,126 @@ int kirq_destroy(irq_handle_t handle) {
 
 void kirq_handle(uint64_t hwirq) {
     irq_t *irq;
+    irq_notify_binding_t *binding;
+    kirq_flags_t flags;
 
     if (hwirq >= IRQ_COUNT)
         return;
 
-    kspin_lock(&hwirq_table_lock);
+    flags = kspin_lock_irqsave(&hwirq_table_lock);
 
     irq = hwirq_table[hwirq];
-
     while (irq) {
         ksem_post(&irq->sem);
+
+        for (binding = irq->notify_bindings;
+             binding;
+             binding = binding->next) {
+            knotify_signal_ref(binding->notify, binding->bits);
+        }
+
         irq = irq->irq_next;
     }
 
-    kspin_unlock(&hwirq_table_lock);
+    kspin_unlock_irqrestore(&hwirq_table_lock, flags);
+}
+
+int kirq_bind_notify(irq_handle_t irq_handle,
+                     notify_handle_t notify_handle,
+                     uint64_t bits) {
+    irq_notify_binding_t *binding;
+    irq_notify_binding_t *new_binding;
+    notify_t *notify;
+    irq_t *irq;
+    kirq_flags_t flags;
+
+    if (irq_handle == IRQ_INVALID_HANDLE ||
+        notify_handle == NOTIFY_INVALID_HANDLE || bits == 0)
+        return -1;
+
+    notify = knotify_acquire(notify_handle);
+    if (!notify)
+        return -1;
+
+    new_binding = kmalloc(sizeof(*new_binding));
+    if (!new_binding) {
+        knotify_release(notify);
+        return -1;
+    }
+
+    new_binding->notify = notify;
+    new_binding->bits = bits;
+    new_binding->next = NULL;
+
+    kmutex_lock(&global_irq_table_lock);
+    irq = kirq_find_locked(irq_handle);
+    if (!irq) {
+        kmutex_unlock(&global_irq_table_lock);
+        kfree(new_binding);
+        knotify_release(notify);
+        return -1;
+    }
+
+    flags = kspin_lock_irqsave(&hwirq_table_lock);
+    for (binding = irq->notify_bindings; binding; binding = binding->next) {
+        if (binding->notify == notify) {
+            binding->bits = bits;
+            kspin_unlock_irqrestore(&hwirq_table_lock, flags);
+            kmutex_unlock(&global_irq_table_lock);
+            kfree(new_binding);
+            knotify_release(notify);
+            return 0;
+        }
+    }
+
+    new_binding->next = irq->notify_bindings;
+    irq->notify_bindings = new_binding;
+    kspin_unlock_irqrestore(&hwirq_table_lock, flags);
+    kmutex_unlock(&global_irq_table_lock);
+
+    return 0;
+}
+
+int kirq_unbind_notify(irq_handle_t irq_handle,
+                       notify_handle_t notify_handle) {
+    irq_notify_binding_t **current;
+    irq_notify_binding_t *binding;
+    irq_notify_binding_t *free_binding = NULL;
+    irq_t *irq;
+    kirq_flags_t flags;
+
+    if (irq_handle == IRQ_INVALID_HANDLE ||
+        notify_handle == NOTIFY_INVALID_HANDLE)
+        return -1;
+
+    kmutex_lock(&global_irq_table_lock);
+    irq = kirq_find_locked(irq_handle);
+    if (!irq) {
+        kmutex_unlock(&global_irq_table_lock);
+        return -1;
+    }
+
+    flags = kspin_lock_irqsave(&hwirq_table_lock);
+    current = &irq->notify_bindings;
+    while (*current && (*current)->notify->handle != notify_handle)
+        current = &(*current)->next;
+
+    binding = *current;
+    if (!binding) {
+        kspin_unlock_irqrestore(&hwirq_table_lock, flags);
+        kmutex_unlock(&global_irq_table_lock);
+        return -1;
+    }
+
+    *current = binding->next;
+    binding->next = NULL;
+    free_binding = binding;
+    kspin_unlock_irqrestore(&hwirq_table_lock, flags);
+    kmutex_unlock(&global_irq_table_lock);
+
+    if (free_binding)
+        kirq_free_notify_bindings(free_binding);
+    return 0;
 }
 
 static int pic_eoi(uint32_t hwirq) {
