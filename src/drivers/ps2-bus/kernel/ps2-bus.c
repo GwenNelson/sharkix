@@ -23,9 +23,7 @@ enum {
     PS2BUS_IRQ1_BIT = 0,
     PS2BUS_IRQ12_BIT = 1,
     PS2BUS_PORT1_TX_BIT = 2,
-    PS2BUS_PORT2_TX_BIT = 3,
-    PS2BUS_PORT1_RX_BIT = 4,
-    PS2BUS_PORT2_RX_BIT = 5
+    PS2BUS_PORT2_TX_BIT = 3
 };
 
 #define PS2BUS_READY_BIT (UINT64_C(1) << 63)
@@ -132,19 +130,19 @@ void ps2bus_init(void)
                     &ps2bus_command_port_cap) != 0 ||
         ipc_create(&ps2bus_port1_tx_ep) != IPC_OK ||
         kcap_create(ps2bus_port1_tx_ep, CAP_TYPE_IPC_ENDPOINT,
-                    CAP_RIGHT_IPC_SEND | CAP_RIGHT_GETNAME,
+                    CAP_RIGHT_IPC_RECV | CAP_RIGHT_GETNAME,
                     &ps2bus_port1_tx_cap) != 0 ||
         ipc_create(&ps2bus_port1_rx_ep) != IPC_OK ||
         kcap_create(ps2bus_port1_rx_ep, CAP_TYPE_IPC_ENDPOINT,
-                    CAP_RIGHT_IPC_RECV | CAP_RIGHT_GETNAME,
+                    CAP_RIGHT_IPC_SEND | CAP_RIGHT_GETNAME,
                     &ps2bus_port1_rx_cap) != 0 ||
         ipc_create(&ps2bus_port2_tx_ep) != IPC_OK ||
         kcap_create(ps2bus_port2_tx_ep, CAP_TYPE_IPC_ENDPOINT,
-                    CAP_RIGHT_IPC_SEND | CAP_RIGHT_GETNAME,
+                    CAP_RIGHT_IPC_RECV | CAP_RIGHT_GETNAME,
                     &ps2bus_port2_tx_cap) != 0 ||
         ipc_create(&ps2bus_port2_rx_ep) != IPC_OK ||
         kcap_create(ps2bus_port2_rx_ep, CAP_TYPE_IPC_ENDPOINT,
-                    CAP_RIGHT_IPC_RECV | CAP_RIGHT_GETNAME,
+                    CAP_RIGHT_IPC_SEND | CAP_RIGHT_GETNAME,
                     &ps2bus_port2_rx_cap) != 0 ||
         knotify_create(&ps2bus_ready) != 0 ||
         kcap_create(ps2bus_ready, CAP_TYPE_NOTIFY,
@@ -161,12 +159,8 @@ void ps2bus_init(void)
                          UINT64_C(1) << PS2BUS_IRQ12_BIT) != 0 ||
         ipc_bind_notify(ps2bus_port1_tx_ep, ps2bus_events,
                         UINT64_C(1) << PS2BUS_PORT1_TX_BIT) != IPC_OK ||
-        ipc_bind_notify(ps2bus_port1_rx_ep, ps2bus_events,
-                        UINT64_C(1) << PS2BUS_PORT1_RX_BIT) != IPC_OK ||
         ipc_bind_notify(ps2bus_port2_tx_ep, ps2bus_events,
-                        UINT64_C(1) << PS2BUS_PORT2_TX_BIT) != IPC_OK ||
-        ipc_bind_notify(ps2bus_port2_rx_ep, ps2bus_events,
-                        UINT64_C(1) << PS2BUS_PORT2_RX_BIT) != IPC_OK) {
+                        UINT64_C(1) << PS2BUS_PORT2_TX_BIT) != IPC_OK) {
         console_write("ps2bus capability setup failed\n");
         for (;;) __asm__ volatile ("cli; hlt");
     }
