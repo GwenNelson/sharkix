@@ -7,3 +7,5 @@ QEMU_ARGS += $(QEMU_ACCEL_FLAGS) -m 512M -debugcon stdio $(QEMU_DISPLAY) -no-reb
 
 PLATFORM_DRIVERS += vga-consoled serial-consoled ps2-bus
 
+TIMER_TICK_MS ?= 4
+KERNEL_CPPFLAGS += -DTIMER_TICK_MS=$(TIMER_TICK_MS)

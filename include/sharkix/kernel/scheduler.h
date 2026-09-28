@@ -9,7 +9,6 @@ typedef uint8_t thread_priority_t;
 typedef uint64_t scheduler_tick_t;
 
 #define THREAD_PRIORITY_NORMAL ((thread_priority_t)2U)
-#define SCHEDULER_TICKS_PER_SECOND 10U
 
 int scheduler_init(void);
 void scheduler_start(void) __attribute__((noreturn));

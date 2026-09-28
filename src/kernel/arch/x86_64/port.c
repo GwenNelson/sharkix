@@ -10,6 +10,10 @@
 #define PIC2_DATA 0xa1
 #define PIT_COMMAND 0x43
 #define PIT_CHANNEL0 0x40
+#define PIT_INPUT_HZ 1193182u
+#if TIMER_TICK_MS < 1 || TIMER_TICK_MS > 54
+#error "TIMER_TICK_MS must be between 1 and 54 for the PIT's 16-bit divisor"
+#endif
 #define MSR_EFER 0xc0000080U
 #define MSR_STAR 0xc0000081U
 #define MSR_LSTAR 0xc0000082U
@@ -181,8 +185,8 @@ static void pic_init(void)
 
 static void pit_init(void)
 {
-    uint16_t divisor = (uint16_t)(1193182u / SCHEDULER_TICKS_PER_SECOND);
-    if (!divisor) divisor = 1;
+    uint16_t divisor = (uint16_t)((PIT_INPUT_HZ * TIMER_TICK_MS + 500u) /
+                                  1000u);
     outb(PIT_COMMAND, 0x36);
     outb(PIT_CHANNEL0, (uint8_t)divisor);
     outb(PIT_CHANNEL0, (uint8_t)(divisor >> 8));
