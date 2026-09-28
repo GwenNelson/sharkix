@@ -31,6 +31,27 @@ static bool ipc_queue_pop(ipc_endpoint_t *endpoint,
              return true;
 }
 
+/* Caller holds endpoint->lock. */
+static void ipc_signal_notify_bindings_locked(ipc_endpoint_t *endpoint) {
+             ipc_notify_binding_t *binding;
+
+             for (binding = endpoint->notify_bindings;
+                  binding;
+                  binding = binding->next)
+                 knotify_signal_ref(binding->notify, binding->bits);
+}
+
+/* Called only after the binding list has been detached under endpoint->lock. */
+static void ipc_free_notify_bindings(ipc_notify_binding_t *bindings) {
+             while (bindings) {
+                 ipc_notify_binding_t *next = bindings->next;
+
+                 knotify_release(bindings->notify);
+                 kfree(bindings);
+                 bindings = next;
+             }
+}
+
 
 /*
  * Look up an endpoint and take a reference to it.
@@ -226,6 +247,7 @@ ipc_status_t ipc_subscribe(ipc_handle_t publisher, ipc_handle_t* new_subscriber)
 
 ipc_status_t ipc_destroy(ipc_handle_t handle) {
              ipc_endpoint_t *endpoint;
+             ipc_notify_binding_t *notify_bindings;
              size_t wake_senders;
              size_t wake_receivers;
              size_t i;
@@ -258,6 +280,9 @@ ipc_status_t ipc_destroy(ipc_handle_t handle) {
 
              HASH_DEL(endpoints, endpoint);
 
+             notify_bindings = endpoint->notify_bindings;
+             endpoint->notify_bindings = NULL;
+
              /*
               * These counters represent waiters which have not yet been
               * given a wakeup.
@@ -285,6 +310,8 @@ ipc_status_t ipc_destroy(ipc_handle_t handle) {
              for (i = 0; i < wake_receivers; i++)
                  ksem_post(&endpoint->receiver_sem);
 
+             ipc_free_notify_bindings(notify_bindings);
+
              /*
               * Drop the reference which belonged to the registry.
               *
@@ -294,6 +321,118 @@ ipc_status_t ipc_destroy(ipc_handle_t handle) {
               */
              ipc_release(endpoint);
 
+             return IPC_OK;
+}
+
+ipc_status_t ipc_bind_notify(ipc_handle_t handle,
+                             notify_handle_t notify_handle,
+                             uint64_t bits) {
+             ipc_endpoint_t *endpoint;
+             ipc_notify_binding_t *binding;
+             ipc_notify_binding_t *new_binding;
+             notify_t *notify;
+
+             if (!handle || handle == IPC_INVALID_HANDLE ||
+                 notify_handle == NOTIFY_INVALID_HANDLE || bits == 0)
+                 return IPC_ERR_INVALID;
+
+             notify = knotify_acquire(notify_handle);
+             if (!notify)
+                 return IPC_ERR_NOT_FOUND;
+
+             new_binding = kmalloc(sizeof(*new_binding));
+             if (!new_binding) {
+                 knotify_release(notify);
+                 return IPC_ERR_NO_MEMORY;
+             }
+
+             new_binding->notify = notify;
+             new_binding->bits = bits;
+             new_binding->next = NULL;
+
+             endpoint = ipc_acquire(handle);
+             if (!endpoint) {
+                 kfree(new_binding);
+                 knotify_release(notify);
+                 return IPC_ERR_NOT_FOUND;
+             }
+
+             kmutex_lock(&endpoint->lock);
+
+             if (endpoint->is_shutting_down) {
+                 kmutex_unlock(&endpoint->lock);
+                 ipc_release(endpoint);
+                 kfree(new_binding);
+                 knotify_release(notify);
+                 return IPC_ERR_ENDPOINT_CLOSED;
+             }
+
+             for (binding = endpoint->notify_bindings;
+                  binding;
+                  binding = binding->next) {
+                 if (binding->notify == notify) {
+                     binding->bits = bits;
+                     if (endpoint->queue_count != 0)
+                         knotify_signal_ref(notify, bits);
+                     kmutex_unlock(&endpoint->lock);
+                     ipc_release(endpoint);
+                     kfree(new_binding);
+                     knotify_release(notify);
+                     return IPC_OK;
+                 }
+             }
+
+             new_binding->next = endpoint->notify_bindings;
+             endpoint->notify_bindings = new_binding;
+             if (endpoint->queue_count != 0)
+                 knotify_signal_ref(notify, bits);
+
+             kmutex_unlock(&endpoint->lock);
+             ipc_release(endpoint);
+             return IPC_OK;
+}
+
+ipc_status_t ipc_unbind_notify(ipc_handle_t handle,
+                               notify_handle_t notify_handle) {
+             ipc_endpoint_t *endpoint;
+             ipc_notify_binding_t **current;
+             ipc_notify_binding_t *binding;
+
+             if (!handle || handle == IPC_INVALID_HANDLE ||
+                 notify_handle == NOTIFY_INVALID_HANDLE)
+                 return IPC_ERR_INVALID;
+
+             endpoint = ipc_acquire(handle);
+             if (!endpoint)
+                 return IPC_ERR_NOT_FOUND;
+
+             kmutex_lock(&endpoint->lock);
+
+             if (endpoint->is_shutting_down) {
+                 kmutex_unlock(&endpoint->lock);
+                 ipc_release(endpoint);
+                 return IPC_ERR_ENDPOINT_CLOSED;
+             }
+
+             current = &endpoint->notify_bindings;
+             while (*current && (*current)->notify->handle != notify_handle)
+                 current = &(*current)->next;
+
+             binding = *current;
+             if (!binding) {
+                 kmutex_unlock(&endpoint->lock);
+                 ipc_release(endpoint);
+                 return IPC_ERR_NOT_FOUND;
+             }
+
+             *current = binding->next;
+             binding->next = NULL;
+
+             kmutex_unlock(&endpoint->lock);
+
+             knotify_release(binding->notify);
+             kfree(binding);
+             ipc_release(endpoint);
              return IPC_OK;
 }
 
@@ -313,6 +452,8 @@ static ipc_status_t ipc_enqueue_blocking(ipc_endpoint_t *endpoint,
                  }
 
                  if (ipc_queue_push(endpoint, queued)) {
+                     ipc_signal_notify_bindings_locked(endpoint);
+
                      /*
                       * Wake exactly one receiver if one is waiting.
                       *
@@ -368,6 +509,8 @@ static ipc_status_t ipc_enqueue_nonblocking(ipc_endpoint_t *endpoint,
                  kmutex_unlock(&endpoint->lock);
                  return IPC_ERR_CANCELLED;
              }
+
+             ipc_signal_notify_bindings_locked(endpoint);
 
              if (endpoint->waiting_receivers) {
                  endpoint->waiting_receivers--;

@@ -7,6 +7,7 @@
 #include <sharkix/kernel/sync.h>
 #include <sharkix/kernel/thread.h>
 #include <sharkix/kernel/uthash.h>
+#include <sharkix/kernel/notification.h>
 
 typedef uint64_t ipc_handle_t;
 
@@ -44,6 +45,12 @@ typedef struct ipc_subscription_t {
 	ipc_handle_t subscriber;
 	ipc_subscription_t *next;
 } ipc_subscription_t;
+
+typedef struct ipc_notify_binding {
+	notify_t *notify;
+	uint64_t bits;
+	struct ipc_notify_binding *next;
+} ipc_notify_binding_t;
 
 // it is important to NOT directly mess with the contents of this struct outside of the IPC functions for multiple reasons
 typedef struct ipc_endpoint_t {
@@ -91,6 +98,9 @@ typedef struct ipc_endpoint_t {
 	 */
 	ipc_subscription_t *subscribers;
 
+	/* Protected by lock; each binding owns a notification reference. */
+	ipc_notify_binding_t *notify_bindings;
+
 	UT_hash_handle hh;
 } ipc_endpoint_t;
 
@@ -111,6 +121,12 @@ ipc_status_t ipc_create_publisher(ipc_handle_t *handle);
 
 // creates a new PUBSUB subscriber endpoint, subscribed to an existing publisher
 ipc_status_t ipc_subscribe(ipc_handle_t publisher, ipc_handle_t* new_subscriber);
+
+ipc_status_t ipc_bind_notify(ipc_handle_t endpoint,
+                             notify_handle_t notify,
+                             uint64_t bits);
+ipc_status_t ipc_unbind_notify(ipc_handle_t endpoint,
+                               notify_handle_t notify);
 
 ipc_status_t ipc_send(thread_t* caller, ipc_handle_t handle, const ipc_message_t *message);
 ipc_status_t ipc_send_nb(thread_t* caller, ipc_handle_t handle, const ipc_message_t *message);

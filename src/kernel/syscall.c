@@ -283,6 +283,57 @@ SHARKIX_SYSCALL_IMPL(IPC_TRY_RECV) {
 	return syscall_return();
 }
 
+SHARKIX_SYSCALL_IMPL(IPC_BIND_NOTIFY) {
+    thread_t *caller = thread_current();
+    kobject_handle_t endpoint_obj_handle;
+    kobject_handle_t notify_obj_handle;
+
+    if (!caller || !caller->address_space ||
+        kcapset_resolve_handle(caller->address_space->capset,
+                               (cap_handle_t)ctx->rdi,
+                               CAP_TYPE_IPC_ENDPOINT,
+                               CAP_RIGHT_IPC_RECV,
+                               &endpoint_obj_handle) != 0 ||
+        kcapset_resolve_handle(caller->address_space->capset,
+                               (cap_handle_t)ctx->rsi,
+                               CAP_TYPE_NOTIFY,
+                               CAP_RIGHT_NOTIFY_SIGNAL,
+                               &notify_obj_handle) != 0) {
+        ctx->rax = (uint64_t)IPC_ERR_PERMISSION;
+        return syscall_return();
+    }
+
+    ctx->rax = (uint64_t)ipc_bind_notify((ipc_handle_t)endpoint_obj_handle,
+                                         (notify_handle_t)notify_obj_handle,
+                                         (uint64_t)ctx->rdx);
+    return syscall_return();
+}
+
+SHARKIX_SYSCALL_IMPL(IPC_UNBIND_NOTIFY) {
+    thread_t *caller = thread_current();
+    kobject_handle_t endpoint_obj_handle;
+    kobject_handle_t notify_obj_handle;
+
+    if (!caller || !caller->address_space ||
+        kcapset_resolve_handle(caller->address_space->capset,
+                               (cap_handle_t)ctx->rdi,
+                               CAP_TYPE_IPC_ENDPOINT,
+                               CAP_RIGHT_IPC_RECV,
+                               &endpoint_obj_handle) != 0 ||
+        kcapset_resolve_handle(caller->address_space->capset,
+                               (cap_handle_t)ctx->rsi,
+                               CAP_TYPE_NOTIFY,
+                               CAP_RIGHT_NOTIFY_SIGNAL,
+                               &notify_obj_handle) != 0) {
+        ctx->rax = (uint64_t)IPC_ERR_PERMISSION;
+        return syscall_return();
+    }
+
+    ctx->rax = (uint64_t)ipc_unbind_notify((ipc_handle_t)endpoint_obj_handle,
+                                           (notify_handle_t)notify_obj_handle);
+    return syscall_return();
+}
+
 /*
  * input:
  *     RDI = VMO cap
