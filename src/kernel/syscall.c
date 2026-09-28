@@ -8,6 +8,7 @@
 #include "portio.h"
 #include "vmo.h"
 #include "irq.h"
+#include "notification.h"
 
 static uint64_t announced_a;
 static uint64_t announced_b;
@@ -883,6 +884,179 @@ SHARKIX_SYSCALL_IMPL(IRQ_ACK) {
        return syscall_return();
     }
     ctx->rax = kirq_ack(handle);
+    return syscall_return();
+}
+
+SHARKIX_SYSCALL_IMPL(IRQ_BIND) {
+    thread_t *caller = thread_current();
+    kobject_handle_t irq_obj_handle;
+    kobject_handle_t notify_obj_handle;
+    cap_handle_t irq_cap = (cap_handle_t)ctx->rdi;
+    cap_handle_t notify_cap = (cap_handle_t)ctx->rsi;
+
+    if (!caller || !caller->address_space ||
+        kcapset_resolve_handle(caller->address_space->capset,
+                               irq_cap,
+                               CAP_TYPE_IRQ,
+                               CAP_RIGHT_IRQ_ACK,
+                               &irq_obj_handle) != 0 ||
+        kcapset_resolve_handle(caller->address_space->capset,
+                               notify_cap,
+                               CAP_TYPE_NOTIFY,
+                               CAP_RIGHT_NOTIFY_SIGNAL,
+                               &notify_obj_handle) != 0) {
+        ctx->rax = (uint64_t)IRQ_ERR_PERMISSION;
+        return syscall_return();
+    }
+
+    ctx->rax = (uint64_t)kirq_bind_notify((irq_handle_t)irq_obj_handle,
+                                          (notify_handle_t)notify_obj_handle,
+                                          (uint64_t)ctx->rdx);
+    return syscall_return();
+}
+
+SHARKIX_SYSCALL_IMPL(IRQ_UNBIND) {
+    thread_t *caller = thread_current();
+    kobject_handle_t irq_obj_handle;
+    kobject_handle_t notify_obj_handle;
+    cap_handle_t irq_cap = (cap_handle_t)ctx->rdi;
+    cap_handle_t notify_cap = (cap_handle_t)ctx->rsi;
+
+    if (!caller || !caller->address_space ||
+        kcapset_resolve_handle(caller->address_space->capset,
+                               irq_cap,
+                               CAP_TYPE_IRQ,
+                               CAP_RIGHT_IRQ_ACK,
+                               &irq_obj_handle) != 0 ||
+        kcapset_resolve_handle(caller->address_space->capset,
+                               notify_cap,
+                               CAP_TYPE_NOTIFY,
+                               CAP_RIGHT_NOTIFY_SIGNAL,
+                               &notify_obj_handle) != 0) {
+        ctx->rax = (uint64_t)IRQ_ERR_PERMISSION;
+        return syscall_return();
+    }
+
+    ctx->rax = (uint64_t)kirq_unbind_notify((irq_handle_t)irq_obj_handle,
+                                            (notify_handle_t)notify_obj_handle);
+    return syscall_return();
+}
+
+SHARKIX_SYSCALL_IMPL(NOTIFY_CREATE) {
+    thread_t *caller = thread_current();
+    notify_handle_t notify = NOTIFY_INVALID_HANDLE;
+    cap_handle_t cap = CAP_INVALID_HANDLE;
+
+    if (!caller || !caller->address_space || knotify_create(&notify) != 0) {
+        ctx->rax = (uint64_t)-1;
+        ctx->rdi = (uint64_t)CAP_INVALID_HANDLE;
+        return syscall_return();
+    }
+
+    if (kcap_create((kobject_handle_t)notify,
+                    CAP_TYPE_NOTIFY,
+                    CAP_NOTIFY_VALID_RIGHTS,
+                    &cap) != 0) {
+        knotify_destroy(notify);
+        ctx->rax = (uint64_t)-1;
+        ctx->rdi = (uint64_t)CAP_INVALID_HANDLE;
+        return syscall_return();
+    }
+
+    if (kcapset_addcap(caller->address_space->capset, cap) != 0) {
+        kcap_destroy(cap);
+        knotify_destroy(notify);
+        ctx->rax = (uint64_t)-1;
+        ctx->rdi = (uint64_t)CAP_INVALID_HANDLE;
+        return syscall_return();
+    }
+
+    ctx->rax = 0;
+    ctx->rdi = (uint64_t)cap;
+    return syscall_return();
+}
+
+SHARKIX_SYSCALL_IMPL(NOTIFY_WAIT) {
+    thread_t *caller = thread_current();
+    kobject_handle_t notify_obj_handle;
+    cap_handle_t notify_cap = (cap_handle_t)ctx->rdi;
+
+    if (!caller || !caller->address_space ||
+        kcapset_resolve_handle(caller->address_space->capset,
+                               notify_cap,
+                               CAP_TYPE_NOTIFY,
+                               CAP_RIGHT_NOTIFY_WAIT,
+                               &notify_obj_handle) != 0) {
+        ctx->rax = (uint64_t)-1;
+        return syscall_return();
+    }
+
+    ctx->rax = (uint64_t)knotify_wait((notify_handle_t)notify_obj_handle,
+                                      (uint64_t)ctx->rsi);
+    return syscall_return();
+}
+
+SHARKIX_SYSCALL_IMPL(NOTIFY_POLL) {
+    thread_t *caller = thread_current();
+    kobject_handle_t notify_obj_handle;
+    uint64_t pending = 0;
+    cap_handle_t notify_cap = (cap_handle_t)ctx->rdi;
+
+    ctx->rdx = 0;
+    if (!caller || !caller->address_space ||
+        kcapset_resolve_handle(caller->address_space->capset,
+                               notify_cap,
+                               CAP_TYPE_NOTIFY,
+                               CAP_RIGHT_NOTIFY_WAIT,
+                               &notify_obj_handle) != 0) {
+        ctx->rax = (uint64_t)-1;
+        return syscall_return();
+    }
+
+    ctx->rax = (uint64_t)knotify_poll((notify_handle_t)notify_obj_handle,
+                                      &pending);
+    if (ctx->rax == 0)
+        ctx->rdx = pending;
+    return syscall_return();
+}
+
+SHARKIX_SYSCALL_IMPL(NOTIFY_ACK) {
+    thread_t *caller = thread_current();
+    kobject_handle_t notify_obj_handle;
+    cap_handle_t notify_cap = (cap_handle_t)ctx->rdi;
+
+    if (!caller || !caller->address_space ||
+        kcapset_resolve_handle(caller->address_space->capset,
+                               notify_cap,
+                               CAP_TYPE_NOTIFY,
+                               CAP_RIGHT_NOTIFY_ACK,
+                               &notify_obj_handle) != 0) {
+        ctx->rax = (uint64_t)-1;
+        return syscall_return();
+    }
+
+    ctx->rax = (uint64_t)knotify_ack((notify_handle_t)notify_obj_handle,
+                                     (uint64_t)ctx->rsi);
+    return syscall_return();
+}
+
+SHARKIX_SYSCALL_IMPL(NOTIFY_SIGNAL) {
+    thread_t *caller = thread_current();
+    kobject_handle_t notify_obj_handle;
+    cap_handle_t notify_cap = (cap_handle_t)ctx->rdi;
+
+    if (!caller || !caller->address_space ||
+        kcapset_resolve_handle(caller->address_space->capset,
+                               notify_cap,
+                               CAP_TYPE_NOTIFY,
+                               CAP_RIGHT_NOTIFY_SIGNAL,
+                               &notify_obj_handle) != 0) {
+        ctx->rax = (uint64_t)-1;
+        return syscall_return();
+    }
+
+    ctx->rax = (uint64_t)knotify_signal((notify_handle_t)notify_obj_handle,
+                                        (uint64_t)ctx->rsi);
     return syscall_return();
 }
 
