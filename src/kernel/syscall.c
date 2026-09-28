@@ -250,6 +250,39 @@ SHARKIX_SYSCALL_IMPL(IPC_RECV) {
 	return syscall_return();
 }
 
+SHARKIX_SYSCALL_IMPL(IPC_TRY_RECV) {
+	thread_t* caller = thread_current();
+	ipc_message_t msg;
+
+	cap_handle_t src_cap = (cap_handle_t)ctx->rdi;
+	kobject_handle_t obj_handle;
+
+	if (kcapset_resolve_handle(caller->address_space->capset,
+				   src_cap,
+				   CAP_TYPE_IPC_ENDPOINT,
+				   CAP_RIGHT_IPC_RECV,
+				   &obj_handle) != 0) {
+		ctx->rax = IPC_ERR_PERMISSION;
+		return syscall_return();
+	}
+
+	ipc_handle_t endpoint = (ipc_handle_t)obj_handle;
+	ipc_status_t status   = ipc_recv_nb(endpoint,&msg);
+	
+	if(status == IPC_OK) {
+		ctx->rax = (uint64_t)msg.type;
+		ctx->rdi = (uint64_t)msg.sender_tid;
+		ctx->rsi = (uint64_t)msg.words[0];
+		ctx->rdx = (uint64_t)msg.words[1];
+		ctx->r10 = (uint64_t)msg.words[2];
+		ctx->r8  = (uint64_t)msg.words[3];
+		ctx->r9  = (uint64_t)msg.words[4];
+	} else {
+		ctx->rax = (uint64_t)status;
+	}
+	return syscall_return();
+}
+
 /*
  * input:
  *     RDI = VMO cap
