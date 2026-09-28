@@ -27,7 +27,7 @@ void knotify_init(void);
 int knotify_create(notify_handle_t *out);
 int knotify_destroy(notify_handle_t handle);
 
-/* Notification-specific lifetime references for persistent kernel bindings. */
+// Notification-specific lifetime references for persistent kernel bindings
 notify_t *knotify_acquire(notify_handle_t handle);
 void knotify_release(notify_t *notify);
 

@@ -13,6 +13,7 @@
 #include "sync.h"
 #include "kvalloc.h"
 #include "vmo.h"
+#include "notification.h"
 #include "irq.h"
 #include "ipc_registry.h"
 
@@ -45,6 +46,7 @@ void kernel_high_entry(uint32_t magic, uint32_t info)
     kipc_registry_init();
     kpmem_init();
     kportio_init();
+    knotify_init();
     kirq_init();
     kinit_caps();
     kvalloc_init();

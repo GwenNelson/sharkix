@@ -5,6 +5,7 @@
 #include <sharkix/kernel/uthash.h>
 #include <sharkix/kernel/sync.h>
 
+#include <sharkix/kernel/notification.h>
 
 typedef enum irq_status_t {
 #define SHARKIX_ERRNO(name,value,msg) name = value,
@@ -43,6 +44,8 @@ int kirq_destroy(irq_handle_t handle);
 
 int kirq_wait(irq_handle_t handle);
 int kirq_ack(irq_handle_t handle);
+
+
 
 /*
  * Called by the architecture interrupt dispatcher when a hardware IRQ fires.
