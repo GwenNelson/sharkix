@@ -3,7 +3,6 @@
 #include "sharkix/kernel/boot/multiboot1.h"
 #include "arch.h"
 #include "console.h"
-#include "console-serial.h"
 #include "memory.h"
 #include "pmem.h"
 #include "portio.h"

@@ -11,7 +11,6 @@
 #include "thread.h"
 #include <sharkix/kernel/pmem.h>
 #include <sharkix/kernel/portio.h>
-#include <sharkix/kernel/console-vga.h>
 #include <sharkix/ddk/console-driver.h>
 
 
