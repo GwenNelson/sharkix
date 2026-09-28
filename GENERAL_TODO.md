@@ -511,3 +511,32 @@ And, critically:
 
 > Don't implement the cool fucking pager before the boring fucking ELF loader
 > works.
+
+
+## other stuff
+
+Stuff that didn't fit into above sections or which i only just remembered when 
+first creating this file with AI assistance goes below here....
+
+## Generic registry
+
+Add a generic named-object registry alongside the existing IPC registry.
+
+Do NOT replace or generalize the IPC registry yet. Keep the two concepts
+separate unless experience shows they genuinely want to converge.
+
+Initial purpose:
+
+- provide stable names for non-IPC kernel objects/resources;
+- allow init/driver metadata to refer to resources by name;
+- support things such as IRQ, PortIO, VMO, notification, address-space,
+  factory, or other capability-controlled objects as real consumers appear.
+
+Conceptually:
+
+```text
+generic registry:
+    name -> object handle
+
+IPC registry:
+    name -> IPC rendezvous/service endpoint
