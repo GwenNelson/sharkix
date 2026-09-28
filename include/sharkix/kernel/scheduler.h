@@ -10,6 +10,8 @@ typedef uint64_t scheduler_tick_t;
 
 #define THREAD_PRIORITY_NORMAL ((thread_priority_t)2U)
 
+extern uint64_t ticks_so_far;
+
 int scheduler_init(void);
 void scheduler_start(void) __attribute__((noreturn));
 int scheduler_make_runnable(struct thread *thread);

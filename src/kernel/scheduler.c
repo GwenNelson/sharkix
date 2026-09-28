@@ -12,6 +12,8 @@ static thread_t *idle_thread;
 static scheduler_tick_t current_tick;
 static unsigned scheduler_started;
 
+uint64_t ticks_so_far;
+
 static void idle_entry(void *argument)
 {
     (void)argument;
@@ -221,6 +223,7 @@ uintptr_t scheduler_on_yield(uintptr_t saved_context)
 uintptr_t scheduler_on_tick(uintptr_t saved_context)
 {
     ++current_tick;
+    ticks_so_far += 1;
     wake_expired_sleepers_locked();
     return switch_from_current_locked(saved_context);
 }

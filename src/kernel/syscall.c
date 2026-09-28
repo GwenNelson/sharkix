@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include "console.h"
 #include "thread.h"
+#include "scheduler.h"
 #include "syscall.h"
 #include "errno.h"
 #include "ipc.h"
@@ -50,6 +51,11 @@ static syscall_disposition_t syscall_return(void)
 static syscall_disposition_t syscall_block(void)
 {
     return SYSCALL_DISPOSITION_BLOCK;
+}
+
+SHARKIX_SYSCALL_IMPL(TIMER_MONOTONIC) {
+    ctx->rax = ticks_so_far * (uint64_t)TIMER_TICK_MS;
+    return syscall_return();
 }
 
 static portio_status_t syscall_portio_resolve(syscall_ctx_t *ctx,
