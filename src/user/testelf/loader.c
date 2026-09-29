@@ -1,9 +1,10 @@
 #include <stdint.h>
 
 #include <sharkix/libsharkix/syscalls.h>
+#include <sharkix/elf64.h>
 
 // where we map the source VMO in our own space, 64 TiB - this should accomodate any realistic ELF we could ever encounter in practice
-#define TARGET_BASE 0x0000400000000000 
+#define ELF_LOAD_BASE 0x0000400000000000 
 
 // TODO - at some point we really need to move a lot of this stuff into libsharkix
 //        perhaps a shared ABI header for all the caps and other stuff?
@@ -40,9 +41,8 @@ int map_vmo_self(uint64_t vmo, uintptr_t vaddr, uint64_t offset, uint64_t len, u
 	return regs.rax;
 }
 
-/* TODO: Replace this function with the userspace ELF loader. */
-int elf_load(uint64_t source_vmo, uint64_t target_as, uint64_t *entry_out) {
-	// let's map the source VMO into our space
+int elf_load(uint64_t source_vmo, uint64_t target_as, uint64_t elf_file_len, uint64_t *entry_out) {
+	// sanity checks first, get length etc
 	uint64_t page_len=0;
 	if(get_vmo_pagelen(source_vmo,&page_len) != 0) {
 		sharkix_debug_puts("\nERROR! Could not get_vmo_pagelen()!\n");
@@ -52,12 +52,94 @@ int elf_load(uint64_t source_vmo, uint64_t target_as, uint64_t *entry_out) {
 		sharkix_debug_puts("\nERROR! The ELF is 0 bytes long???\n");
 		return -1;
 	}
-	if(map_vmo_self(source_vmo,TARGET_BASE,0,page_len,VMO_READ) != 0) {
+
+	if(page_len < elf_file_len) {
+		sharkix_debug_puts("\nERROR! Somehow the ELF's page-rounded length is shorter than the logical length???\n");
+		return -1;
+	}
+
+	// now we can map the VMO, yay
+	if(map_vmo_self(source_vmo,ELF_LOAD_BASE,0,page_len,VMO_READ) != 0) {
 		sharkix_debug_puts("\nERROR! Could not map_vmo_self()!\n");
 		return -1;
 	}
 
-	(void)source_vmo;
+	// and now we're able to do the serious work here
+	sharkix_debug_puts("\nParsing ELF....\n");
+
+	uint8_t *elf    = (void *)ELF_LOAD_BASE;
+	size_t elf_len  = elf_file_len;
+
+	if(elf_len < sizeof(Elf64_Ehdr)) {
+		sharkix_debug_puts("\nERROR! The ELF is too small for even the header!\n");
+		return -1;
+	}
+
+	Elf64_Ehdr* ehdr = (Elf64_Ehdr*)elf;
+
+	// check if there's a dead boyfriend involved here
+	if((elf[0] != 0x7F) || (elf[1] != 'E') || (elf[2] != 'L') || (elf[3] != 'F')) {
+		sharkix_debug_puts("\n");
+		sharkix_debug_puts("ERROR! Owens sisters apparently created this file - the magic is wrong\n");
+		sharkix_debug_puts("       Please rebuild this file before Jimmy Angelov ends up as a vengeful spirit\n");
+		sharkix_debug_puts("       If you don't get the reference, you suck and have no culture\n"); // seriously, you suck
+		return -1;
+	}
+
+
+	// ensure other fields are sane
+	if(ehdr->e_ident[EI_CLASS] != ELFCLASS64) {
+		sharkix_debug_puts("\nERROR! ELF is not 64-bit\n");
+		return -1;
+	}
+
+	if(ehdr->e_ident[EI_DATA] != ELFDATA2LSB) {
+		sharkix_debug_puts("\nERROR! ELF is not little-endian\n");
+		return -1;
+	}
+
+	if(ehdr->e_ident[EI_VERSION] != EV_CURRENT ||
+	   ehdr->e_version != EV_CURRENT) {
+		sharkix_debug_puts("\nERROR! Unsupported ELF version\n");
+		return -1;
+	}
+
+	if(ehdr->e_machine != EM_X86_64) {
+		sharkix_debug_puts("\nERROR! ELF is not for x86-64\n");
+		return -1;
+	}
+
+	if(ehdr->e_type != ET_EXEC) {
+		sharkix_debug_puts("\nERROR! ELF is not an executable\n");
+		return -1;
+	}
+
+	if(ehdr->e_ehsize != sizeof(Elf64_Ehdr)) {
+		sharkix_debug_puts("\nERROR! Unexpected ELF header size\n");
+		return -1;
+	}
+
+	if(ehdr->e_phentsize != sizeof(Elf64_Phdr)) {
+		sharkix_debug_puts("\nERROR! Unexpected ELF program header size\n");
+		return -1;
+	}
+
+	/* Make sure the program header table starts inside the file. */
+	if(ehdr->e_phoff > elf_len) {
+		sharkix_debug_puts("\nERROR! Program header table is outside the ELF\n");
+		return -1;
+	}
+
+	/*
+	 * Check that the entire program header table fits without doing an
+	 * overflow-prone e_phoff + e_phnum * e_phentsize calculation.
+	 */
+	if(ehdr->e_phnum >
+	   (elf_len - ehdr->e_phoff) / sizeof(Elf64_Phdr)) {
+		sharkix_debug_puts("ERROR! Program header table extends past EOF\n");
+		return -1;
+	}
+
 	(void)target_as;
 	(void)entry_out;
 	return -1;
@@ -100,7 +182,7 @@ void testelf_loader_main(uint64_t *bootstrap, uint64_t elf_file_len) {
 	uint64_t target_as_cap  = caps[1];
 	uint64_t ipc_status_cap = caps[2];
 
-	status = elf_load(source_vmo_cap, target_as_cap, &entry);
+	status = elf_load(source_vmo_cap, target_as_cap, elf_file_len, &entry);
 	if(status == 0) {
 		send_status(ipc_status_cap,0,entry); // SUCCESS!
 	} else {

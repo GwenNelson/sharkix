@@ -36,6 +36,22 @@ typedef struct {
     uint64_t p_align;
 } Elf64_Phdr;
 
+#define ELFCLASS64    2
+#define ELFDATA2LSB   1
+#define EV_CURRENT    1
+#define EM_X86_64     62  /* 0x3E */
+
+#define EI_MAG0       0
+#define EI_MAG1       1
+#define EI_MAG2       2
+#define EI_MAG3       3
+#define EI_CLASS      4
+#define EI_DATA       5
+#define EI_VERSION    6
+#define EI_OSABI      7
+#define EI_ABIVERSION 8
+#define ET_EXEC 2
+
 #define PT_LOAD 1
 
 #define PF_X 1
