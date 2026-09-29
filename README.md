@@ -26,3 +26,24 @@ Technology moves on, the author is pro-AI.
 On the copyright side of things - good luck trying to find what parts are codex vs what parts are me, and trying to figure out what parts you can attempt to violate the GPL on. I'd recommend you just NOT DO THAT.
 
 Don't be a dick
+
+An example of how i've used codex:
+
+```c
+void somefunc(void) {
+     // CODEX BEGIN
+     //  Please implement this function, it must do:
+     //   1. bla bla
+     //   2. bla bla bla
+     //  CODEX END
+}
+```
+
+Then i prompt codex with "please look in file src/something/whatever.c and read the comments marked CODEX BEGIN and CODEX END and restrict your changes to those parts only".
+
+I am documenting this because I don't want someone insisting that the whole thing is not my work at some point in future - it is in fact my work, i'm just speeding up the slower annoying parts.
+I review what codex spits out, often edit and refactor, and then commit it.
+
+I also have made a point of no longer marking specifically what codex did and what I did, because it's too much of a mix.
+
+So to be clear, you will NOT be able to find some argument that this is somehow not my work and that the GPL therefore doesn't apply - don't be a dick :)
