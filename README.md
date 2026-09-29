@@ -1,0 +1,16 @@
+# Sharkix
+
+Sharkix is an OS project built around a capability-based microkernel.
+
+The core microkernel enforces permissions via capabilities - all syscalls work via capability handles only, never directly on hardware resources - and drivers are as far as possible implemented in userspace.
+
+At present, it is x86_64/amd64 only, but the longer term goal is to be cross platform.
+
+Beyond that, the goal is to provide for different personality layers that are easy to implement,by providing different syscall tables from userspace. This will start with a unix-like environment, as is traditional
+in the osdev community, but should be flexible enough for any design.
+
+The design is heavily inspired by seL4, but with some changes due to the author's preferences - for example, there is no such thing as a root task, instead there is an init system (or rather, will be - still under development).
+
+The init system will read metadata from ELF files in initrd and sort dependency ordering for drivers and system services, eventually producing the actual OS environment and personality layer.
+
+By default, tasks in initrd can acquire whatever their metadata says they require - but no more. This is intended as a halfway choice between a strict root task only and "everything goes".
