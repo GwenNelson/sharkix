@@ -131,6 +131,7 @@ typedef uint64_t cap_rights_t;
                                   CAP_RIGHT_IRQ_WAIT       | \
                                   CAP_RIGHT_IRQ_ACK)
 
+// knotify specific perms
 #define CAP_RIGHT_NOTIFY_WAIT    (UINT64_C(1) << 10)
 #define CAP_RIGHT_NOTIFY_SIGNAL  (UINT64_C(1) << 11)
 #define CAP_RIGHT_NOTIFY_ACK     (UINT64_C(1) << 12)
@@ -140,6 +141,16 @@ typedef uint64_t cap_rights_t;
 				  CAP_RIGHT_NOTIFY_SIGNAL | \
 				  CAP_RIGHT_NOTIFY_ACK )
 
+
+//address-space specific perms
+#define CAP_RIGHT_AS_MAP	 (UINT64_C(1) << 10)
+#define CAP_RIGHT_AS_UNMAP	 (UINT64_C(1) << 11)
+#define CAP_RIGHT_AS_PROTECT	 (UINT64_C(1) << 12)
+
+#define CAP_AS_VALID_RIGHTS	 (CAP_GENERIC_VALID_RIGHTS | \
+				  CAP_RIGHT_AS_MAP | \
+				  CAP_RIGHT_AS_UNMAP | \
+				  CAP_RIGHT_AS_PROTECT)
 
 // helpers
 #define CAP_HAS_ALL(cap, required) \
@@ -179,6 +190,7 @@ typedef enum cap_type_t {
 	CAP_TYPE_PORTIO       = 4,
 	CAP_TYPE_IRQ          = 5,
 	CAP_TYPE_NOTIFY       = 6,
+	CAP_TYPE_AS	      = 7,
 } cap_type_t;
 
 // represents an inividual cap
