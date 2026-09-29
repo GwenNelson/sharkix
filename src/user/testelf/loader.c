@@ -12,6 +12,8 @@
 #define VMO_WRITE 0x4
 #define VMO_EXEC  0x8
 
+#define PAGE_SIZE 4096
+
 int get_vmo_pagelen(uint64_t vmo, uint64_t *outlen) {
 	sharkix_syscall_regs_t regs = { 0 };
 	regs.rax = (uint64_t)SYSCALL_VM_GETLEN;
@@ -36,6 +38,21 @@ int map_vmo_self(uint64_t vmo, uintptr_t vaddr, uint64_t offset, uint64_t len, u
 	regs.r10 = (uint64_t)len;
 	regs.r8  = (uint64_t)map_rights;
 	regs.r9  = (uint64_t)0;
+
+	(void)sharkix_syscall(&regs);
+	return regs.rax;
+}
+
+int map_vmo_target(uint64_t as, uint64_t vmo, uint64_t vaddr, uint64_t offs, uint64_t len, uint64_t map_rights) {
+	sharkix_syscall_regs_t regs = { 0 };
+
+	regs.rax = (uint64_t)SYSCALL_AS_MAP;
+	regs.rdi = as;
+	regs.rsi = vmo;
+	regs.rdx = vaddr;
+	regs.r10 = offs;
+	regs.r8  = len;
+	regs.r9  = map_rights;
 
 	(void)sharkix_syscall(&regs);
 	return regs.rax;
@@ -124,7 +141,7 @@ int elf_load(uint64_t source_vmo, uint64_t target_as, uint64_t elf_file_len, uin
 		return -1;
 	}
 
-	/* Make sure the program header table starts inside the file. */
+	// Make sure the program header table starts inside the file
 	if(ehdr->e_phoff > elf_len) {
 		sharkix_debug_puts("\nERROR! Program header table is outside the ELF\n");
 		return -1;
@@ -136,13 +153,113 @@ int elf_load(uint64_t source_vmo, uint64_t target_as, uint64_t elf_file_len, uin
 	 */
 	if(ehdr->e_phnum >
 	   (elf_len - ehdr->e_phoff) / sizeof(Elf64_Phdr)) {
-		sharkix_debug_puts("ERROR! Program header table extends past EOF\n");
+		sharkix_debug_puts("\nERROR! Program header table extends past EOF\n");
 		return -1;
 	}
 
-	(void)target_as;
-	(void)entry_out;
-	return -1;
+	Elf64_Phdr *phdrs = (Elf64_Phdr *)(elf + ehdr->e_phoff);
+
+	for(uint16_t i = 0; i < ehdr->e_phnum; i++) {
+		Elf64_Phdr *phdr = &phdrs[i];
+
+		if(phdr->p_type != PT_LOAD)
+			continue;
+
+		// file data must fit inside the ELF
+		if(phdr->p_offset > elf_len ||
+		   phdr->p_filesz > elf_len - phdr->p_offset) {
+			sharkix_debug_puts("\nERROR! ELF segment extends past EOF\n");
+			return -1;
+		}
+
+		// the in-memory segment cannot be smaller than its file contents
+		if(phdr->p_filesz > phdr->p_memsz) {
+			sharkix_debug_puts("\nERROR! ELF segment has filesz > memsz\n");
+			return -1;
+		}
+
+		// an empty segment gives us nothing to map
+		if(phdr->p_memsz == 0)
+			continue;
+
+		/*
+		 * p_vaddr doesn't have to begin on a page boundary.
+		 *
+		 * If, for example:
+		 *
+		 *     p_vaddr = 0x401234
+		 *
+		 * then we actually map from 0x401000 and put the first byte
+		 * of the segment 0x234 bytes into the backing VMO.
+		 */
+		uint64_t page_vaddr = phdr->p_vaddr & ~(PAGE_SIZE - 1);
+		uint64_t page_offset = phdr->p_vaddr - page_vaddr;
+
+		// make sure page_offset + p_memsz cannot wrap
+		if(phdr->p_memsz > UINT64_MAX - page_offset) {
+			sharkix_debug_puts("\nERROR! ELF segment size overflows address space\n");
+			return -1;
+		}
+
+		uint64_t segment_size = page_offset + phdr->p_memsz;
+
+		// round up to whole pages, checking that the rounding cannot wrap
+		if(segment_size > UINT64_MAX - (PAGE_SIZE - 1)) {
+			sharkix_debug_puts("\nERROR! ELF segment size overflows during page alignment\n");
+			return -1;
+		}
+
+		uint64_t vmo_size =
+		    (segment_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+
+		// also make sure the virtual address range itself doesn't wrap
+		if(vmo_size > UINT64_MAX - page_vaddr) {
+			sharkix_debug_puts("\nERROR! ELF segment virtual address range overflows\n");
+			return -1;
+		}
+
+		/*
+		 * Convert ELF permissions into sharkix VMO flags
+		 */
+		uint64_t prot = 0;
+
+		if(phdr->p_flags & PF_R)
+			prot |= VMO_READ;
+
+		if(phdr->p_flags & PF_W)
+			prot |= VMO_WRITE;
+
+		if(phdr->p_flags & PF_X)
+			prot |= VMO_EXEC;
+
+		// calculate where to map the thing
+
+		uint64_t file_page = phdr->p_offset & ~(PAGE_SIZE - 1);
+		page_vaddr = phdr->p_vaddr & ~(PAGE_SIZE - 1);
+
+		page_offset = phdr->p_vaddr - page_vaddr;
+
+		uint64_t file_map_size = page_offset + phdr->p_filesz;
+
+		file_map_size = (file_map_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+	
+		if(map_vmo_target(target_as,source_vmo,page_vaddr,file_page,file_map_size,prot) != 0) {
+			sharkix_debug_puts("\nERROR! Failed map_vmo_target()!\n");
+			return -1;
+		}	
+
+
+	}
+
+	sharkix_debug_puts("\nELF LOADED! Returning to kernel\n");
+	/*
+	 * Loading succeeded. The ELF entry point is a virtual address in
+	 * target_as; the loader doesn't jump there itself.
+	 */
+	*entry_out = ehdr->e_entry;
+
+	return 0;
+
 }
 
 static void send_status(uint64_t status_ipc, uint64_t status, uint64_t entry) {
