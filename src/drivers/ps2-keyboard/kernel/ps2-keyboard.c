@@ -9,7 +9,6 @@
 #include "program.h"
 #include "thread.h"
 #include <sharkix/kernel/notification.h>
-#include <sharkix/kernel/ps2-keyboard.h>
 
 enum {
     PS2_KEYBOARD_BOOTSTRAP_CAPS = 6,

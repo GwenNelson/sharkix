@@ -1,6 +1,5 @@
 #include <stddef.h>
 #include <stdint.h>
-#include "sharkix/kernel/boot/multiboot1.h"
 #include "arch.h"
 #include "console.h"
 #include "memory.h"
@@ -24,15 +23,8 @@ static void kernel_start_task(void *argument)
     thread_exit_current();
 }
 
-void kernel_high_entry(uint32_t magic, uint32_t info)
+void kmain(void)
 {
-    (void)magic; (void)info;
-    console_init_early();
-    console_write("SharkKernel x86_64\n");
-    console_write("kernel virtual base: 0xffffffff80000000\n");
-    console_write("physmap base:        0xffff800000000000\n");
-    console_write("kernel heap base:    0xffffc00000000000\n");
-    memory_init(magic, info);
     arch_init_cpu_local();
     arch_init_syscalls();
     if (scheduler_init() != 0) {
