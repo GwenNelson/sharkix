@@ -483,6 +483,52 @@ fail:
 /*
  * input:
  *     RDI = VMO cap
+ *
+ * return:
+ *     RAX = status
+ *     RDX = VMO backing length on success, 0 on failure
+ */
+SHARKIX_SYSCALL_IMPL(VM_GETLEN) {
+    thread_t *caller;
+    cap_handle_t vmo_cap;
+    kobject_handle_t vmo_obj_handle;
+    size_t length;
+
+    caller = thread_current();
+    vmo_cap = (cap_handle_t)ctx->rdi;
+
+    if (caller == NULL || caller->address_space == NULL ||
+        vmo_cap == CAP_INVALID_HANDLE) {
+        ctx->rax = VM_ERR_INVALID;
+        goto fail;
+    }
+
+    if (kcapset_resolve_handle(caller->address_space->capset,
+                               vmo_cap,
+                               CAP_TYPE_VMO,
+                               CAP_RIGHT_VMO_GETLEN,
+                               &vmo_obj_handle) != 0) {
+        ctx->rax = VM_ERR_PERMISSION;
+        goto fail;
+    }
+
+    if (kvmo_getlen((vmo_handle_t)vmo_obj_handle, &length) != 0) {
+        ctx->rax = VM_ERR_NOT_FOUND;
+        goto fail;
+    }
+
+    ctx->rax = VM_OK;
+    ctx->rdx = (uint64_t)length;
+    return syscall_return();
+
+fail:
+    ctx->rdx = 0;
+    return syscall_return();
+}
+
+/*
+ * input:
+ *     RDI = VMO cap
  *     RSI = virtual address
  *
  * return:

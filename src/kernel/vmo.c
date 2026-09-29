@@ -187,6 +187,22 @@ int kvmo_get(vmo_handle_t handle, vmo_t *out)
     return 0;
 }
 
+int kvmo_getlen(vmo_handle_t handle, size_t *out)
+{
+    vmo_t vmo;
+    pmem_t pmem;
+
+    if (out == NULL)
+        return -1;
+
+    if (kvmo_get(handle, &vmo) != 0 ||
+        kpmem_get(vmo.pmem, &pmem) != 0)
+        return -1;
+
+    *out = pmem.length;
+    return 0;
+}
+
 
 /*
  * Destroy the VMO object only.

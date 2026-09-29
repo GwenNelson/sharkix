@@ -107,12 +107,14 @@ typedef uint64_t cap_rights_t;
 #define CAP_RIGHT_VMO_READ      (UINT64_C(1) << 11)
 #define CAP_RIGHT_VMO_WRITE     (UINT64_C(1) << 12)
 #define CAP_RIGHT_VMO_EXEC      (UINT64_C(1) << 13)
+#define CAP_RIGHT_VMO_GETLEN    (UINT64_C(1) << 14)
 
 #define CAP_VMO_VALID_RIGHTS    (CAP_GENERIC_VALID_RIGHTS | \
                                  CAP_RIGHT_VMO_MAP | \
                                  CAP_RIGHT_VMO_READ | \
                                  CAP_RIGHT_VMO_WRITE | \
-                                 CAP_RIGHT_VMO_EXEC)
+                                 CAP_RIGHT_VMO_EXEC | \
+                                 CAP_RIGHT_VMO_GETLEN)
 
 // x86 I/O-port specific perms
 #define CAP_RIGHT_PORTIO_READ   (UINT64_C(1) << 10)

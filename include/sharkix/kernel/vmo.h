@@ -150,6 +150,9 @@ int kvmo_create(vmo_handle_t *out,
 int kvmo_get(vmo_handle_t handle,
              vmo_t *out);
 
+/* Return the length of the VMO's PMEM backing. */
+int kvmo_getlen(vmo_handle_t handle, size_t *out);
+
 
 /*
  * Map part of a VMO into an address space.
