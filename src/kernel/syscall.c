@@ -8,6 +8,7 @@
 #include "caps.h"
 #include "portio.h"
 #include "vmo.h"
+#include "as.h"
 #include "irq.h"
 #include "notification.h"
 
@@ -537,6 +538,257 @@ SHARKIX_SYSCALL_IMPL(VM_UNMAP) {
     ctx->rax = VM_OK;
 done:
     return syscall_return();
+}
+
+/*
+ * input:
+ *     RDI = AS cap
+ *     RSI = VMO cap
+ *     RDX = virtual address
+ *     R10 = offset into VMO
+ *     R8  = length
+ *     R9  = mapping rights
+ *
+ * return:
+ *     RAX = status
+ *     RDX = mapped virtual address on success, 0 on failure
+ */
+SHARKIX_SYSCALL_IMPL(AS_MAP) {
+	thread_t *caller;
+	address_space_t *target_as;
+	cap_handle_t as_cap;
+	cap_handle_t vmo_cap;
+	cap_rights_t required_cap_rights;
+	kobject_handle_t as_obj_handle;
+	kobject_handle_t vmo_obj_handle;
+	vmo_handle_t vmo_handle;
+	uintptr_t va;
+	size_t offset;
+	size_t length;
+	vmo_rights_t rights;
+
+	caller = thread_current();
+	if (caller == NULL || caller->address_space == NULL) {
+		ctx->rax = VM_ERR_INVALID;
+		goto fail;
+	}
+
+	as_cap = (cap_handle_t)ctx->rdi;
+	vmo_cap = (cap_handle_t)ctx->rsi;
+	va = (uintptr_t)ctx->rdx;
+	offset = (size_t)ctx->r10;
+	length = (size_t)ctx->r8;
+	rights = (vmo_rights_t)ctx->r9;
+
+	if (as_cap == CAP_INVALID_HANDLE || vmo_cap == CAP_INVALID_HANDLE ||
+	    length == 0 || va == 0 ||
+	    (rights & ~(VMO_READ | VMO_WRITE | VMO_EXEC)) ||
+	    !(rights & VMO_READ)) {
+		ctx->rax = VM_ERR_INVALID;
+		goto fail;
+	}
+
+	if (kcapset_resolve_handle(caller->address_space->capset,
+	                           as_cap,
+	                           CAP_TYPE_AS,
+	                           CAP_RIGHT_AS_MAP,
+	                           &as_obj_handle) != 0) {
+		ctx->rax = VM_ERR_PERMISSION;
+		goto fail;
+	}
+
+	if (kas_lookup((as_handle_t)as_obj_handle, &target_as) != 0) {
+		ctx->rax = VM_ERR_NOT_FOUND;
+		goto fail;
+	}
+
+	required_cap_rights = CAP_RIGHT_VMO_MAP;
+	if (rights & VMO_READ)
+		required_cap_rights |= CAP_RIGHT_VMO_READ;
+	if (rights & VMO_WRITE)
+		required_cap_rights |= CAP_RIGHT_VMO_WRITE;
+	if (rights & VMO_EXEC)
+		required_cap_rights |= CAP_RIGHT_VMO_EXEC;
+
+	if (kcapset_resolve_handle(caller->address_space->capset,
+	                           vmo_cap,
+	                           CAP_TYPE_VMO,
+	                           required_cap_rights,
+	                           &vmo_obj_handle) != 0) {
+		ctx->rax = VM_ERR_PERMISSION;
+		goto fail;
+	}
+
+	vmo_handle = (vmo_handle_t)vmo_obj_handle;
+	if (kvmo_map(vmo_handle, target_as, va, offset, length, rights) != 0) {
+		ctx->rax = VM_ERR_INVALID;
+		goto fail;
+	}
+
+	ctx->rax = VM_OK;
+	ctx->rdx = (uint64_t)va;
+	goto done;
+
+fail:
+	ctx->rdx = 0;
+done:
+	return syscall_return();
+}
+
+/*
+ * input:
+ *     RDI = AS cap
+ *     RSI = VMO cap
+ *     RDX = virtual address
+ *
+ * return:
+ *     RAX = status
+ */
+SHARKIX_SYSCALL_IMPL(AS_UNMAP) {
+	thread_t *caller;
+	address_space_t *target_as;
+	cap_handle_t as_cap;
+	cap_handle_t vmo_cap;
+	kobject_handle_t as_obj_handle;
+	kobject_handle_t vmo_obj_handle;
+	vmo_handle_t vmo_handle;
+	vmo_t vmo_desc;
+	uintptr_t va;
+
+	caller = thread_current();
+	if (caller == NULL || caller->address_space == NULL) {
+		ctx->rax = VM_ERR_INVALID;
+		return syscall_return();
+	}
+
+	as_cap = (cap_handle_t)ctx->rdi;
+	vmo_cap = (cap_handle_t)ctx->rsi;
+	va = (uintptr_t)ctx->rdx;
+	if (as_cap == CAP_INVALID_HANDLE || vmo_cap == CAP_INVALID_HANDLE) {
+		ctx->rax = VM_ERR_INVALID;
+		return syscall_return();
+	}
+
+	if (kcapset_resolve_handle(caller->address_space->capset,
+	                           as_cap,
+	                           CAP_TYPE_AS,
+	                           CAP_RIGHT_AS_UNMAP,
+	                           &as_obj_handle) != 0) {
+		ctx->rax = VM_ERR_PERMISSION;
+		return syscall_return();
+	}
+
+	if (kas_lookup((as_handle_t)as_obj_handle, &target_as) != 0) {
+		ctx->rax = VM_ERR_NOT_FOUND;
+		return syscall_return();
+	}
+
+	if (kcapset_resolve_handle(caller->address_space->capset,
+	                           vmo_cap,
+	                           CAP_TYPE_VMO,
+	                           0,
+	                           &vmo_obj_handle) != 0) {
+		ctx->rax = VM_ERR_PERMISSION;
+		return syscall_return();
+	}
+
+	vmo_handle = (vmo_handle_t)vmo_obj_handle;
+	if (kvmo_get(vmo_handle, &vmo_desc) != 0) {
+		ctx->rax = VM_ERR_NOT_MAPPED;
+		return syscall_return();
+	}
+
+	if (kvmo_unmap_at(vmo_handle, target_as, va) != 0) {
+		ctx->rax = VM_ERR_ADDRESS;
+		return syscall_return();
+	}
+
+	ctx->rax = VM_OK;
+	return syscall_return();
+}
+
+/*
+ * input:
+ *     RDI = AS cap
+ *     RSI = VMO cap
+ *     RDX = virtual address
+ *     R10 = length
+ *     R8  = new mapping rights
+ *
+ * return:
+ *     RAX = status
+ */
+SHARKIX_SYSCALL_IMPL(AS_PROTECT) {
+	thread_t *caller;
+	address_space_t *target_as;
+	cap_handle_t as_cap;
+	cap_handle_t vmo_cap;
+	cap_rights_t required_cap_rights;
+	kobject_handle_t as_obj_handle;
+	kobject_handle_t vmo_obj_handle;
+	vmo_handle_t vmo_handle;
+	uintptr_t va;
+	size_t length;
+	vmo_rights_t rights;
+
+	caller = thread_current();
+	if (caller == NULL || caller->address_space == NULL) {
+		ctx->rax = VM_ERR_INVALID;
+		return syscall_return();
+	}
+
+	as_cap = (cap_handle_t)ctx->rdi;
+	vmo_cap = (cap_handle_t)ctx->rsi;
+	va = (uintptr_t)ctx->rdx;
+	length = (size_t)ctx->r10;
+	rights = (vmo_rights_t)ctx->r8;
+	if (as_cap == CAP_INVALID_HANDLE || vmo_cap == CAP_INVALID_HANDLE ||
+	    length == 0 || va == 0 ||
+	    (rights & ~(VMO_READ | VMO_WRITE | VMO_EXEC)) ||
+	    !(rights & VMO_READ)) {
+		ctx->rax = VM_ERR_INVALID;
+		return syscall_return();
+	}
+
+	if (kcapset_resolve_handle(caller->address_space->capset,
+	                           as_cap,
+	                           CAP_TYPE_AS,
+	                           CAP_RIGHT_AS_PROTECT,
+	                           &as_obj_handle) != 0) {
+		ctx->rax = VM_ERR_PERMISSION;
+		return syscall_return();
+	}
+
+	if (kas_lookup((as_handle_t)as_obj_handle, &target_as) != 0) {
+		ctx->rax = VM_ERR_NOT_FOUND;
+		return syscall_return();
+	}
+
+	required_cap_rights = 0;
+	if (rights & VMO_READ)
+		required_cap_rights |= CAP_RIGHT_VMO_READ;
+	if (rights & VMO_WRITE)
+		required_cap_rights |= CAP_RIGHT_VMO_WRITE;
+	if (rights & VMO_EXEC)
+		required_cap_rights |= CAP_RIGHT_VMO_EXEC;
+
+	if (kcapset_resolve_handle(caller->address_space->capset,
+	                           vmo_cap,
+	                           CAP_TYPE_VMO,
+	                           required_cap_rights,
+	                           &vmo_obj_handle) != 0) {
+		ctx->rax = VM_ERR_PERMISSION;
+		return syscall_return();
+	}
+
+	vmo_handle = (vmo_handle_t)vmo_obj_handle;
+	if (kvmo_protect(vmo_handle, target_as, va, length, rights) != 0) {
+		ctx->rax = VM_ERR_INVALID;
+		return syscall_return();
+	}
+
+	ctx->rax = VM_OK;
+	return syscall_return();
 }
 
 SHARKIX_SYSCALL_IMPL(CAP_TRANSFER) {

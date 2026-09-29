@@ -42,6 +42,7 @@ int kas_register(as_handle_t *out, address_space_t *address_space) {
 		return -1;
 	}
 
+	address_space_retain(address_space);
 	as->handle = next_as_handle++;
 	uint32_t hashv = (uint32_t)as->handle;
 	HASH_ADD_BYHASHVALUE(hh,
@@ -92,6 +93,7 @@ int kas_unregister(as_handle_t handle) {
 	HASH_DEL(address_spaces, as);
 	kmutex_unlock(&address_spaces_lock);
 
+	address_space_release(as->address_space);
 	kfree(as);
 	return 0;
 }
