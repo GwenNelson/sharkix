@@ -14,6 +14,7 @@
 #include "notification.h"
 #include "irq.h"
 #include "ipc_registry.h"
+#include "as.h"
 
 static void kernel_start_task(void *argument)
 {
@@ -42,6 +43,7 @@ void kmain(void)
     kinit_caps();
     kvalloc_init();
     kvmo_init();
+    kas_init();
     kvmoset_new(&(address_space_kernel()->vmoset));
     if (!startup_kernel_thread(kernel_start_task, "kernel-start", THREAD_PRIORITY_NORMAL))
         arch_halt();
