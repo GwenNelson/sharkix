@@ -7,6 +7,7 @@
 
 _start:
     movq %rsp, %rdi
+    movq 32(%rsp), %rsi
     andq $-16, %rsp
     call testelf_loader_main
 

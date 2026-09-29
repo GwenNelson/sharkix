@@ -14,7 +14,7 @@
 #include "vmo.h"
 
 enum {
-    TESTELF_BOOTSTRAP_WORDS = 4,
+    TESTELF_BOOTSTRAP_WORDS = 5,
     TESTELF_BOOTSTRAP_BYTES = TESTELF_BOOTSTRAP_WORDS * sizeof(uint64_t)
 };
 
@@ -146,7 +146,8 @@ void kernel_startup_profile(void) {
 		ipc_create(&status_endpoint) != IPC_OK ||
 		create_loader_task(&loader_as, &loader_thread, &bootstrap) != 0 ||
 		install_named_cap(loader_as, source_vmo, CAP_TYPE_VMO,
-						  CAP_RIGHT_VMO_MAP | CAP_RIGHT_VMO_READ,
+						  CAP_RIGHT_VMO_MAP | CAP_RIGHT_VMO_READ |
+						  CAP_RIGHT_VMO_GETLEN,
 						  "elf.source.vmo", sizeof("elf.source.vmo") - 1,
 						  &source_cap) != 0 ||
 		install_named_cap(loader_as, target_handle, CAP_TYPE_AS,
@@ -165,6 +166,8 @@ void kernel_startup_profile(void) {
 	bootstrap[1] = source_cap;
 	bootstrap[2] = target_cap;
 	bootstrap[3] = status_cap;
+	bootstrap[4] = (uint64_t)(testelf_payload_image_end -
+	                          testelf_payload_image_start);
 
 	if (thread_start(loader_thread) != 0) {
 		console_write("testelf loader thread startup failed\n");

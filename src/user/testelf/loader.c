@@ -11,6 +11,20 @@
 #define VMO_WRITE 0x4
 #define VMO_EXEC  0x8
 
+int get_vmo_pagelen(uint64_t vmo, uint64_t *outlen) {
+	sharkix_syscall_regs_t regs = { 0 };
+	regs.rax = (uint64_t)SYSCALL_VM_GETLEN;
+	regs.rdi = (uint64_t)vmo;
+	(void)sharkix_syscall(&regs);
+	if(regs.rax == 0) {
+		*outlen = regs.rdx; // SUCCESS - correct page-rounded length of the VMO is here
+		return 0;
+	} else {
+		*outlen = 0; // FAIL
+		return -1; // TODO - again, i need to sort out the fucking errno situation
+	}
+}
+
 int map_vmo_self(uint64_t vmo, uintptr_t vaddr, uint64_t offset, uint64_t len, uint64_t map_rights) {
 	sharkix_syscall_regs_t regs = { 0 };
 
@@ -28,8 +42,20 @@ int map_vmo_self(uint64_t vmo, uintptr_t vaddr, uint64_t offset, uint64_t len, u
 
 /* TODO: Replace this function with the userspace ELF loader. */
 int elf_load(uint64_t source_vmo, uint64_t target_as, uint64_t *entry_out) {
-	// first, let's map the source VMO into our space
-	if(map_vmo_self(source_vmo,TARGET_BASE,0
+	// let's map the source VMO into our space
+	uint64_t page_len=0;
+	if(get_vmo_pagelen(source_vmo,&page_len) != 0) {
+		sharkix_debug_puts("\nERROR! Could not get_vmo_pagelen()!\n");
+		return -1;
+	}
+	if(page_len==0) {
+		sharkix_debug_puts("\nERROR! The ELF is 0 bytes long???\n");
+		return -1;
+	}
+	if(map_vmo_self(source_vmo,TARGET_BASE,0,page_len,VMO_READ) != 0) {
+		sharkix_debug_puts("\nERROR! Could not map_vmo_self()!\n");
+		return -1;
+	}
 
 	(void)source_vmo;
 	(void)target_as;
@@ -56,7 +82,7 @@ static void test_exit(void) {
 		__asm__ volatile ("pause");
 }
 
-void testelf_loader_main(uint64_t *bootstrap) {
+void testelf_loader_main(uint64_t *bootstrap, uint64_t elf_file_len) {
 	char *names[] = {
 		"elf.source.vmo",
 		"elf.target.as",
