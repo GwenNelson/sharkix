@@ -13,11 +13,11 @@ $(LIBSHARKIX_KERNEL_ARTIFACT): FORCE
 		$(LIBSHARKIX_KERNEL_ARTIFACT)
 
 KERNEL_C_SRCS += \
- $(KERNEL_MODULE_ROOT)/mb_init.c $(KERNEL_MODULE_ROOT)/main.c $(KERNEL_MODULE_ROOT)/console.c $(KERNEL_MODULE_ROOT)/libc.c $(KERNEL_MODULE_ROOT)/sync.c \
- $(KERNEL_MODULE_ROOT)/memory.c $(KERNEL_MODULE_ROOT)/scheduler.c $(KERNEL_MODULE_ROOT)/thread.c \
- $(KERNEL_MODULE_ROOT)/program.c $(KERNEL_MODULE_ROOT)/syscall.c \
- $(KERNEL_MODULE_ROOT)/kvalloc.c $(KERNEL_MODULE_ROOT)/ipc_registry.c \
+ $(KERNEL_MODULE_ROOT)/mb_init.c \
  $(KERNEL_MODULE_ROOT)/startup/common.c $(PROFILE_SOURCE)
+
+$(call include-module,$(KERNEL_MODULE_ROOT)/core)
+KERNEL_C_SRCS += $(KERNEL_CORE_C_SRCS)
 
 $(call include-module,$(KERNEL_MODULE_ROOT)/subsystems)
 KERNEL_C_SRCS += $(SUBSYSTEM_C_SRCS)
