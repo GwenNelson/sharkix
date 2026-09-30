@@ -810,7 +810,7 @@ SHARKIX_SYSCALL_IMPL(AS_MAP) {
 		goto fail;
 	}
 
-	if (kas_lookup((as_handle_t)as_obj_handle, &target_as) != 0) {
+	if (kas_acquire((as_handle_t)as_obj_handle, &target_as) != 0) {
 		ctx->rax = VM_ERR_NOT_FOUND;
 		goto fail;
 	}
@@ -829,17 +829,21 @@ SHARKIX_SYSCALL_IMPL(AS_MAP) {
 	                           required_cap_rights,
 	                           &vmo_obj_handle) != 0) {
 		ctx->rax = VM_ERR_PERMISSION;
-		goto fail;
+		goto release_target_as;
 	}
 
 	vmo_handle = (vmo_handle_t)vmo_obj_handle;
 	if (kvmo_map(vmo_handle, target_as, va, offset, length, rights) != 0) {
 		ctx->rax = VM_ERR_INVALID;
-		goto fail;
+		goto release_target_as;
 	}
 
 	ctx->rax = VM_OK;
 	ctx->rdx = (uint64_t)va;
+	goto release_target_as;
+
+release_target_as:
+	kas_release(target_as);
 	goto done;
 
 fail:
@@ -891,7 +895,7 @@ SHARKIX_SYSCALL_IMPL(AS_UNMAP) {
 		return syscall_return();
 	}
 
-	if (kas_lookup((as_handle_t)as_obj_handle, &target_as) != 0) {
+	if (kas_acquire((as_handle_t)as_obj_handle, &target_as) != 0) {
 		ctx->rax = VM_ERR_NOT_FOUND;
 		return syscall_return();
 	}
@@ -902,21 +906,24 @@ SHARKIX_SYSCALL_IMPL(AS_UNMAP) {
 	                           0,
 	                           &vmo_obj_handle) != 0) {
 		ctx->rax = VM_ERR_PERMISSION;
-		return syscall_return();
+		goto release_target_as;
 	}
 
 	vmo_handle = (vmo_handle_t)vmo_obj_handle;
 	if (kvmo_get(vmo_handle, &vmo_desc) != 0) {
 		ctx->rax = VM_ERR_NOT_MAPPED;
-		return syscall_return();
+		goto release_target_as;
 	}
 
 	if (kvmo_unmap_at(vmo_handle, target_as, va) != 0) {
 		ctx->rax = VM_ERR_ADDRESS;
-		return syscall_return();
+		goto release_target_as;
 	}
 
 	ctx->rax = VM_OK;
+
+release_target_as:
+	kas_release(target_as);
 	return syscall_return();
 }
 
@@ -972,7 +979,7 @@ SHARKIX_SYSCALL_IMPL(AS_PROTECT) {
 		return syscall_return();
 	}
 
-	if (kas_lookup((as_handle_t)as_obj_handle, &target_as) != 0) {
+	if (kas_acquire((as_handle_t)as_obj_handle, &target_as) != 0) {
 		ctx->rax = VM_ERR_NOT_FOUND;
 		return syscall_return();
 	}
@@ -991,16 +998,19 @@ SHARKIX_SYSCALL_IMPL(AS_PROTECT) {
 	                           required_cap_rights,
 	                           &vmo_obj_handle) != 0) {
 		ctx->rax = VM_ERR_PERMISSION;
-		return syscall_return();
+		goto release_target_as;
 	}
 
 	vmo_handle = (vmo_handle_t)vmo_obj_handle;
 	if (kvmo_protect(vmo_handle, target_as, va, length, rights) != 0) {
 		ctx->rax = VM_ERR_INVALID;
-		return syscall_return();
+		goto release_target_as;
 	}
 
 	ctx->rax = VM_OK;
+
+release_target_as:
+	kas_release(target_as);
 	return syscall_return();
 }
 

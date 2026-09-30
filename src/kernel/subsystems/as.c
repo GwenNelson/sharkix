@@ -57,25 +57,6 @@ int kas_register(as_handle_t *out, address_space_t *address_space) {
 	return 0;
 }
 
-int kas_lookup(as_handle_t handle, address_space_t **out) {
-	as_t *as;
-
-	if (!out || handle == AS_INVALID_HANDLE) {
-		return -1;
-	}
-
-	kmutex_lock(&address_spaces_lock);
-	as = kas_find_locked(handle);
-	if (!as) {
-		kmutex_unlock(&address_spaces_lock);
-		return -1;
-	}
-
-	*out = as->address_space;
-	kmutex_unlock(&address_spaces_lock);
-	return 0;
-}
-
 int kas_acquire(as_handle_t handle, address_space_t **out) {
 	as_t *as;
 

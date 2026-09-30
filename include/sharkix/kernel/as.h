@@ -38,9 +38,6 @@ void kas_init(void);
 // creates a new address space HANDLE, from an existing address_space_t*
 int kas_register(as_handle_t* out, address_space_t* as);
 
-// looks up the actual address_space_t* for a handle and saves it to the out argument
-int kas_lookup(as_handle_t handle, address_space_t** out);
-
 // looks up an address space and retains it until kas_release is called
 int kas_acquire(as_handle_t handle, address_space_t** out);
 
