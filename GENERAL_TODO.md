@@ -23,10 +23,12 @@ environment comes into existence.
 
 ## 2. Add the typed factories needed for generic launch
 
-`CAP_TYPE_FACTORY_VMO` already exists. Add the next narrow typed creation
-authorities needed by a real launcher/init:
+`CAP_TYPE_FACTORY_VMO` already exists. `CAP_TYPE_FACTORY_AS` and the simple
+`AS_CREATE(as_factory) -> as_cap` path are the current implementation step. Add
+the remaining narrow typed creation authorities needed by a real launcher/init:
 
-- `CAP_TYPE_FACTORY_AS` for address-space creation;
+- `CAP_TYPE_FACTORY_AS` for address-space creation, with `AS_CREATE` treated as
+  the straightforward factory operation rather than a new abstraction layer;
 - `CAP_TYPE_FACTORY_THREAD` for schedulable thread creation;
 - expose threads through a lightweight `kthread` managed-object subsystem,
   keeping `core/thread.c` as the scheduler/execution machinery;
@@ -58,6 +60,67 @@ a more elaborate ABI unless a concrete need appears.
 Once generic launch is sufficient, begin the real ring3 init path and let its
 requirements drive the next factories/syscalls. Do not pre-build every
 conceivable creation facility.
+
+
+## Kernel core / subsystem boundary cleanup
+
+After the immediate AS/thread factory and generic-launch work is green, continue
+the source-boundary cleanup so `core/` knows as little as practical about
+particular kernel-managed subsystems.
+
+The intended direction is:
+
+``` text
+core/
+    generic kernel machinery
+    syscall entry/dispatch mechanics
+    scheduler/execution machinery
+    fundamental memory/architecture mechanisms
+
+subsystems/
+    capability-visible managed objects
+    subsystem-specific operations and syscall implementations
+    object-specific lifetime/validation policy
+
+include/sharkix/caps.inc
+    canonical capability type/right ABI declarations
+```
+
+Concrete cleanup work:
+
+- keep syscall entry/dispatch mechanics in core, but move subsystem-specific
+  syscall implementations alongside the subsystem they operate on where this
+  produces a cleaner dependency boundary;
+- avoid a central core syscall implementation file accumulating knowledge of
+  VMO, AS, kthread, notification, IRQ, PortIO, or future subsystem internals;
+- derive capability type enums, rights, valid-right masks, and type-driven
+  validation/dispatch tables from the canonical `caps.inc` declarations rather
+  than maintaining parallel lists in core code;
+- audit remaining switches/tables in core that enumerate concrete capability
+  types and either derive them from `caps.inc` or move the type-specific policy
+  to the owning subsystem;
+- keep capability mechanism generic: capsets/handles/derivation/transfer and
+  authority checks belong in the capability machinery, while semantics of a
+  particular cap target belong to its subsystem;
+- prefer ordinary separately compiled subsystem translation units; do not make
+  subsystem implementations textual `.c` includes merely to remove code from a
+  core source file;
+- do not introduce a universal kobject/OOP dispatch framework to achieve this.
+  Small explicit typed subsystems plus generated ABI declarations are preferred.
+
+Useful dependency smell test:
+
+``` text
+subsystem -> core       normal
+core -> subsystem       justify carefully
+core -> every concrete cap type       refactor target
+```
+
+The goal is not a mathematically pure core. Architecture, scheduler, memory,
+and capability mechanisms will necessarily provide interfaces used by
+subsystems. The goal is to stop generic core machinery from becoming the place
+where knowledge of every Sharkix object type and syscall implementation
+accumulates.
 
 # DRIVER ARCHITECTURE AFTER ELF
 
@@ -146,7 +209,7 @@ Immediate concrete consumers are generic launch/init:
 
 ``` text
 CAP_TYPE_FACTORY_VMO       already exists
-CAP_TYPE_FACTORY_AS        next
+CAP_TYPE_FACTORY_AS        current / AS_CREATE
 CAP_TYPE_FACTORY_THREAD    next
 ```
 
@@ -552,7 +615,9 @@ personality semantics before the boring ELF loader works.
 ``` text
 POSITIVE SYSCALL NAMESPACE CLEANUP
     ↓
-AS FACTORY + KTHREAD/THREAD FACTORY
+AS_CREATE + KTHREAD/THREAD FACTORY
+    ↓
+KERNEL CORE / SUBSYSTEM BOUNDARY CLEANUP AS NEEDED
     ↓
 STANDARD STACK / CAP BOOTSTRAP + GENERIC LAUNCH
     ↓
