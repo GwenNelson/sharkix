@@ -509,6 +509,11 @@ bool phys_alloc_page_below(uint64_t max_phys_addr, uint64_t *out_page)
     return phys_alloc_pages_below(1, max_phys_addr, out_page);
 }
 
+void phys_free_pages(uint64_t base, size_t count) {
+    for (size_t i = 0; i < count; ++i)
+        phys_page_put(base + i * PAGE_SIZE);
+}
+
 void phys_page_get(uint64_t page)
 {
     uint64_t index;

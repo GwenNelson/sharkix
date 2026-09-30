@@ -108,6 +108,69 @@ void kvmo_init(void)
 }
 
 
+/* Create a new anonymous VMO (backed by 0-initialized memory)
+ * This is a fairly lightweight function considered
+ */
+
+
+int kvmo_create_anon(vmo_handle_t *out,
+		     size_t requested_len,
+		     size_t *actual_len,
+		     vmo_rights_t rights) 
+{
+	vmo_t *vmo;
+	if(out == NULL)        return -1;
+	if(actual_len == NULL) return -1;
+
+	if(rights & ~VMO_VALID_RIGHTS) return -1;
+
+	// first, try to grab some pages for the new object
+
+	uint64_t new_pages;
+
+	if(requested_len == 0 || requested_len > SIZE_MAX - (PAGE_SIZE - 1)) return -1;
+
+	size_t rounded = (requested_len + PAGE_SIZE - 1) & ~(size_t)(PAGE_SIZE - 1);
+
+	size_t page_count = rounded / PAGE_SIZE;
+
+	if(!phys_alloc_pages(page_count, &new_pages)) return -1;
+
+	// if we get here, yay! now we can create the new pmem
+	pmem_handle_t pm_handle;
+	if(kpmem_create(&pm_handle,new_pages,rounded) != 0) {
+		// we failed, so free the pages and return an error
+		phys_free_pages(new_pages,page_count);
+		return -1;
+	}
+
+	// now we just create a new VMO using kvmo_create_from_pmem, then we grab it and set owned flag
+	vmo_handle_t new_vmo;
+	if(kvmo_create_from_pmem(&new_vmo, pm_handle, rights) != 0) {
+		// we failed, so destroy the pmem and free the pages
+		kpmem_destroy(pm_handle);
+		phys_free_pages(new_pages,page_count);
+		return -1;
+	}
+
+	// if we get here, YAY!
+	// now let's zero the new pages
+	memset(phys_to_virt(new_pages),0,rounded);
+
+	// now we can grab the lock, grab the actual VMO, and set the flag on it
+	kspin_lock(&vmos_lock);
+	vmo = vmo_lookup_locked(new_vmo);
+	if(!vmo) {
+		memory_panic("New anonymous VMO vanished!"); // this should actually NEVER happen, but just in case....
+	}
+	vmo->owns_pmem = true;
+	kspin_unlock(&vmos_lock);
+	*out        = new_vmo;
+	*actual_len = rounded;
+	return 0;
+}
+
+
 /*
  * Create a new VMO.
  *

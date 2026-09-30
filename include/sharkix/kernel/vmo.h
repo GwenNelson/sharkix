@@ -2,6 +2,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #include <sharkix/kernel/pmem.h>
 #include <sharkix/kernel/sync.h>
@@ -68,13 +69,15 @@ typedef enum vm_status_t {
  * Future VMO implementations may use other forms of backing.
  */
 typedef struct vmo_t {
-    vmo_handle_t  handle;
-    vmo_rights_t  rights;
+	vmo_handle_t  handle;
+	vmo_rights_t  rights;
 
-    /* PMEM backing for the current implementation. */
-    pmem_handle_t pmem;
+	/* PMEM backing for the current implementation. */
+	pmem_handle_t pmem;
 
-    UT_hash_handle hh;
+	bool owns_pmem; // used for anon mappings
+
+	UT_hash_handle hh;
 } vmo_t;
 
 
@@ -130,7 +133,7 @@ void kvmo_init(void);
  * Create a new VMO backed by 0-initialized VMO
  *
  * This is basically the same as kvmo_create_from_pmem below
- * except the new VMO is newly allocate memory full of 0s
+ * except the new VMO is newly allocated memory full of 0s
  *
  */
 

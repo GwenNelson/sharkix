@@ -58,6 +58,9 @@ bool phys_alloc_page(uint64_t *out_page);
 bool phys_alloc_pages(size_t count, uint64_t *out_page);
 bool phys_alloc_page_below(uint64_t max_phys_addr, uint64_t *out_page);
 bool phys_alloc_pages_below(size_t count, uint64_t max_phys_addr, uint64_t *out_page);
+
+void phys_free_pages(uint64_t base, size_t count);
+
 void phys_page_get(uint64_t page);
 void phys_page_put(uint64_t page);
 uint64_t phys_pages_in_use(void);
