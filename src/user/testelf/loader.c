@@ -299,7 +299,7 @@ int elf_load(uint64_t source_vmo, uint64_t target_as, uint64_t elf_file_len, uin
 
 			uintptr_t scratch_vaddr = ELF_SCRATCH_BASE - ((uint64_t)i * PAGE_SIZE);
 
-			if(map_vmo_self(mixed_vmo,scratch_vaddr,0,PAGE_SIZE,VMO_WRITE) != 0) {
+			if(map_vmo_self(mixed_vmo,scratch_vaddr,0,PAGE_SIZE,VMO_READ|VMO_WRITE) != 0) {
 				sharkix_debug_puts("\nERROR! Failed to map mixed BSS page into loader!\n");
 				return -1;
 			}
