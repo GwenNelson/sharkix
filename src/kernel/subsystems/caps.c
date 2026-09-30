@@ -36,7 +36,7 @@ static kmutex_t    global_capsets_table_lock;
 
 static int kcap_validate_rights(cap_type_t type, cap_rights_t rights) {
     switch (type) {
-    CASE_TYPE(IPC_ENDPOINT)
+    CASE_TYPE(IPC)
     CASE_TYPE(PMEM)
     CASE_TYPE(VMO)
     CASE_TYPE(PORTIO)
@@ -206,7 +206,7 @@ int kcap_destroy_obj(cap_handle_t handle) {
     }
 
     switch (found->type) {
-    case CAP_TYPE_IPC_ENDPOINT:
+    case CAP_TYPE_IPC:
         status = ipc_destroy(found->obj_handle);
         break;
 

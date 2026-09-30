@@ -149,13 +149,13 @@ void kernel_startup_profile(void)
     if (ipc_create(&completion) != IPC_OK ||
         ipc_create(&control_a) != IPC_OK ||
         ipc_create(&control_b) != IPC_OK ||
-        kcap_create((kobject_handle_t)completion, CAP_TYPE_IPC_ENDPOINT,
+        kcap_create((kobject_handle_t)completion, CAP_TYPE_IPC,
                     CAP_RIGHT_IPC_SEND, &a_completion_cap) != 0 ||
-        kcap_create((kobject_handle_t)completion, CAP_TYPE_IPC_ENDPOINT,
+        kcap_create((kobject_handle_t)completion, CAP_TYPE_IPC,
                     CAP_RIGHT_IPC_SEND, &b_completion_cap) != 0 ||
-        kcap_create((kobject_handle_t)control_a, CAP_TYPE_IPC_ENDPOINT,
+        kcap_create((kobject_handle_t)control_a, CAP_TYPE_IPC,
                     CAP_RIGHT_IPC_RECV, &a_control_cap) != 0 ||
-        kcap_create((kobject_handle_t)control_b, CAP_TYPE_IPC_ENDPOINT,
+        kcap_create((kobject_handle_t)control_b, CAP_TYPE_IPC,
                     CAP_RIGHT_IPC_RECV, &b_control_cap) != 0 ||
         create_user_task(&image_a, "vmuser-a", &as_a, &task_a,
                          &bootstrap_a) != 0 ||

@@ -103,11 +103,11 @@ void kernel_startup_profile(void)
         ipc_create(&endpoint2) != IPC_OK ||
         ipc_create(&endpoint3) != IPC_OK ||
         create_user_task(&user_as, &user_thread, &bootstrap) != 0 ||
-        kcap_create(endpoint1, CAP_TYPE_IPC_ENDPOINT, CAP_RIGHT_IPC_SEND,
+        kcap_create(endpoint1, CAP_TYPE_IPC, CAP_RIGHT_IPC_SEND,
                     &cap1) != 0 ||
-        kcap_create(endpoint2, CAP_TYPE_IPC_ENDPOINT, CAP_RIGHT_IPC_RECV,
+        kcap_create(endpoint2, CAP_TYPE_IPC, CAP_RIGHT_IPC_RECV,
                     &cap2) != 0 ||
-        kcap_create(endpoint3, CAP_TYPE_IPC_ENDPOINT, CAP_RIGHT_IPC_SEND,
+        kcap_create(endpoint3, CAP_TYPE_IPC, CAP_RIGHT_IPC_SEND,
                     &cap3) != 0 ||
         kcapset_addcap(user_as->capset, cap1) != 0 ||
         kcapset_addcap(user_as->capset, cap2) != 0 ||

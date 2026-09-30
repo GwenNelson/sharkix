@@ -156,7 +156,7 @@ void kernel_startup_profile(void) {
 						  CAP_RIGHT_AS_MAP | CAP_RIGHT_AS_PROTECT,
 						  "elf.target.as", sizeof("elf.target.as") - 1,
 						  &target_cap) != 0 ||
-		install_named_cap(loader_as, status_endpoint, CAP_TYPE_IPC_ENDPOINT,
+		install_named_cap(loader_as, status_endpoint, CAP_TYPE_IPC,
 						  CAP_RIGHT_IPC_SEND,
 						  "elf.ipc.status", sizeof("elf.ipc.status") - 1,
 						  &status_cap) != 0 || 

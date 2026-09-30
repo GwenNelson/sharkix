@@ -191,7 +191,7 @@ void kernel_startup_profile(void)
         goto failed;
 
     if (kcap_create((kobject_handle_t)endpoint,
-                    CAP_TYPE_IPC_ENDPOINT,
+                    CAP_TYPE_IPC,
                     CAP_RIGHT_IPC_RECV,
                     &consumer_cap) != 0)
         goto failed;
@@ -213,7 +213,7 @@ void kernel_startup_profile(void)
         goto failed;
 
     if (kcap_create((kobject_handle_t)endpoint,
-                    CAP_TYPE_IPC_ENDPOINT,
+                    CAP_TYPE_IPC,
                     CAP_RIGHT_IPC_SEND,
                     &producer_cap) != 0)
         goto failed;

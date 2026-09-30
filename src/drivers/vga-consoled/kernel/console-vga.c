@@ -121,11 +121,11 @@ void console_vga_init(void) {
 
      // setup the endpoints
      if (ipc_subscribe(console_output_pub,&vga_endpoint) != IPC_OK ||
-         kcap_create(vga_endpoint, CAP_TYPE_IPC_ENDPOINT,
+         kcap_create(vga_endpoint, CAP_TYPE_IPC,
                      CAP_RIGHT_IPC_RECV | CAP_RIGHT_GETNAME,
                      &vga_endpoint_cap) != 0 ||
          ipc_create(&vga_ready_endpoint) != IPC_OK ||
-         kcap_create(vga_ready_endpoint, CAP_TYPE_IPC_ENDPOINT,
+         kcap_create(vga_ready_endpoint, CAP_TYPE_IPC,
                      CAP_RIGHT_IPC_SEND | CAP_RIGHT_GETNAME,
                      &vga_ready_endpoint_cap) != 0) {
          console_write("vga-consoled endpoint setup failed\n");

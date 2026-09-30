@@ -85,20 +85,20 @@ void ps2_keyboard_init(void)
         kipc_registry_lookup("ps2.port1.rx", &ps2_keyboard_port1_rx) != 0 ||
         kipc_registry_lookup("ps2.port2.tx", &ps2_keyboard_port2_tx) != 0 ||
         kipc_registry_lookup("ps2.port2.rx", &ps2_keyboard_port2_rx) != 0 ||
-        kcap_create(ps2_keyboard_port1_tx, CAP_TYPE_IPC_ENDPOINT,
+        kcap_create(ps2_keyboard_port1_tx, CAP_TYPE_IPC,
                     CAP_RIGHT_IPC_SEND | CAP_RIGHT_GETNAME,
                     &ps2_keyboard_port1_tx_cap) != 0 ||
-        kcap_create(ps2_keyboard_port1_rx, CAP_TYPE_IPC_ENDPOINT,
+        kcap_create(ps2_keyboard_port1_rx, CAP_TYPE_IPC,
                     CAP_RIGHT_IPC_RECV | CAP_RIGHT_GETNAME,
                     &ps2_keyboard_port1_rx_cap) != 0 ||
-        kcap_create(ps2_keyboard_port2_tx, CAP_TYPE_IPC_ENDPOINT,
+        kcap_create(ps2_keyboard_port2_tx, CAP_TYPE_IPC,
                     CAP_RIGHT_IPC_SEND | CAP_RIGHT_GETNAME,
                     &ps2_keyboard_port2_tx_cap) != 0 ||
-        kcap_create(ps2_keyboard_port2_rx, CAP_TYPE_IPC_ENDPOINT,
+        kcap_create(ps2_keyboard_port2_rx, CAP_TYPE_IPC,
                     CAP_RIGHT_IPC_RECV | CAP_RIGHT_GETNAME,
                     &ps2_keyboard_port2_rx_cap) != 0 ||
         ipc_create(&ps2_keyboard_output) != IPC_OK ||
-        kcap_create(ps2_keyboard_output, CAP_TYPE_IPC_ENDPOINT,
+        kcap_create(ps2_keyboard_output, CAP_TYPE_IPC,
                     CAP_RIGHT_IPC_SEND | CAP_RIGHT_GETNAME,
                     &ps2_keyboard_output_cap) != 0 ||
         knotify_create(&ps2_keyboard_ready) != 0 ||

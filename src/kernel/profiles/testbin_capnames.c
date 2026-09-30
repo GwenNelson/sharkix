@@ -91,7 +91,7 @@ void kernel_startup_profile(void)
     static const char initial_name[] = "hello-cap";
 
     if (ipc_create(&endpoint) != IPC_OK ||
-        kcap_create(endpoint, CAP_TYPE_IPC_ENDPOINT,
+        kcap_create(endpoint, CAP_TYPE_IPC,
                     CAP_RIGHT_IPC_SEND | CAP_RIGHT_GETNAME | CAP_RIGHT_SETNAME,
                     &user_cap) != 0 ||
         kcap_set_name(user_cap, initial_name, sizeof(initial_name) - 1) != 0 ||

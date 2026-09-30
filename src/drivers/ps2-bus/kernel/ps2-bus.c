@@ -129,19 +129,19 @@ void ps2bus_init(void)
                     CAP_RIGHT_GETNAME,
                     &ps2bus_command_port_cap) != 0 ||
         ipc_create(&ps2bus_port1_tx_ep) != IPC_OK ||
-        kcap_create(ps2bus_port1_tx_ep, CAP_TYPE_IPC_ENDPOINT,
+        kcap_create(ps2bus_port1_tx_ep, CAP_TYPE_IPC,
                     CAP_RIGHT_IPC_RECV | CAP_RIGHT_GETNAME,
                     &ps2bus_port1_tx_cap) != 0 ||
         ipc_create(&ps2bus_port1_rx_ep) != IPC_OK ||
-        kcap_create(ps2bus_port1_rx_ep, CAP_TYPE_IPC_ENDPOINT,
+        kcap_create(ps2bus_port1_rx_ep, CAP_TYPE_IPC,
                     CAP_RIGHT_IPC_SEND | CAP_RIGHT_GETNAME,
                     &ps2bus_port1_rx_cap) != 0 ||
         ipc_create(&ps2bus_port2_tx_ep) != IPC_OK ||
-        kcap_create(ps2bus_port2_tx_ep, CAP_TYPE_IPC_ENDPOINT,
+        kcap_create(ps2bus_port2_tx_ep, CAP_TYPE_IPC,
                     CAP_RIGHT_IPC_RECV | CAP_RIGHT_GETNAME,
                     &ps2bus_port2_tx_cap) != 0 ||
         ipc_create(&ps2bus_port2_rx_ep) != IPC_OK ||
-        kcap_create(ps2bus_port2_rx_ep, CAP_TYPE_IPC_ENDPOINT,
+        kcap_create(ps2bus_port2_rx_ep, CAP_TYPE_IPC,
                     CAP_RIGHT_IPC_SEND | CAP_RIGHT_GETNAME,
                     &ps2bus_port2_rx_cap) != 0 ||
         knotify_create(&ps2bus_ready) != 0 ||

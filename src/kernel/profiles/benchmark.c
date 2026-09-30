@@ -206,10 +206,10 @@ static void run_user_benchmark(void)
     for (i = 0; i < BENCH_WORKERS; ++i) {
         if (create_user_bench_task(&image, i, &tasks[i]) != 0)
             benchmark_halt("user task create");
-        if (kcap_create(endpoints[i], CAP_TYPE_IPC_ENDPOINT, CAP_RIGHT_IPC_RECV,
+        if (kcap_create(endpoints[i], CAP_TYPE_IPC, CAP_RIGHT_IPC_RECV,
                         &tasks[i].receive_cap) != 0 ||
             kcapset_addcap(tasks[i].address_space->capset, tasks[i].receive_cap) != 0 ||
-            kcap_create(endpoints[(i + 1U) % BENCH_WORKERS], CAP_TYPE_IPC_ENDPOINT,
+            kcap_create(endpoints[(i + 1U) % BENCH_WORKERS], CAP_TYPE_IPC,
                         CAP_RIGHT_IPC_SEND, &tasks[i].send_cap) != 0 ||
             kcapset_addcap(tasks[i].address_space->capset, tasks[i].send_cap) != 0)
             benchmark_halt("user capability setup");
