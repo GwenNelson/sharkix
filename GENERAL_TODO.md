@@ -324,6 +324,74 @@ refs keep REFCOUNTED objects alive
 Do NOT invent a universal kobject framework merely because several subsystems
 use handles.
 
+## Lifetime / destruction audit
+
+The AS_CREATE work has made previously theoretical lifetime races reachable. Do a
+deliberate pass over capability-visible/refcounted subsystems as the thread/init work
+requires it. Keep the audit typed and local to each subsystem rather than building a
+universal lifetime framework.
+
+General lifetime contract to aim for:
+
+``` text
+handles identify
+caps authorize
+refs keep REFCOUNTED objects alive
+
+registry owns one ref while an object is registered
+acquire/release pairs protect temporary operation references
+persistent object relationships retain what they depend on
+unregister prevents new acquisitions before dropping the registry ref
+DEAD / unregistered != FREE while references remain
+```
+
+Concrete audit work:
+
+- replace raw registry lookups that return refcounted objects with explicit
+  acquire/release APIs where concurrent unregister/destruction can occur;
+- for address spaces, use `kas_acquire()` / `kas_release()` as the subsystem
+  lifetime API rather than exposing core memory retain/release details to callers;
+- make lookup+retain atomic with respect to unregister: acquire while holding the
+  registry lock; unregister removes the entry while holding that lock, then drops
+  the registry reference after unlocking;
+- audit IPC, VMO/PMEM, notifications, IRQ and the forthcoming kthread subsystem
+  for the same raw-lookup/use-after-unregister pattern, adding typed acquire/release
+  APIs only where the target actually has refcounted/destructible lifetime;
+- audit persistent relationships (for example kthread -> address space and
+  address space -> VMO set) so the owner retains the referenced object for the
+  full lifetime of the relationship;
+- do not call subsystem destructors while holding `global_caps_table_lock`; copy
+  the capability type/object identity needed for dispatch while protected, then
+  release the cap-table lock before entering subsystem destruction code;
+- never retain or dereference a `cap_t *` obtained from the global table after
+  dropping the lock unless the capability mechanism explicitly gives it a safe
+  lifetime; copy the required values first;
+- define and audit the distinction between `CAP_RIGHT_REMOVE` (remove this
+  authority record) and `CAP_RIGHT_DESTROY` (request destruction/unregistration
+  of the target object); removing a cap must not implicitly destroy its target;
+- audit concurrent REMOVE/DESTROY and concurrent DESTROY/DESTROY on the same cap.
+  Validation, subsystem destruction and final cap removal currently form a
+  multi-stage operation and need an explicit linearization rule;
+- consider a per-cap lifecycle such as `LIVE -> DESTROYING -> removed` so one
+  thread can atomically claim a destructive operation without holding the global
+  capability lock across arbitrary subsystem code; all resolve/remove paths would
+  reject a cap in `DESTROYING`;
+- do not implement rollback from `DESTROYING` to `LIVE` unless subsystem failure
+  semantics guarantee that a failed destroy leaves the object intact. Prefer
+  destruction/unregistration semantics where the externally visible transition is
+  committed cleanly and later cleanup may drain references;
+- sibling/derived caps may initially become stale after the target object is
+  unregistered. A stale cap safely failing target acquisition is acceptable; do
+  not add object-to-cap reverse tracking or global revocation machinery without a
+  concrete requirement;
+- for each destructible subsystem, document what owns its registry reference, what
+  can hold temporary/persistent references, what unregister means, when new
+  acquisitions stop, and what event finally frees the object.
+
+Do this audit incrementally as real factories/objects become userspace-visible, but
+do not postpone concrete reachable races. The immediate AS acquire/release and
+cap-lock/destructor issues must be fixed before treating AS destruction as sound.
+
 ## IPC / PUBSUB
 
 Core ordinary endpoint lifetime/refcounting is working.
@@ -616,6 +684,8 @@ personality semantics before the boring ELF loader works.
 POSITIVE SYSCALL NAMESPACE CLEANUP
     ↓
 AS_CREATE + KTHREAD/THREAD FACTORY
+    ↓
+LIFETIME / DESTRUCTION AUDIT AS CONCRETE OBJECTS BECOME REACHABLE
     ↓
 KERNEL CORE / SUBSYSTEM BOUNDARY CLEANUP AS NEEDED
     ↓
