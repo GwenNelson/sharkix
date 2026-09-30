@@ -41,5 +41,11 @@ int kas_register(as_handle_t* out, address_space_t* as);
 // looks up the actual address_space_t* for a handle and saves it to the out argument
 int kas_lookup(as_handle_t handle, address_space_t** out);
 
+// looks up an address space and retains it until kas_release is called
+int kas_acquire(as_handle_t handle, address_space_t** out);
+
+// drops a reference acquired with kas_acquire
+void kas_release(address_space_t* address_space);
+
 // destroy an address space HANDLE, to destroy the actual address space, use the functions in memory.h
 int kas_unregister(as_handle_t handle);

@@ -76,6 +76,35 @@ int kas_lookup(as_handle_t handle, address_space_t **out) {
 	return 0;
 }
 
+int kas_acquire(as_handle_t handle, address_space_t **out) {
+	as_t *as;
+
+	if (!out || handle == AS_INVALID_HANDLE) {
+		return -1;
+	}
+
+	kmutex_lock(&address_spaces_lock);
+	as = kas_find_locked(handle);
+	if (!as) {
+		kmutex_unlock(&address_spaces_lock);
+		return -1;
+	}
+
+	address_space_retain(as->address_space);
+	*out = as->address_space;
+	kmutex_unlock(&address_spaces_lock);
+	return 0;
+}
+
+void kas_release(address_space_t *address_space) {
+	if(!address_space) {
+		// TODO - maybe add debug logging here? it should never happen, perhaps just make it return an errno?
+		//        for now, i'm just going to make it return immediately
+		return;
+	}
+	address_space_release(address_space);
+}
+
 int kas_unregister(as_handle_t handle) {
 	as_t *as;
 
