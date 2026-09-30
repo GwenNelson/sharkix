@@ -30,35 +30,27 @@ static capset_handle_t next_capset_handle = 1;
 static capset_t       *global_capsets_table = NULL;
 static kmutex_t    global_capsets_table_lock;
 
+#define CASE_TYPE(suffix) \
+	case CAP_TYPE_ ## suffix: \
+		return (rights & ~CAP_ ## suffix ## _VALID_RIGHTS) ? -1 : 0;
+
 static int kcap_validate_rights(cap_type_t type, cap_rights_t rights) {
     switch (type) {
-    case CAP_TYPE_IPC_ENDPOINT:
-        return (rights & ~CAP_IPC_VALID_RIGHTS) ? -1 : 0;
-
-    case CAP_TYPE_PMEM:
-        return (rights & ~CAP_PMEM_VALID_RIGHTS) ? -1 : 0;
-
-    case CAP_TYPE_VMO:
-	return (rights & ~CAP_VMO_VALID_RIGHTS) ? -1 : 0;
-
-    case CAP_TYPE_PORTIO:
-        return (rights & ~CAP_PORTIO_VALID_RIGHTS) ? -1 : 0;
-
-    case CAP_TYPE_IRQ:
-	return (rights & ~CAP_IRQ_VALID_RIGHTS) ? -1 : 0;
-
-    case CAP_TYPE_NOTIFY:
-	return (rights & ~CAP_NOTIFY_VALID_RIGHTS) ? -1 : 0;
-
-    case CAP_TYPE_AS:
-	return (rights & ~CAP_AS_VALID_RIGHTS) ? -1 : 0;
-
-    case CAP_TYPE_FACTORY_VMO:
-	return (rights & ~CAP_FACTORY_VMO_VALID_RIGHTS) ? -1 : 0;
+    CASE_TYPE(IPC_ENDPOINT)
+    CASE_TYPE(PMEM)
+    CASE_TYPE(VMO)
+    CASE_TYPE(PORTIO)
+    CASE_TYPE(IRQ)
+    CASE_TYPE(NOTIFY)
+    CASE_TYPE(AS)
+    CASE_TYPE(FACTORY_VMO)
+    CASE_TYPE(FACTORY_AS)
+    CASE_TYPE(FACTORY_THREAD)
     default:
         return -1;
     }
 }
+
 
 static capset_t *kcapset_find_locked(capset_handle_t handle)
 {

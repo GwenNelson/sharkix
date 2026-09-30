@@ -79,7 +79,7 @@ typedef uint64_t cap_rights_t;
 #define CAP_RIGHT_IPC_SUBSCRIBE (UINT64_C(1) << 13)
 
 // all rights that make sense for an IPC endpoint
-#define CAP_IPC_VALID_RIGHTS	(CAP_GENERIC_VALID_RIGHTS | \
+#define CAP_IPC_ENDPOINT_VALID_RIGHTS	(CAP_GENERIC_VALID_RIGHTS | \
 				 CAP_RIGHT_IPC_SEND | \
 				 CAP_RIGHT_IPC_RECV | \
 				 CAP_RIGHT_IPC_PUBLISH | \
@@ -156,6 +156,9 @@ typedef uint64_t cap_rights_t;
 
 // we don't actually have any specific perms for factories - they're more like tickets than sets of perms
 #define CAP_FACTORY_VMO_VALID_RIGHTS	CAP_GENERIC_VALID_RIGHTS
+#define CAP_FACTORY_AS_VALID_RIGHTS	CAP_GENERIC_VALID_RIGHTS
+#define CAP_FACTORY_THREAD_VALID_RIGHTS	CAP_GENERIC_VALID_RIGHTS
+
 
 // helpers
 #define CAP_HAS_ALL(cap, required) \
@@ -189,14 +192,16 @@ typedef uint64_t cap_rights_t;
     ((a)->obj_handle == (b)->obj_handle)
 
 typedef enum cap_type_t {
-	CAP_TYPE_IPC_ENDPOINT = 1,
-	CAP_TYPE_PMEM         = 2,
-	CAP_TYPE_VMO          = 3,
-	CAP_TYPE_PORTIO       = 4,
-	CAP_TYPE_IRQ          = 5,
-	CAP_TYPE_NOTIFY       = 6,
-	CAP_TYPE_AS	      = 7,
-	CAP_TYPE_FACTORY_VMO  = 8, // a factory for anon VMOs for now, later we'll add other factories for other stuff
+	CAP_TYPE_IPC_ENDPOINT   = 1,
+	CAP_TYPE_PMEM           = 2,
+	CAP_TYPE_VMO            = 3,
+	CAP_TYPE_PORTIO         = 4,
+	CAP_TYPE_IRQ            = 5,
+	CAP_TYPE_NOTIFY         = 6,
+	CAP_TYPE_AS	        = 7,
+	CAP_TYPE_FACTORY_VMO    = 8, // still basically only used for anon VMOs essentially
+	CAP_TYPE_FACTORY_AS     = 9,
+	CAP_TYPE_FACTORY_THREAD = 10,
 } cap_type_t;
 
 // represents an inividual cap

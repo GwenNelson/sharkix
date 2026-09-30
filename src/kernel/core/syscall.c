@@ -110,7 +110,7 @@ SHARKIX_SYSCALL_IMPL(IPC_CREATE) {
 
 	if(kcap_create((kobject_handle_t)endpoint,
 		         CAP_TYPE_IPC_ENDPOINT,
-			 CAP_IPC_VALID_RIGHTS,
+			 CAP_IPC_ENDPOINT_VALID_RIGHTS,
 			 &cap) != 0) {
 		ipc_destroy(endpoint);
 		ctx->rax = IPC_ERR_FAILED_CAP_CREATE;
@@ -148,7 +148,7 @@ SHARKIX_SYSCALL_IMPL(IPC_CREATE_PUB) {
 
 	if(kcap_create((kobject_handle_t)endpoint,
 			CAP_TYPE_IPC_ENDPOINT,
-			CAP_IPC_VALID_RIGHTS,
+			CAP_IPC_ENDPOINT_VALID_RIGHTS,
 			&cap) != 0) {
 		ipc_destroy(endpoint);
 		ctx->rax = IPC_ERR_FAILED_CAP_CREATE;
