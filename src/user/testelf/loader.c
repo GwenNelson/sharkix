@@ -5,6 +5,7 @@
 
 // where we map the source VMO in our own space, 64 TiB - this should accomodate any realistic ELF we could ever encounter in practice
 #define ELF_LOAD_BASE 0x0000400000000000 
+#define ELF_SCRATCH_BASE 0x00003ffffffff000
 
 // TODO - at some point we really need to move a lot of this stuff into libsharkix
 //        perhaps a shared ABI header for all the caps and other stuff?
@@ -259,14 +260,86 @@ int elf_load(uint64_t source_vmo, uint64_t target_as, uint64_t elf_file_len, uin
 		page_offset = phdr->p_vaddr - page_vaddr;
 
 		uint64_t file_size = page_offset + phdr->p_filesz;
+		uint64_t direct_size = file_size & ~(PAGE_SIZE - 1);
+		uint64_t mixed_size = file_size & (PAGE_SIZE - 1);
 
-		uint64_t file_map_size =
-		    (file_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
-	
-		if(map_vmo_target(target_as,source_vmo,page_vaddr,file_page,file_map_size,prot) != 0) {
-			sharkix_debug_puts("\nERROR! Failed map_vmo_target()!\n");
-			return -1;
-		}	
+		/*
+		 * If there is no BSS, the final partial page can stay directly
+		 * backed by the source ELF VMO just like it always was.
+		 */
+		if(phdr->p_filesz == phdr->p_memsz) {
+			direct_size = (file_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+			mixed_size = 0;
+		}
+
+		if(direct_size != 0) {
+			if(map_vmo_target(target_as,source_vmo,page_vaddr,file_page,direct_size,prot) != 0) {
+				sharkix_debug_puts("\nERROR! Failed map_vmo_target()!\n");
+				return -1;
+			}
+		}
+
+		uint64_t mapped_size = direct_size;
+
+		/*
+		 * If file data ends partway through a page and BSS continues past
+		 * it, that page cannot remain backed by the ELF VMO: the bytes after
+		 * p_filesz must be zero.  Make a private zero page and copy only the
+		 * file-backed part into it.
+		 */
+		if(phdr->p_filesz < phdr->p_memsz && mixed_size != 0) {
+			uint64_t mixed_vmo;
+			uint64_t mixed_actual_size;
+
+			if(create_anon(vmo_factory,PAGE_SIZE,prot | VMO_WRITE,&mixed_actual_size,&mixed_vmo) != 0 ||
+			   mixed_actual_size < PAGE_SIZE) {
+				sharkix_debug_puts("\nERROR! Failed to create anonymous VMO for mixed BSS page!\n");
+				return -1;
+			}
+
+			uintptr_t scratch_vaddr = ELF_SCRATCH_BASE - ((uint64_t)i * PAGE_SIZE);
+
+			if(map_vmo_self(mixed_vmo,scratch_vaddr,0,PAGE_SIZE,VMO_WRITE) != 0) {
+				sharkix_debug_puts("\nERROR! Failed to map mixed BSS page into loader!\n");
+				return -1;
+			}
+
+			uint64_t source_offset = file_page + direct_size;
+			uint8_t *src = elf + source_offset;
+			uint8_t *dst = (uint8_t *)scratch_vaddr;
+
+			for(uint64_t j = 0; j < mixed_size; j++)
+				dst[j] = src[j];
+
+			if(map_vmo_target(target_as,mixed_vmo,page_vaddr + direct_size,0,PAGE_SIZE,prot) != 0) {
+				sharkix_debug_puts("\nERROR! Failed to map mixed BSS page into target!\n");
+				return -1;
+			}
+
+			mapped_size += PAGE_SIZE;
+		}
+
+		/*
+		 * Anything left in the in-memory segment is pure BSS.  Anonymous
+		 * VMOs are already zero-filled, so this can go straight into the
+		 * target address space.
+		 */
+		if(mapped_size < vmo_size) {
+			uint64_t bss_size = vmo_size - mapped_size;
+			uint64_t bss_vmo;
+			uint64_t bss_actual_size;
+
+			if(create_anon(vmo_factory,bss_size,prot,&bss_actual_size,&bss_vmo) != 0 ||
+			   bss_actual_size < bss_size) {
+				sharkix_debug_puts("\nERROR! Failed to create anonymous VMO for BSS!\n");
+				return -1;
+			}
+
+			if(map_vmo_target(target_as,bss_vmo,page_vaddr + mapped_size,0,bss_size,prot) != 0) {
+				sharkix_debug_puts("\nERROR! Failed to map BSS into target!\n");
+				return -1;
+			}
+		}
 
 
 	}
