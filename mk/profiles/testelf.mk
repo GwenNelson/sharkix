@@ -52,14 +52,14 @@ $(TESTELF_LOADER_EMBED_OBJECT): $(TESTELF_LOADER_BINARY)
 		$(patsubst $(SHARKIX_PROJECT_ROOT)/%,%,$<) \
 		$(patsubst $(SHARKIX_PROJECT_ROOT)/%,%,$@)
 
-$(TESTELF_PAYLOAD_OBJECT): $(TESTELF_DIR)/payload.S
+$(TESTELF_PAYLOAD_OBJECT): $(TESTELF_DIR)/payload.c
 	$(MKDIR_P) $(@D)
-	$(CC) $(TESTELF_ASFLAGS) -c $< -o $@
+	$(CC) $(TESTELF_CPPFLAGS) $(TESTELF_CFLAGS) -c $< -o $@
 
-$(TESTELF_PAYLOAD_ELF): $(TESTELF_PAYLOAD_OBJECT)
+$(TESTELF_PAYLOAD_ELF): $(TESTELF_PAYLOAD_OBJECT) $(TESTELF_LIBSHARKIX)
 	$(MKDIR_P) $(@D)
 	$(LD) -m $(USER_LINKER_FORMAT) -nostdlib -z max-page-size=0x1000 \
-		--build-id=none -e _start -o $@ $<
+		--build-id=none -e _start -o $@ $< $(TESTELF_LIBSHARKIX)
 
 $(TESTELF_PAYLOAD_EMBED_OBJECT): $(TESTELF_PAYLOAD_ELF)
 	$(MKDIR_P) $(@D)
