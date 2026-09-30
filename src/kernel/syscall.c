@@ -388,7 +388,8 @@ SHARKIX_SYSCALL_IMPL(VM_CREATE_ANON) {
 		goto fail;
 	}
 
-	if(kvmo_create_anon(&new_vmo,requested_len,&actual_len,requested_rights) != 0) {
+	// create the new VMO, obviously it needs VMO_MAP or it'll never be mappable anywhere, which defeats the whole point
+	if(kvmo_create_anon(&new_vmo,requested_len,&actual_len,requested_rights | VMO_MAP) != 0) {
 		ctx->rax = VM_ERR_NO_MEMORY;
 		goto fail;
 	}

@@ -58,7 +58,26 @@ int map_vmo_target(uint64_t as, uint64_t vmo, uint64_t vaddr, uint64_t offs, uin
 	return regs.rax;
 }
 
-int elf_load(uint64_t source_vmo, uint64_t target_as, uint64_t elf_file_len, uint64_t *entry_out) {
+int create_anon(uint64_t vmo_factory, uint64_t req_size, uint64_t map_rights, uint64_t *actual_size, uint64_t *new_vmo) {
+	sharkix_syscall_regs_t regs = { 0 };
+
+	regs.rax = (uint64_t)SYSCALL_VM_CREATE_ANON;
+	regs.rdi = vmo_factory;
+	regs.rsi = req_size;
+	regs.rdx = map_rights;
+
+	(void)sharkix_syscall(&regs);
+	if(regs.rax == 0) {
+		*new_vmo     = regs.rsi;
+		*actual_size = regs.rdx;
+		return 0;
+	} else {
+		*actual_size = 0;
+		return -1;
+	}
+}
+
+int elf_load(uint64_t source_vmo, uint64_t target_as, uint64_t elf_file_len, uint64_t vmo_factory, uint64_t *entry_out) {
 	// sanity checks first, get length etc
 	uint64_t page_len=0;
 	if(get_vmo_pagelen(source_vmo,&page_len) != 0) {
@@ -285,21 +304,23 @@ void testelf_loader_main(uint64_t *bootstrap, uint64_t elf_file_len) {
 	char *names[] = {
 		"elf.source.vmo",
 		"elf.target.as",
-		"elf.ipc.status"
+		"elf.ipc.status",
+		"factory.vmo"
 	};
-	uint64_t caps[3];
+	uint64_t caps[4];
 	uint64_t entry = 0;
 	int status;
 
-	if (sharkix_get_bootstrap(caps, names, 3, bootstrap) !=
+	if (sharkix_get_bootstrap(caps, names, 4, bootstrap) !=
 		SHARKIX_BOOTSTRAP_OK)
 		test_exit();
 
-	uint64_t source_vmo_cap = caps[0];
-	uint64_t target_as_cap  = caps[1];
-	uint64_t ipc_status_cap = caps[2];
+	uint64_t source_vmo_cap  = caps[0];
+	uint64_t target_as_cap   = caps[1];
+	uint64_t ipc_status_cap  = caps[2];
+	uint64_t vmo_factory_cap = caps[3];
 
-	status = elf_load(source_vmo_cap, target_as_cap, elf_file_len, &entry);
+	status = elf_load(source_vmo_cap, target_as_cap, elf_file_len, vmo_factory_cap, &entry);
 	if(status == 0) {
 		send_status(ipc_status_cap,0,entry); // SUCCESS!
 	} else {
