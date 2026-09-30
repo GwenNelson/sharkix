@@ -194,6 +194,7 @@ int kcap_destroy(cap_handle_t handle) {
     return 0;
 }
 
+// TODO - the below should somehow be refactored so that caps.c doesn't need subsystem-specific knowledge, perhaps something in caps.inc can point to the code for destroying objects?
 int kcap_destroy_obj(cap_handle_t handle) {
     cap_t *found;
     int status = 0;
@@ -240,6 +241,9 @@ int kcap_destroy_obj(cap_handle_t handle) {
 	status = kirq_destroy(found->obj_handle);
         break;
 
+    case CAP_TYPE_AS:
+	status = kas_unregister(found->obj_handle);
+	break;
     default:
         /*
          * Every capability type currently defined by Sharkix is handled

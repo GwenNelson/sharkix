@@ -678,6 +678,81 @@ done:
     return syscall_return();
 }
 
+
+
+/*
+ * input:
+ * 	RDI = AS factory cap
+ * 
+ * return:
+ * 	RAX = status
+ * 	RDI = new AS cap
+ */
+SHARKIX_SYSCALL_IMPL(AS_CREATE) {
+	thread_t* caller = thread_current();
+
+	if (caller == NULL || caller->address_space == NULL) {
+		// this is probably impossible in most cases, but might as well verify
+        	ctx->rax = VM_ERR_INVALID; // TODO - probably want AS-specific error numbers?
+		goto fail;
+	}
+
+	cap_handle_t factory_cap = (cap_handle_t)ctx->rdi;
+	kobject_handle_t obj;
+
+	// first check if they have the factory cap
+	if(kcapset_resolve_handle(caller->address_space->capset,factory_cap,CAP_TYPE_FACTORY_AS,0,&obj) != 0) {
+		ctx->rax = VM_ERR_PERMISSION;
+		goto fail;
+	}
+	// we actually don't care about the object handle, because it's not actually needed in the current architecture
+	// at some point we might use it to check resources or something i guess
+
+	// if we get here, we're now ready to rock - let's create a new address space, register it and create a cap for the caller
+	address_space_t* new_space = address_space_create(0);
+	if(!new_space) {
+		ctx->rax = VM_ERR_NO_MEMORY;
+		goto fail;
+	}
+	as_handle_t new_as;
+	if(kas_register(&new_as, new_space) != 0) {
+		// we failed in kas_register() for some reason, so teardown and return an error
+		address_space_release(new_space); // this will destroy it because a newly created AS has only 1 reference, when we release the ref, it gets torn down
+		ctx->rax = VM_ERR_NO_MEMORY; // probably not actually the right error number for this, but the whole errno system is a fucking mess right now
+		goto fail;
+	}
+
+	// if we get here, we can now create the cap, yay!
+	cap_handle_t new_cap;
+	if(kcap_create((kobject_handle_t)new_as, CAP_TYPE_AS,CAP_AS_VALID_RIGHTS,&new_cap) != 0) {
+		kas_unregister(new_as);
+		address_space_release(new_space);
+		ctx->rax = VM_ERR_FAILED_CAP_CREATE;
+		goto fail;
+	}
+	
+	// add to the caller's capset of course
+	if(kcapset_addcap(caller->address_space->capset,new_cap) != 0) {
+		kcap_destroy(new_cap);
+		kas_unregister(new_as);
+		address_space_release(new_space);
+		ctx->rax = VM_ERR_FAILED_CAP_CREATE;
+		goto fail;
+	}
+
+	// we need to release our own reference, so only the as_t object has a reference, to prevent leaks
+	address_space_release(new_space);
+
+	// and then of course return to userspace
+	ctx->rax = VM_OK;
+	ctx->rdi = new_cap;
+	return syscall_return();
+
+fail:
+	ctx->rdi = CAP_INVALID_HANDLE;
+	return syscall_return();
+}
+
 /*
  * input:
  *     RDI = AS cap
