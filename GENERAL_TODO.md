@@ -11,13 +11,25 @@ The basic flat-binary ring3 ELF loader works: it parses/validates ELF64, maps
 `PT_LOAD` segments into a supplied address space, returns the entry point, and
 has successfully transferred control to a loaded ELF entry point.
 
-Finish the remaining boring ELF semantics:
+Finish the remaining boring ELF semantics. The next concrete task is BSS /
+partial-page handling using the new anonymous-VMO syscall:
 
-- use the anonymous zero-filled VMO object for BSS (`p_memsz > p_filesz`);
+- give the ELF loader a `CAP_TYPE_FACTORY_VMO` capability; possession of this
+  exact typed cap is currently the creation authority (no factory rights bits
+  or resource quota yet);
+- use `VM_CREATE_ANON` to obtain zero-filled anonymous VMO caps for BSS
+  (`p_memsz > p_filesz`);
 - keep full file-backed pages mapped directly from the source ELF VMO;
-- construct a private zero-filled page only where a partial file/BSS boundary
-  page differs from the corresponding source VMO page;
-- map pure BSS pages from anonymous zero-filled VMO backing;
+- for a partial file/BSS boundary page, create a private zero-filled one-page
+  anonymous VMO, map it temporarily into the loader, copy only the valid ELF
+  file bytes into it, leave the remainder zero, then map it into the target;
+- map remaining pure-BSS full pages from zero-filled anonymous VMO backing;
+- remember that the mixed boundary page may itself begin at a non-page-aligned
+  `p_vaddr`; calculate both the page start and the valid file-byte subrange
+  correctly;
+- preserve ELF load congruence: `p_offset % PAGE_SIZE == p_vaddr % PAGE_SIZE`;
+- preserve the rule: do not copy a page unless the desired process page differs
+  from the corresponding source ELF VMO page;
 - preserve the rule that ELF `PF_R/PF_W/PF_X` requests cannot manufacture
   authority not present in the supplied source/target capabilities;
 - keep ELF logical content length separate from the page-rounded source VMO
@@ -291,7 +303,7 @@ Remaining work:
 
 - PMEM should be refcounted where live PMEM-backed VMOs depend on it;
 - a PMEM-backed VMO retains its backing PMEM;
-- anonymous VMO destruction must release all physical backing it owns;
+- `kvmo_destroy()` must destroy/release the backing PMEM and free its physical pages when the VMO has `owns_pmem == true`; non-owning VMOs must leave their backing PMEM alone;
 - VMOs should be refcounted where persistent relationships depend on them;
 - VMO-set entries/mappings retain the VMOs they depend upon;
 - an address space retains its VMO set;
