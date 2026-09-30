@@ -30,24 +30,29 @@ static capset_handle_t next_capset_handle = 1;
 static capset_t       *global_capsets_table = NULL;
 static kmutex_t    global_capsets_table_lock;
 
-#define CASE_TYPE(suffix) \
-	case CAP_TYPE_ ## suffix: \
-		return (rights & ~CAP_ ## suffix ## _VALID_RIGHTS) ? -1 : 0;
-
-static int kcap_validate_rights(cap_type_t type, cap_rights_t rights) {
+static int kcap_validate_rights(cap_type_t type, cap_rights_t rights)
+{
     switch (type) {
-    CASE_TYPE(IPC)
-    CASE_TYPE(PMEM)
-    CASE_TYPE(VMO)
-    CASE_TYPE(PORTIO)
-    CASE_TYPE(IRQ)
-    CASE_TYPE(NOTIFY)
-    CASE_TYPE(AS)
-    CASE_TYPE(FACTORY_VMO)
-    CASE_TYPE(FACTORY_AS)
-    CASE_TYPE(FACTORY_THREAD)
-    default:
-        return -1;
+#define SHARKIX_CAP_GENERIC_RIGHT(name, bit)
+#define SHARKIX_CAP_RESERVED_RIGHT(bit)
+
+#define SHARKIX_CAP_TYPE_BEGIN(name, number) \
+        case CAP_TYPE_##name: \
+            return (rights & ~CAP_##name##_VALID_RIGHTS) ? -1 : 0;
+
+#define SHARKIX_CAP_RIGHT(type, name, bit)
+#define SHARKIX_CAP_TYPE_END(name)
+
+#include <sharkix/caps.inc>
+
+#undef SHARKIX_CAP_GENERIC_RIGHT
+#undef SHARKIX_CAP_RESERVED_RIGHT
+#undef SHARKIX_CAP_TYPE_BEGIN
+#undef SHARKIX_CAP_RIGHT
+#undef SHARKIX_CAP_TYPE_END
+
+        default:
+            return -1;
     }
 }
 
