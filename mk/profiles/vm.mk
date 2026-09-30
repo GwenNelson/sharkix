@@ -1,1 +1,1 @@
-PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/startup/vm.c
+PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/profiles/vm.c

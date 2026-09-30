@@ -1,1 +1,1 @@
-PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/startup/testpubsub.c
+PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/profiles/testpubsub.c

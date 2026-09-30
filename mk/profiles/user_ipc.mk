@@ -1,1 +1,1 @@
-PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/startup/user_ipc.c
+PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/profiles/user_ipc.c

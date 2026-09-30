@@ -1,1 +1,1 @@
-PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/startup/normal.c
+PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/profiles/normal.c

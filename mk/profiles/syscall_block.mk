@@ -1,1 +1,1 @@
-PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/startup/syscall_block.c
+PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/profiles/syscall_block.c

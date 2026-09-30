@@ -1,1 +1,1 @@
-PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/startup/testipc.c
+PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/profiles/testipc.c

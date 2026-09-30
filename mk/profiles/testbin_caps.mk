@@ -1,4 +1,4 @@
-PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/startup/testbin_caps.c
+PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/profiles/testbin_caps.c
 
 TESTBIN_CAPS_DIR := $(USER_SRC_ROOT)/testbin_caps
 TESTBIN_CAPS_ENTRY_SOURCE := $(TESTBIN_CAPS_DIR)/entry.S

@@ -1,1 +1,1 @@
-PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/startup/two_tasks_one_space.c
+PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/profiles/two_tasks_one_space.c

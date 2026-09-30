@@ -1,1 +1,1 @@
-PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/startup/preemption.c
+PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/profiles/preemption.c

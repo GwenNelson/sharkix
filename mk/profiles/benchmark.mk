@@ -1,1 +1,1 @@
-PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/startup/benchmark.c
+PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/profiles/benchmark.c

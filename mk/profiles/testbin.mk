@@ -1,4 +1,4 @@
-PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/startup/testbin.c
+PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/profiles/testbin.c
 
 TESTBIN_SOURCE := $(USER_SRC_ROOT)/testbin/main.c
 TESTBIN_LINKER_SCRIPT := $(USER_SRC_ROOT)/testbin/testbin.ld

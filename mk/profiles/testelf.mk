@@ -1,4 +1,4 @@
-PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/startup/testelf.c
+PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/profiles/testelf.c
 
 TESTELF_DIR := $(USER_SRC_ROOT)/testelf
 TESTELF_LOADER_ENTRY_OBJECT := $(USER_OBJ_ROOT)/testelf/entry.o

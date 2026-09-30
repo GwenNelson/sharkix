@@ -1,1 +1,1 @@
-PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/startup/lifecycle.c
+PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/profiles/lifecycle.c

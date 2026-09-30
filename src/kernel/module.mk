@@ -14,7 +14,7 @@ $(LIBSHARKIX_KERNEL_ARTIFACT): FORCE
 
 KERNEL_C_SRCS += \
  $(KERNEL_MODULE_ROOT)/mb_init.c \
- $(KERNEL_MODULE_ROOT)/startup/common.c $(PROFILE_SOURCE)
+ $(KERNEL_MODULE_ROOT)/profiles/common.c $(PROFILE_SOURCE)
 
 $(call include-module,$(KERNEL_MODULE_ROOT)/core)
 KERNEL_C_SRCS += $(KERNEL_CORE_C_SRCS)

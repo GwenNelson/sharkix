@@ -1,1 +1,1 @@
-PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/startup/ps2bus_test.c
+PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/profiles/ps2bus_test.c

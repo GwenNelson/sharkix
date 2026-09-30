@@ -1,1 +1,1 @@
-PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/startup/exceptions.c
+PROFILE_SOURCE := $(KERNEL_SRC_ROOT)/profiles/exceptions.c
