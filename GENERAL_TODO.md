@@ -5,56 +5,59 @@ marked done.
 
 # NEXT CODING SESSION
 
-## 1. Finish the load-only ELF path
+The load-only ELF path, including anonymous-VMO BSS/partial-page handling and
+the deliberate read-only `.rodata` fault test, is working. Treat that loader
+milestone as complete enough for current purposes; do not disappear into ELF
+conformance work without a concrete consumer.
 
-The basic flat-binary ring3 ELF loader works: it parses/validates ELF64, maps
-`PT_LOAD` segments into a supplied address space, returns the entry point, and
-has successfully transferred control to a loaded ELF entry point.
+## 1. Clean up the syscall namespace
 
-Finish the remaining boring ELF semantics. The next concrete task is BSS /
-partial-page handling using the new anonymous-VMO syscall:
+Begin defining the positive/stable syscall table as the real init/userspace
+environment comes into existence.
 
-- give the ELF loader a `CAP_TYPE_FACTORY_VMO` capability; possession of this
-  exact typed cap is currently the creation authority (no factory rights bits
-  or resource quota yet);
-- use `VM_CREATE_ANON` to obtain zero-filled anonymous VMO caps for BSS
-  (`p_memsz > p_filesz`);
-- keep full file-backed pages mapped directly from the source ELF VMO;
-- for a partial file/BSS boundary page, create a private zero-filled one-page
-  anonymous VMO, map it temporarily into the loader, copy only the valid ELF
-  file bytes into it, leave the remainder zero, then map it into the target;
-- map remaining pure-BSS full pages from zero-filled anonymous VMO backing;
-- remember that the mixed boundary page may itself begin at a non-page-aligned
-  `p_vaddr`; calculate both the page start and the valid file-byte subrange
-  correctly;
-- preserve ELF load congruence: `p_offset % PAGE_SIZE == p_vaddr % PAGE_SIZE`;
-- preserve the rule: do not copy a page unless the desired process page differs
-  from the corresponding source ELF VMO page;
-- preserve the rule that ELF `PF_R/PF_W/PF_X` requests cannot manufacture
-  authority not present in the supplied source/target capabilities;
-- keep ELF logical content length separate from the page-rounded source VMO
-  extent;
-- finish failure-path cleanup for partially constructed images;
-- add a few deliberately malformed ELF cases to exercise bounds/overflow and
-  segment validation.
+- clean up/refactor the temporary/test syscall-number assignments;
+- preserve useful test syscalls, but keep them out of the namespace/layout
+  intended for the stable positive syscall ABI;
+- do not design the permanent table around bootstrap tests;
+- let concrete init/generic-launch requirements drive new syscall additions.
 
-Do not turn this into demand paging or a process loader. Load and launch remain
-separate operations.
+## 2. Add the typed factories needed for generic launch
 
-## 2. Generic launch/bootstrap path
+`CAP_TYPE_FACTORY_VMO` already exists. Add the next narrow typed creation
+authorities needed by a real launcher/init:
 
-Separately from ELF loading:
+- `CAP_TYPE_FACTORY_AS` for address-space creation;
+- `CAP_TYPE_FACTORY_THREAD` for schedulable thread creation;
+- expose threads through a lightweight `kthread` managed-object subsystem,
+  keeping `core/thread.c` as the scheduler/execution machinery;
+- factory possession is creation authority; do not invent redundant CREATE
+  rights or a universal factory;
+- keep CPU/core authority separate from thread-creation authority;
+- address lifetime/refcount details only as required to make these real
+  userspace-visible objects safe.
+
+## 3. Generic launch/bootstrap path
+
+Use the new factories to make load and launch genuinely separate operations:
 
 - define a simple standard Sharkix initial userspace stack/bootstrap format;
 - allow a launcher to place the target's initial capability information on
   that stack;
+- create the target address space through its typed factory;
+- obtain/supply the ELF VMO and invoke the existing load-only ELF loader;
 - create the initial thread with:
-  - RIP = ELF entry point returned by the loader
-  - RSP = launcher-created initial stack
+  - RIP = ELF entry point returned by the loader;
+  - RSP = launcher-created initial stack;
 - start the thread only after loading and bootstrap setup are complete.
 
 The existing named-cap bootstrap scheme is the starting point. Do not invent
 a more elaborate ABI unless a concrete need appears.
+
+## 4. Bring up a boring real init
+
+Once generic launch is sufficient, begin the real ring3 init path and let its
+requirements drive the next factories/syscalls. Do not pre-build every
+conceivable creation facility.
 
 # DRIVER ARCHITECTURE AFTER ELF
 
@@ -139,23 +142,21 @@ language.
 Where the audit shows that init needs to manufacture privileged objects,
 provide small generic capability-controlled facilities.
 
-Potential examples include:
+Immediate concrete consumers are generic launch/init:
 
 ``` text
-create address space
-create task/thread
-create VMO
-create VMO set
-create IPC endpoint
-create notification
-obtain/delegate IRQ authority
-obtain/delegate PortIO authority
+CAP_TYPE_FACTORY_VMO       already exists
+CAP_TYPE_FACTORY_AS        next
+CAP_TYPE_FACTORY_THREAD    next
 ```
 
-Factory authority grants creation authority. It does not permanently own
-everything created through it.
+Add further typed factories only when a real consumer requires them. Possible
+later consumers may include VMO sets, IPC endpoints, notifications, or other
+privileged resources, but do not pre-build them.
 
-Add only the factories that have real consumers.
+Factory authority grants creation authority. It does not permanently own
+everything created through it. Keep each factory narrow rather than
+introducing a universal factory.
 
 ### Resource accounting / limits
 
@@ -335,17 +336,25 @@ contiguous block is available.
 
 Do NOT block the current ELF/BSS work on replacing the allocator.
 
-## Threads
+## Threads / kthread
 
-If threads become exposed handle/cap objects, give them sensible lifetime
-semantics.
+Expose the userspace-visible managed thread object through a lightweight
+`kthread` subsystem:
+
+``` text
+core/thread.c          scheduler/execution machinery
+subsystems/kthread.c   managed kobject/handle/lifetime wrapper
+```
+
+Give exposed thread objects sensible lifetime semantics.
 
 ``` text
 DEAD != FREE
 ```
 
-Review raw `thread_lookup()` pointer lifetime when this becomes relevant to
-task/thread capabilities and generic launch.
+Review raw `thread_lookup()` pointer lifetime as part of the thread-factory /
+generic-launch work. Keep CPU-core objects and CPU affinity/control authority
+separate from thread creation.
 
 ## PortIO / sync / CPU objects
 
@@ -405,10 +414,102 @@ userspace executables/configuration.
 Clean up libsharkix/DDK support and out-of-tree driver builds after the normal
 ELF driver model exists.
 
-## Portability
+## Early boot / architecture / portability refactor
 
-Continue architecture/platform separation as real portability work demands
-it. Do not refactor merely for symmetry.
+Return to this after the immediate factory/init work. The source-tree
+reorganisation is useful precisely because it makes architecture and
+boot-protocol assumptions auditable file by file.
+
+### Split Multiboot1 from x86_64 bootstrap machinery
+
+The current Multiboot1 `boot.S` still combines protocol ABI work with x86_64
+machine bootstrap work. Refactor it so the ownership boundaries are explicit.
+
+Multiboot1-specific code should own:
+
+- the Multiboot1 header;
+- `_start`;
+- receipt/preservation of the Multiboot `%eax` magic and `%ebx` information
+  pointer;
+- the Multiboot-specific 64-bit continuation / handoff into `mb_init.c`.
+
+Architecture-specific bootstrap code under `src/kernel/arch/x86_64/` should
+own the machinery that is not intrinsically Multiboot:
+
+- temporary/bootstrap stack where required;
+- bootstrap page tables and initial x86_64 mappings;
+- enabling PAE/long mode/paging for boot paths that enter in 32-bit protected
+  mode;
+- temporary bootstrap GDT and the 32 -> 64 bit transition;
+- switch to the normal kernel stack.
+
+Prefer a name that states the actual contract (for example
+`bootstrap32.S`) rather than implying that every x86_64 boot path must use it.
+A future boot protocol that enters directly in long mode may bypass this code.
+
+Keep the temporary bootstrap GDT distinct from the proper runtime kernel
+GDT/TSS installed by normal x86_64 architecture initialization.
+
+Make Multiboot-header placement explicit in the linker script rather than
+depending on object/link order.
+
+### Define the boot-protocol -> Sharkix handoff
+
+Do not make generic kernel code parse a bootloader's native structures.
+
+Define a small Sharkix-owned boot-information format/API containing the
+information the generic kernel actually needs, including a normalized physical
+memory map. Boot-protocol components translate their native representation
+into this format before generic kernel initialization.
+
+The boundary should become conceptually:
+
+``` text
+boot protocol
+    -> protocol-specific parser/translator
+    -> Sharkix boot-info / normalized memory map
+    -> architecture early init as required
+    -> generic kernel
+```
+
+Keep the format boring and driven by current consumers. It is an internal
+kernel boot contract, not a general firmware/bootloader ABI.
+
+### Refactor memory.c / memory.h away from Multiboot
+
+This is expected to be a substantial job.
+
+`core/memory.c` / its public kernel memory interfaces must stop including or
+understanding Multiboot1 structures. In particular:
+
+- define a Sharkix-specific normalized physical-memory-map representation;
+- have `boot/multiboot1` translate the Multiboot memory map into it;
+- make physical-memory initialization consume only the normalized Sharkix
+  representation;
+- remove Multiboot-specific parsing/types/includes from generic memory code;
+- audit any other boot-protocol assumptions currently leaking into
+  `core/memory.c`, `memory.h`, or adjacent VM initialization;
+- preserve architecture-specific VM policy separately from boot-protocol
+  parsing.
+
+Do this as a deliberate refactor with the existing x86_64/Multiboot path kept
+green, not mixed into unrelated subsystem work.
+
+### BOOTBOOT / alternate boot path later
+
+After the boot contract and architecture boundary are clean, consider adding
+BOOTBOOT (and eventually other architectures such as AArch64) as a second real
+consumer of those interfaces.
+
+If BOOTBOOT already supplies long mode and usable initial mappings, do not
+re-run the 32-bit x86 bootstrap merely for symmetry. Let BOOTBOOT handle the
+machine transition it promises, then have Sharkix establish whatever proper
+runtime x86_64 state it still requires (kernel virtual-memory policy, runtime
+GDT/TSS, interrupt architecture, etc.).
+
+The portability goal is not zero architecture-specific code. The goal is that
+architecture-specific code has an obvious home and generic core/subsystem code
+does not accidentally depend on x86_64 or a particular boot protocol.
 
 ## Personality layer
 
@@ -449,21 +550,30 @@ personality semantics before the boring ELF loader works.
 # DEVELOPMENT ORDER
 
 ``` text
-FINISH ELF BSS / PARTIAL-PAGE HANDLING USING ANONYMOUS VMOS
+POSITIVE SYSCALL NAMESPACE CLEANUP
+    ↓
+AS FACTORY + KTHREAD/THREAD FACTORY
     ↓
 STANDARD STACK / CAP BOOTSTRAP + GENERIC LAUNCH
+    ↓
+BEGIN BORING REAL INIT; LET ITS NEEDS DRIVE FURTHER FACTORIES/SYSCALLS
     ↓
 READ docs/DRIVERS.md + AUDIT EXISTING RING0 DRIVER SETUP
     ↓
 DERIVE ELF-READABLE DRIVER METADATA FORMAT
     ↓
-ADD ONLY THE GENERIC FACTORIES/FACILITIES THE AUDIT REQUIRES
+ADD ONLY FURTHER GENERIC FACTORIES/FACILITIES REAL CONSUMERS REQUIRE
     ↓
 MIGRATE DRIVERS/SERVICES TO NORMAL ELF STARTUP
     ↓
-BORING INIT + DEPENDENCY-ORDERED STARTUP
+DEPENDENCY-ORDERED INIT / REMOVE OBSOLETE DRIVER-SPECIFIC RING0 + FLATBIN PATHS
     ↓
-REMOVE OBSOLETE DRIVER-SPECIFIC RING0 / FLAT-BINARY PATHS
+RETURN TO EARLY-BOOT / ARCH PORTABILITY REFACTOR:
+  SPLIT MULTIBOOT1 FROM X86_64 BOOTSTRAP
+  DEFINE SHARKIX BOOT-INFO + NORMALIZED MEMORY MAP
+  PURGE MULTIBOOT KNOWLEDGE FROM memory.c / memory.h
+    ↓
+CONSIDER BOOTBOOT / SECOND BOOT PATH ON THE CLEAN INTERFACE
     ↓
 CONSOLE.INPUT / GENERIC KEY EVENTS AS NEEDED
     ↓
@@ -558,10 +668,4 @@ generic registry:
 
 IPC registry:
     name -> IPC rendezvous/service endpoint
-
-
-### misc stuff i forgot to add earlier
-
-After BSS is working: add further typed factory capabilities only for objects that now have concrete userspace consumers, particularly the objects needed by init/launch. Keep each factory narrow (CAP_TYPE_FACTORY_VMO, CAP_TYPE_FACTORY_AS, CAP_TYPE_FACTORY_THREAD, etc.) rather than introducing a universal factory.
-Begin designing the positive syscall table as part of bringing up the real init/userspace environment. This will require cleaning up/refactoring the existing temporary/test syscall-number assignments. Preserve the test syscalls where still useful, but move them out of the namespace/layout intended for the stable positive syscall ABI rather than designing the permanent table around bootstrap tests.
-Let the requirements of init + generic ELF launch drive which factories and positive syscalls actually get implemented. Do not pre-build every conceivable factory/syscall.
+```
