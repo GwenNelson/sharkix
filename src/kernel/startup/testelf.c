@@ -48,7 +48,7 @@ static int create_source_vmo(vmo_handle_t *out) {
 		return -1;
 	}
 
-	if (kvmo_create(out, pmem, VMO_MAP | VMO_READ | VMO_EXEC) != 0) {
+	if (kvmo_create_from_pmem(out, pmem, VMO_MAP | VMO_READ | VMO_EXEC) != 0) {
 		(void)kpmem_destroy(pmem);
 		for (size_t i = 0; i < page_count; ++i)
 			phys_page_put(physical + i * PAGE_SIZE);

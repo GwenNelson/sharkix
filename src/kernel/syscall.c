@@ -1082,7 +1082,7 @@ SHARKIX_SYSCALL_IMPL(PMEM_NEW_VMO) {
 
     pmem_handle = (pmem_handle_t)pmem_obj_handle;
 
-    if (kvmo_create(&vmo, pmem_handle, requested_rights) != 0) {
+    if (kvmo_create_from_pmem(&vmo, pmem_handle, requested_rights) != 0) {
         ctx->rax = VM_ERR_INVALID;
         goto fail;
     }

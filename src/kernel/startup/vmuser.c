@@ -135,7 +135,7 @@ void kernel_startup_profile(void)
 
     if (!phys_alloc_page(&backing_page) ||
         kpmem_create(&pmem, (uintptr_t)backing_page, PAGE_SIZE) != 0 ||
-        kvmo_create(&vmo, pmem, VMO_MAP | VMO_READ) != 0)
+        kvmo_create_from_pmem(&vmo, pmem, VMO_MAP | VMO_READ) != 0)
         vmuser_fail();
     console_write(" VMO created\n");
 

@@ -5,78 +5,31 @@ marked done.
 
 # NEXT CODING SESSION
 
-## 1. Finish and test `ps2-keyboardd`
+## 1. Finish the load-only ELF path
 
-Keep this deliberately small. Do not let keyboard work expand into a generic
-input subsystem yet.
+The basic flat-binary ring3 ELF loader works: it parses/validates ELF64, maps
+`PT_LOAD` segments into a supplied address space, returns the entry point, and
+has successfully transferred control to a loaded ELF entry point.
 
-- Add `ps2_keyboard_init()` to the appropriate startup profile after
-  `ps2-bus`.
-- Test the ring3 driver under QEMU.
-- Verify port 1 probing, identification and initialization.
-- Verify scan-code bytes reach `ps2.keyboard.output`.
-- Verify the timeout path is sane.
-- Manually add capability surrender after a port is selected:
-  - keyboard on port 1 -> surrender port 2 TX/RX caps
-  - keyboard on port 2 -> surrender port 1 TX/RX caps
-- Remove/avoid unnecessary driver-specific public kernel interfaces such as
-  `ps2_keyboard_isready()`.
-- Keep `ps2.keyboard.output` as one ordinary IPC endpoint carrying the PS/2
-  scan-code byte stream for v1.
-- Do NOT add ASCII/Unicode conversion, keymaps, generic key events, PUBSUB,
-  port claiming, USB input, or a generic input manager yet.
+Finish the remaining boring ELF semantics:
 
-Then stop keyboard work.
+- use the anonymous zero-filled VMO object for BSS (`p_memsz > p_filesz`);
+- keep full file-backed pages mapped directly from the source ELF VMO;
+- construct a private zero-filled page only where a partial file/BSS boundary
+  page differs from the corresponding source VMO page;
+- map pure BSS pages from anonymous zero-filled VMO backing;
+- preserve the rule that ELF `PF_R/PF_W/PF_X` requests cannot manufacture
+  authority not present in the supplied source/target capabilities;
+- keep ELF logical content length separate from the page-rounded source VMO
+  extent;
+- finish failure-path cleanup for partially constructed images;
+- add a few deliberately malformed ELF cases to exercise bounds/overflow and
+  segment validation.
 
-## 2. ELF time
+Do not turn this into demand paging or a process loader. Load and launch remain
+separate operations.
 
-The first ELF loader should be deliberately boring and may itself remain a
-flat binary using the existing bootstrap mechanism.
-
-### Address-space boundary
-
-Before or as part of bringing up the loader:
-
-- establish a small clean address-space subsystem/API around the existing VM
-  implementation;
-- avoid rewriting the VM system merely to create this boundary;
-- make address spaces proper handle/cap-accessible objects;
-- preserve the existing useful address-space refcount machinery;
-- ensure threads retain their address space;
-- ensure an address space retains its VMO set;
-- expose only the operations actually needed by the loader/launcher.
-
-### Load-only ring3 ELF loader
-
-The ELF loader's job is to load an image into an already supplied target
-address space and return information about the loaded image.
-
-Initial model:
-
-``` text
-caller supplies ELF image/VMO + target AS authority
-    ↓
-ELF loader parses and validates ELF
-    ↓
-maps/populates PT_LOAD segments
-    ↓
-zeros BSS as required
-    ↓
-returns entry point / minimal required load metadata
-    ↓
-DONE
-```
-
-Rules:
-
-- eager loading only; no demand paging;
-- ELF loader does NOT create/start the target task;
-- ELF loader does NOT construct the target's initial stack;
-- ELF loader does NOT decide which capabilities the target receives;
-- ELF loader does NOT contain driver/init policy;
-- keep load and launch as separate operations.
-
-### Generic launch/bootstrap path
+## 2. Generic launch/bootstrap path
 
 Separately from ELF loading:
 
@@ -294,8 +247,8 @@ Registry currently names IPC rendezvous points.
 
 Future work, preferably driven by init/metadata requirements:
 
-- decide whether the registry should become a more generic capability/object
-  name registry;
+- keep IPC rendezvous naming distinct from the generic named-object registry
+  unless experience later shows they genuinely want to converge;
 - EPHEMERAL vs PERSISTENT registrations if actually needed;
 - rebinding/reanimation of service names;
 - authorization for rebinding.
@@ -304,13 +257,45 @@ Do not solve rebind authorization prematurely.
 
 ## PMEM / VMO / VMO sets
 
-- PMEM should be refcounted where live VMOs depend on it.
-- A VMO retains its backing PMEM.
-- VMOs should be refcounted where persistent relationships depend on them.
-- VMO-set entries/mappings retain the VMOs they depend upon.
-- An address space retains its VMO set.
-- Give VMO sets sensible ownership semantics because they are intended to be
+Anonymous zero-filled VMOs now exist as a distinct kernel object/construction
+path. Keep their external semantics independent of how physical backing is
+allocated.
+
+Remaining work:
+
+- PMEM should be refcounted where live PMEM-backed VMOs depend on it;
+- a PMEM-backed VMO retains its backing PMEM;
+- anonymous VMO destruction must release all physical backing it owns;
+- VMOs should be refcounted where persistent relationships depend on them;
+- VMO-set entries/mappings retain the VMOs they depend upon;
+- an address space retains its VMO set;
+- give VMO sets sensible ownership semantics because they are intended to be
   transferable/configurable objects.
+
+### Physical allocator / fragmentation
+
+The current physical allocator can require a contiguous run for multi-page
+allocations. This is acceptable as a temporary implementation detail, but
+anonymous VMOs must not permanently require one physically contiguous extent.
+
+Later, rework the physical page allocator around a buddy allocator (or an
+equally simple allocator that provides the same useful properties):
+
+- maintain free blocks by power-of-two order;
+- split larger blocks to satisfy smaller allocations;
+- coalesce free buddies on release;
+- keep useful global free-page accounting;
+- preserve order-0/single-page allocation;
+- retain a way to request genuinely contiguous physical memory where hardware
+  or another concrete consumer requires it.
+
+Once that exists, allow anonymous VMOs to be backed by multiple contiguous
+physical extents/buddy blocks rather than requiring one giant run. A VMO
+remains one contiguous logical byte range regardless of physical fragmentation.
+Prefer an extent representation over one bookkeeping object per page when a
+contiguous block is available.
+
+Do NOT block the current ELF/BSS work on replacing the allocator.
 
 ## Threads
 
@@ -426,11 +411,7 @@ personality semantics before the boring ELF loader works.
 # DEVELOPMENT ORDER
 
 ``` text
-FINISH + TEST PS2-KEYBOARDD
-    ↓
-ADDRESS-SPACE BOUNDARY NEEDED BY ELF
-    ↓
-FLAT-BINARY RING3 LOAD-ONLY ELF LOADER
+FINISH ELF BSS / PARTIAL-PAGE HANDLING USING ANONYMOUS VMOS
     ↓
 STANDARD STACK / CAP BOOTSTRAP + GENERIC LAUNCH
     ↓
@@ -447,6 +428,8 @@ BORING INIT + DEPENDENCY-ORDERED STARTUP
 REMOVE OBSOLETE DRIVER-SPECIFIC RING0 / FLAT-BINARY PATHS
     ↓
 CONSOLE.INPUT / GENERIC KEY EVENTS AS NEEDED
+    ↓
+BUDDY PHYSICAL ALLOCATOR / SCATTERED ANON-VMO BACKING WHEN IT BECOMES WORTH IT
     ↓
 PERSONALITY LAYER
     ↓
@@ -513,10 +496,7 @@ And, critically:
 > works.
 
 
-## other stuff
-
-Stuff that didn't fit into above sections or which i only just remembered when 
-first creating this file with AI assistance goes below here....
+# GENERIC OBJECT REGISTRY
 
 ## Generic registry
 

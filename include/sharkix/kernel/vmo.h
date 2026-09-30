@@ -127,6 +127,19 @@ void kvmo_init(void);
 
 
 /*
+ * Create a new VMO backed by 0-initialized VMO
+ *
+ * This is basically the same as kvmo_create_from_pmem below
+ * except the new VMO is newly allocate memory full of 0s
+ *
+ */
+
+int kvmo_create_anon(vmo_handle_t *out,
+		     size_t requested_len,
+		     size_t *actual_len,
+		     vmo_rights_t rights);
+
+/*
  * Create a new VMO backed by an existing PMEM object.
  *
  * The VMO subsystem trusts its kernel caller to have established that
@@ -137,7 +150,7 @@ void kvmo_init(void);
  *
  * Returns 0 on success and -1 on failure.
  */
-int kvmo_create(vmo_handle_t *out,
+int kvmo_create_from_pmem(vmo_handle_t *out,
                 pmem_handle_t pmem,
                 vmo_rights_t rights);
 

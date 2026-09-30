@@ -113,7 +113,7 @@ void kvmo_init(void)
  *
  * Capability/security policy is deliberately NOT enforced here.
  */
-int kvmo_create(vmo_handle_t *out,
+int kvmo_create_from_pmem(vmo_handle_t *out,
                 pmem_handle_t pmem,
                 vmo_rights_t rights)
 {
