@@ -258,9 +258,10 @@ int elf_load(uint64_t source_vmo, uint64_t target_as, uint64_t elf_file_len, uin
 
 		page_offset = phdr->p_vaddr - page_vaddr;
 
-		uint64_t file_map_size = page_offset + phdr->p_filesz;
+		uint64_t file_size = page_offset + phdr->p_filesz;
 
-		file_map_size = (file_map_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+		uint64_t file_map_size =
+		    (file_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
 	
 		if(map_vmo_target(target_as,source_vmo,page_vaddr,file_page,file_map_size,prot) != 0) {
 			sharkix_debug_puts("\nERROR! Failed map_vmo_target()!\n");
