@@ -14,13 +14,13 @@
 
 /* Generic rights */
 
-SHARKIX_CAP_GENERIC_RIGHT(TRANSFER, 0)
-SHARKIX_CAP_GENERIC_RIGHT(FORWARD,  1)
-SHARKIX_CAP_GENERIC_RIGHT(DERIVE,   2)
-SHARKIX_CAP_GENERIC_RIGHT(DESTROY,  3)
-SHARKIX_CAP_GENERIC_RIGHT(REMOVE,   4)
-SHARKIX_CAP_GENERIC_RIGHT(GETNAME,  5)
-SHARKIX_CAP_GENERIC_RIGHT(SETNAME,  6)
+SHARKIX_CAP_GENERIC_RIGHT(TRANSFER, 0) /* can transfer this cap to another task                            */
+SHARKIX_CAP_GENERIC_RIGHT(FORWARD,  1) /* can forward this cap to another task or use it locally, not both */
+SHARKIX_CAP_GENERIC_RIGHT(DERIVE,   2) /* can derive another cap from this cap                             */
+SHARKIX_CAP_GENERIC_RIGHT(DESTROY,  3) /* can destroy the underlying object                                */
+SHARKIX_CAP_GENERIC_RIGHT(REMOVE,   4) /* can remove the cap - this removes it globally                    */
+SHARKIX_CAP_GENERIC_RIGHT(GETNAME,  5) /* can get the ASCII name of the cap                                */
+SHARKIX_CAP_GENERIC_RIGHT(SETNAME,  6) /* can set the ASCII name of the cap                                */
 
 
 /* Reserved generic-right space */

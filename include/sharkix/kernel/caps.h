@@ -46,31 +46,7 @@ typedef uint64_t cap_rights_t;
 //
 //
 
-// Potential TODO - think about if we want a generic metadata K/V store for caps
-#define CAP_RIGHT_NONE		 UINT64_C(0)	    /* No rights at all                                      */
-#define CAP_RIGHT_TRANSFER	(UINT64_C(1) << 0)  /* Can transfer this cap to another task's capset        */
-#define CAP_RIGHT_FORWARD	(UINT64_C(1) << 1)  /* Can forward this cap as-is OR use it locally not both */
-#define CAP_RIGHT_DERIVE	(UINT64_C(1) << 2)  /* Can derive another cap from this cap                  */
-#define CAP_RIGHT_DESTROY	(UINT64_C(1) << 3)  /* Can destroy the underlying object                     */
-#define CAP_RIGHT_REMOVE	(UINT64_C(1) << 4)  /* Can remove the cap - this removes it globally         */
-#define CAP_RIGHT_GETNAME	(UINT64_C(1) << 5)  /* Can get the ASCII name of the cap                     */
-#define CAP_RIGHT_SETNAME	(UINT64_C(1) << 6)  /* Can set the ASCII name of the cap                     */
-
-
-// mask defining all valid rights for any generic object
-// this should be updated if any reserved bits get used
-#define CAP_GENERIC_VALID_RIGHTS	(CAP_RIGHT_TRANSFER | \
-					 CAP_RIGHT_FORWARD | \
-					 CAP_RIGHT_DERIVE | \
-					 CAP_RIGHT_DESTROY | \
-					 CAP_RIGHT_REMOVE | \
-					 CAP_RIGHT_GETNAME | \
-					 CAP_RIGHT_SETNAME )
-
-// reserved for future standard perms
-#define CAP_RIGHT_RESV7		(UINT64_C(1) << 7)
-#define CAP_RIGHT_RESV8		(UINT64_C(1) << 8)
-#define CAP_RIGHT_RESV9		(UINT64_C(1) << 9)
+#include <sharkix/caps-rights.inc>
 
 // IPC specific perms - these can overlap with other object's bits, to be precise
 #define CAP_RIGHT_IPC_SEND	(UINT64_C(1) << 10)
@@ -191,7 +167,7 @@ typedef uint64_t cap_rights_t;
 #define CAPS_SAME_OBJECT(a, b) \
     ((a)->obj_handle == (b)->obj_handle)
 
-#include <sharkix/caps-enum.inc>
+#include <sharkix/caps-types-enum.inc>
 
 // represents an inividual cap
 typedef struct cap_t {
