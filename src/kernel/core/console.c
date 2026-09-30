@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "console.h"
-#include "ipc.h"
+#include <sharkix/kernel/subsystems/ipc.h>
 #include "ipc_registry.h"
 #include "thread.h"
 #include "sync.h"

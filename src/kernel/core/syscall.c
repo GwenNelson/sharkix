@@ -4,13 +4,13 @@
 #include "scheduler.h"
 #include "syscall.h"
 #include "errno.h"
-#include "ipc.h"
-#include "caps.h"
-#include "portio.h"
-#include "vmo.h"
-#include "as.h"
-#include "irq.h"
-#include "notification.h"
+#include <sharkix/kernel/subsystems/ipc.h>
+#include <sharkix/kernel/subsystems/caps.h>
+#include <sharkix/kernel/subsystems/portio.h>
+#include <sharkix/kernel/subsystems/vmo.h>
+#include <sharkix/kernel/subsystems/as.h>
+#include <sharkix/kernel/subsystems/irq.h>
+#include <sharkix/kernel/subsystems/notification.h>
 
 static uint64_t announced_a;
 static uint64_t announced_b;

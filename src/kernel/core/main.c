@@ -3,18 +3,18 @@
 #include "arch.h"
 #include "console.h"
 #include "memory.h"
-#include "pmem.h"
-#include "portio.h"
+#include <sharkix/kernel/subsystems/pmem.h>
+#include <sharkix/kernel/subsystems/portio.h>
 #include "startup.h"
-#include "caps.h"
-#include "ipc.h"
+#include <sharkix/kernel/subsystems/caps.h>
+#include <sharkix/kernel/subsystems/ipc.h>
 #include "sync.h"
 #include "kvalloc.h"
-#include "vmo.h"
-#include "notification.h"
-#include "irq.h"
+#include <sharkix/kernel/subsystems/vmo.h>
+#include <sharkix/kernel/subsystems/notification.h>
+#include <sharkix/kernel/subsystems/irq.h>
 #include "ipc_registry.h"
-#include "as.h"
+#include <sharkix/kernel/subsystems/as.h>
 
 static void kernel_start_task(void *argument)
 {

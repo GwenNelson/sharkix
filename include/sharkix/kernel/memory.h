@@ -5,8 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <sharkix/kernel/caps.h>
-#include <sharkix/kernel/vmo.h>
+#include <sharkix/kernel/subsystems/caps.h>
+#include <sharkix/kernel/subsystems/vmo.h>
 
 #define PHYSMAP_BASE 0xffff800000000000ULL
 #define KHEAP_BASE 0xffffc00000000000ULL

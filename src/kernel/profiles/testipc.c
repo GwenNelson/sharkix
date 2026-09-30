@@ -2,7 +2,7 @@
 #include "startup.h"
 #include "thread.h"
 
-#include <sharkix/kernel/ipc.h>
+#include <sharkix/kernel/subsystems/ipc.h>
 #include <sharkix/kernel/console.h>
 
 #include <sharkix/kernel/sync.h>

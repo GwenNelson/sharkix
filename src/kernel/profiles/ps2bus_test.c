@@ -3,7 +3,7 @@
 
 #include "console.h"
 
-#include <sharkix/kernel/ipc.h>
+#include <sharkix/kernel/subsystems/ipc.h>
 #include <sharkix/kernel/ipc_registry.h>
 
 void ps2bus_init(void);

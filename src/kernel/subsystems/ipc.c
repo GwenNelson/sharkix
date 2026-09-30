@@ -1,6 +1,6 @@
 #include <string.h>
 
-#include <sharkix/kernel/ipc.h>
+#include <sharkix/kernel/subsystems/ipc.h>
 #include <sharkix/kernel/memory.h>
 
 static ipc_endpoint_t *endpoints;

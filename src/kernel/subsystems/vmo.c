@@ -1,11 +1,11 @@
-#include <sharkix/kernel/vmo.h>
+#include <sharkix/kernel/subsystems/vmo.h>
 
 #include <stdint.h>
 #include <stddef.h>
 
 #include <sharkix/kernel/kmalloc.h>
 #include <sharkix/kernel/sync.h>
-#include <sharkix/kernel/pmem.h>
+#include <sharkix/kernel/subsystems/pmem.h>
 #include <sharkix/kernel/memory.h>
 
 /*

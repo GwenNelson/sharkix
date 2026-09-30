@@ -5,7 +5,7 @@
 #include <sharkix/kernel/uthash.h>
 #include <sharkix/kernel/sync.h>
 
-#include <sharkix/kernel/notification.h>
+#include <sharkix/kernel/subsystems/notification.h>
 
 typedef enum irq_status_t {
 #define SHARKIX_ERRNO(name,value,msg) name = value,

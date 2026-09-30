@@ -1,16 +1,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "caps.h"
+#include <sharkix/kernel/subsystems/caps.h>
 #include "console.h"
-#include "ipc.h"
+#include <sharkix/kernel/subsystems/ipc.h>
 #include "memory.h"
 #include "program.h"
 #include "thread.h"
 #include <sharkix/kernel/ipc_registry.h>
-#include <sharkix/kernel/irq.h>
-#include <sharkix/kernel/notification.h>
-#include <sharkix/kernel/portio.h>
+#include <sharkix/kernel/subsystems/irq.h>
+#include <sharkix/kernel/subsystems/notification.h>
+#include <sharkix/kernel/subsystems/portio.h>
 
 enum {
     PS2BUS_BOOTSTRAP_CAPS = 10,

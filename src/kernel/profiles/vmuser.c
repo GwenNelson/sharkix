@@ -1,15 +1,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "caps.h"
+#include <sharkix/kernel/subsystems/caps.h>
 #include "console.h"
-#include "ipc.h"
+#include <sharkix/kernel/subsystems/ipc.h>
 #include "memory.h"
-#include "pmem.h"
+#include <sharkix/kernel/subsystems/pmem.h>
 #include "program.h"
 #include "startup.h"
 #include "thread.h"
-#include "vmo.h"
+#include <sharkix/kernel/subsystems/vmo.h>
 
 enum {
     VMUSER_BOOTSTRAP_WORDS = 3,

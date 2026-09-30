@@ -1,14 +1,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "caps.h"
+#include <sharkix/kernel/subsystems/caps.h>
 #include "console.h"
-#include "ipc.h"
+#include <sharkix/kernel/subsystems/ipc.h>
 #include "ipc_registry.h"
 #include "memory.h"
 #include "program.h"
 #include "thread.h"
-#include <sharkix/kernel/notification.h>
+#include <sharkix/kernel/subsystems/notification.h>
 
 enum {
     PS2_KEYBOARD_BOOTSTRAP_CAPS = 6,

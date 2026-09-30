@@ -1,7 +1,7 @@
 #include <string.h>
 
 #include <sharkix/kernel/memory.h>
-#include <sharkix/kernel/pmem.h>
+#include <sharkix/kernel/subsystems/pmem.h>
 #include <sharkix/kernel/sync.h>
 
 static pmem_t *global_pmem_table;

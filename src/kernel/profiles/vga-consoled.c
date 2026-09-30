@@ -1,15 +1,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "caps.h"
+#include <sharkix/kernel/subsystems/caps.h>
 #include "console.h"
-#include "ipc.h"
+#include <sharkix/kernel/subsystems/ipc.h>
 #include "memory.h"
 #include "program.h"
 #include "startup.h"
 #include "thread.h"
-#include <sharkix/kernel/pmem.h>
-#include <sharkix/kernel/portio.h>
+#include <sharkix/kernel/subsystems/pmem.h>
+#include <sharkix/kernel/subsystems/portio.h>
 
 
 enum {

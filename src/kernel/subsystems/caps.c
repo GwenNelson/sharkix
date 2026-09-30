@@ -1,4 +1,4 @@
-#include <sharkix/kernel/caps.h>
+#include <sharkix/kernel/subsystems/caps.h>
 #include <sharkix/kernel/memory.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -6,12 +6,12 @@
 #include <sharkix/kernel/uthash.h>
 
 // we need these headers for some subsystem-specific nonsense
-#include <sharkix/kernel/ipc.h>
-#include <sharkix/kernel/pmem.h>
-#include <sharkix/kernel/vmo.h>
-#include <sharkix/kernel/portio.h>
-#include <sharkix/kernel/irq.h>
-#include <sharkix/kernel/as.h>
+#include <sharkix/kernel/subsystems/ipc.h>
+#include <sharkix/kernel/subsystems/pmem.h>
+#include <sharkix/kernel/subsystems/vmo.h>
+#include <sharkix/kernel/subsystems/portio.h>
+#include <sharkix/kernel/subsystems/irq.h>
+#include <sharkix/kernel/subsystems/as.h>
 
 static cap_handle_t next_cap_handle = 0;
 static cap_t*       global_caps_table = NULL;

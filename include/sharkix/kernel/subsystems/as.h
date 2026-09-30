@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <sharkix/kernel/vmo.h>
+#include <sharkix/kernel/subsystems/vmo.h>
 #include <sharkix/kernel/memory.h>
 #include <sharkix/kernel/sync.h>
 #include <sharkix/kernel/uthash.h>
