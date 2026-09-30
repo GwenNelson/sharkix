@@ -11,6 +11,7 @@
 #include <sharkix/kernel/vmo.h>
 #include <sharkix/kernel/portio.h>
 #include <sharkix/kernel/irq.h>
+#include <sharkix/kernel/as.h>
 
 static cap_handle_t next_cap_handle = 0;
 static cap_t*       global_caps_table = NULL;
