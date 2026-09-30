@@ -558,3 +558,10 @@ generic registry:
 
 IPC registry:
     name -> IPC rendezvous/service endpoint
+
+
+### misc stuff i forgot to add earlier
+
+After BSS is working: add further typed factory capabilities only for objects that now have concrete userspace consumers, particularly the objects needed by init/launch. Keep each factory narrow (CAP_TYPE_FACTORY_VMO, CAP_TYPE_FACTORY_AS, CAP_TYPE_FACTORY_THREAD, etc.) rather than introducing a universal factory.
+Begin designing the positive syscall table as part of bringing up the real init/userspace environment. This will require cleaning up/refactoring the existing temporary/test syscall-number assignments. Preserve the test syscalls where still useful, but move them out of the namespace/layout intended for the stable positive syscall ABI rather than designing the permanent table around bootstrap tests.
+Let the requirements of init + generic ELF launch drive which factories and positive syscalls actually get implemented. Do not pre-build every conceivable factory/syscall.
