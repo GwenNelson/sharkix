@@ -48,7 +48,7 @@ static int create_source_vmo(vmo_handle_t *out) {
 		return -1;
 	}
 
-	if (kvmo_create(out, pmem, VMO_MAP | VMO_READ) != 0) {
+	if (kvmo_create(out, pmem, VMO_MAP | VMO_READ | VMO_EXEC) != 0) {
 		(void)kpmem_destroy(pmem);
 		for (size_t i = 0; i < page_count; ++i)
 			phys_page_put(physical + i * PAGE_SIZE);
@@ -147,6 +147,7 @@ void kernel_startup_profile(void) {
 		create_loader_task(&loader_as, &loader_thread, &bootstrap) != 0 ||
 		install_named_cap(loader_as, source_vmo, CAP_TYPE_VMO,
 						  CAP_RIGHT_VMO_MAP | CAP_RIGHT_VMO_READ |
+						  CAP_RIGHT_VMO_EXEC |
 						  CAP_RIGHT_VMO_GETLEN,
 						  "elf.source.vmo", sizeof("elf.source.vmo") - 1,
 						  &source_cap) != 0 ||
