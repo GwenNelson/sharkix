@@ -191,18 +191,7 @@ typedef uint64_t cap_rights_t;
 #define CAPS_SAME_OBJECT(a, b) \
     ((a)->obj_handle == (b)->obj_handle)
 
-typedef enum cap_type_t {
-	CAP_TYPE_IPC_ENDPOINT   = 1,
-	CAP_TYPE_PMEM           = 2,
-	CAP_TYPE_VMO            = 3,
-	CAP_TYPE_PORTIO         = 4,
-	CAP_TYPE_IRQ            = 5,
-	CAP_TYPE_NOTIFY         = 6,
-	CAP_TYPE_AS	        = 7,
-	CAP_TYPE_FACTORY_VMO    = 8, // still basically only used for anon VMOs essentially
-	CAP_TYPE_FACTORY_AS     = 9,
-	CAP_TYPE_FACTORY_THREAD = 10,
-} cap_type_t;
+#include <sharkix/caps-enum.inc>
 
 // represents an inividual cap
 typedef struct cap_t {
