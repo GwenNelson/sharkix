@@ -343,6 +343,97 @@ SHARKIX_SYSCALL_IMPL(IPC_UNBIND_NOTIFY) {
 
 /*
  * input:
+ *     RDI = VMO factory cap
+ *     RSI = requested length
+ *     RDX = requested mapping rights
+ *
+ * return:
+ *     RAX = status
+ *     RSI = new VMO cap on success
+ *     RDX = actual length (page rounded) on success
+ */
+SHARKIX_SYSCALL_IMPL(VM_CREATE_ANON) {
+	thread_t* caller = thread_current();
+
+	if (caller == NULL || caller->address_space == NULL) {
+		// this is probably impossible in most cases, but might as well verify
+        	ctx->rax = VM_ERR_INVALID;
+		goto fail;
+	}
+
+	cap_handle_t factory_cap = (cap_handle_t)ctx->rdi;
+	kobject_handle_t obj;
+
+	// first check if they have the factory cap
+	if(kcapset_resolve_handle(caller->address_space->capset,factory_cap,CAP_TYPE_FACTORY_VMO,0,&obj) != 0) {
+		ctx->rax = VM_ERR_PERMISSION;
+		goto fail;
+	}
+	// we actually don't care about the object handle, because it's not actually needed in the current architecture
+	// at some point we might use it to check resources or something i guess
+
+	// if we get here, we're authorized, so just create the new VMO if possible
+	vmo_handle_t  new_vmo;
+	size_t        actual_len;
+	size_t        requested_len    = (size_t)ctx->rsi;
+	vmo_rights_t  requested_rights = (vmo_rights_t)ctx->rdx;
+
+	if(requested_rights & ~(VMO_READ | VMO_WRITE | VMO_EXEC)) {
+		ctx->rax = VM_ERR_INVALID;
+		goto fail;
+	}
+
+	if(requested_len == 0) {
+		ctx->rax = VM_ERR_INVALID;
+		goto fail;
+	}
+
+	if(kvmo_create_anon(&new_vmo,requested_len,&actual_len,requested_rights) != 0) {
+		ctx->rax = VM_ERR_NO_MEMORY;
+		goto fail;
+	}
+
+	// map rights appropriately for the new cap
+
+	cap_rights_t new_cap_rights = CAP_GENERIC_VALID_RIGHTS |
+        	                      CAP_RIGHT_VMO_MAP |
+                	              CAP_RIGHT_VMO_GETLEN;
+
+	if (requested_rights & VMO_READ)
+	    new_cap_rights |= CAP_RIGHT_VMO_READ;
+	if (requested_rights & VMO_WRITE)
+	    new_cap_rights |= CAP_RIGHT_VMO_WRITE;
+	if (requested_rights & VMO_EXEC)
+	    new_cap_rights |= CAP_RIGHT_VMO_EXEC;
+
+	// if we get here, it's probably okay to create a cap for the new anon VMO and return it
+	cap_handle_t new_cap;
+	if(kcap_create((kobject_handle_t)new_vmo, CAP_TYPE_VMO,new_cap_rights,&new_cap) != 0) {
+		kvmo_destroy(new_vmo);
+		ctx->rax = VM_ERR_FAILED_CAP_CREATE;
+		goto fail;
+	}
+	
+	// add to the caller's capset of course
+	if(kcapset_addcap(caller->address_space->capset,new_cap) != 0) {
+		kcap_destroy(new_cap);
+		kvmo_destroy(new_vmo);
+		ctx->rax = VM_ERR_FAILED_CAP_CREATE;
+		goto fail;
+	}
+
+	ctx->rax = VM_OK;
+	ctx->rsi = new_cap;
+	ctx->rdx = actual_len;
+	return syscall_return();
+fail:
+	ctx->rsi = (uint64_t)CAP_INVALID_HANDLE;
+	ctx->rdx = 0;
+	return syscall_return();
+}
+
+/*
+ * input:
  *     RDI = VMO cap
  *     RSI = virtual address
  *     RDX = offset into VMO

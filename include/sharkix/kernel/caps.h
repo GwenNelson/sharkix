@@ -154,6 +154,9 @@ typedef uint64_t cap_rights_t;
 				  CAP_RIGHT_AS_UNMAP | \
 				  CAP_RIGHT_AS_PROTECT)
 
+// we don't actually have any specific perms for factories - they're more like tickets than sets of perms
+#define CAP_FACTORY_VMO_VALID_RIGHTS	CAP_GENERIC_VALID_RIGHTS
+
 // helpers
 #define CAP_HAS_ALL(cap, required) \
     ((((cap)->rights) & (required)) == (required))
@@ -193,6 +196,7 @@ typedef enum cap_type_t {
 	CAP_TYPE_IRQ          = 5,
 	CAP_TYPE_NOTIFY       = 6,
 	CAP_TYPE_AS	      = 7,
+	CAP_TYPE_FACTORY_VMO  = 8, // a factory for anon VMOs for now, later we'll add other factories for other stuff
 } cap_type_t;
 
 // represents an inividual cap

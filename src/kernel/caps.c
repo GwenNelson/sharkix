@@ -53,6 +53,8 @@ static int kcap_validate_rights(cap_type_t type, cap_rights_t rights) {
     case CAP_TYPE_AS:
 	return (rights & ~CAP_AS_VALID_RIGHTS) ? -1 : 0;
 
+    case CAP_TYPE_FACTORY_VMO:
+	return (rights & ~CAP_FACTORY_VMO_VALID_RIGHTS) ? -1 : 0;
     default:
         return -1;
     }
