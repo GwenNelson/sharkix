@@ -29,6 +29,45 @@ The current eager-copy loader is intentionally the simple implementation. Later,
 
 Do not block the current loader/init work on this optimization. The eager-copy path is the intended implementation until the VM subsystem can express these semantics cleanly.
 
+### Hostile-ELF audit triage (2026-10-02)
+
+A read-only adversarial audit of the current loader found no direct path from ELF-controlled virtual addresses into the kernel half and no direct bypass of the existing AS/VMO capability checks. It did find several malformed-input, resource-lifetime, and launch-protocol problems. Triage them according to the current project stage rather than treating every production-hardening item as an immediate blocker.
+
+#### MUST fix before more feature work / literally tonight
+
+These are either reachable correctness/security bugs on the current path, can turn ordinary failure into whole-system failure/hang, or become harder to repair if more launch machinery is built on top of the present semantics:
+
+- **ELF admission must become a complete side-effect-free pass before commit.** Validate all relevant program headers and compute all rounded ranges before creating VMOs or changing the target AS. This is the structural fix that makes malformed input rejection deterministic and prevents a late bad header from being discovered only after earlier mutations.
+- **Enforce `p_offset` / `p_vaddr` page congruence and supported `p_align` semantics before any copying/mapping.** The current missing congruence check can make the loader calculate a mixed-page source outside the mapped source VMO and fault instead of rejecting the ELF.
+- **Reject overlapping page-rounded `PT_LOAD` ranges explicitly during admission.** Do not depend on the current lower VM layer incidentally rejecting replacement mappings; the loader's accepted format and security result must not change if mapping internals later change.
+- **Validate `e_entry` against the declared byte range of an admitted executable `PT_LOAD` (`PF_X`), not merely against a mapped/rounded page.**
+- **Reject load permissions/semantics the current VM cannot faithfully represent.** In particular reject a `PT_LOAD` without `PF_R`, reject unknown `p_flags` bits, and explicitly reject unsupported executable semantics/features rather than silently pretending to support them. Keep this narrowly scoped to the static ELF subset Sharkix actually consumes; do not begin dynamic-linker/TLS implementation merely because those ELF features exist.
+- **Remove the ELF-triggerable whole-machine halt path.** A segment can currently occupy the later fixed stack range, causing stack setup failure and the test startup profile to execute `cli; hlt` forever. Any ELF/launch failure must become an ordinary failed launch/cleanup path, never a deliberate system halt. A generalized forbidden-range mechanism may wait for the generic launcher; fixing the catastrophic failure behavior may not.
+- **Fix/enforce the intended `AS_THREAD_CREATE` authority check for `THREAD_CREATE`.** This is a current capability-boundary correctness gap and should not be carried into generic launch.
+- **Fix the known kthread wrapper/reaper stale-`thread_t *` UAF before building more userspace-visible thread lifecycle functionality.** This is a current reachable lifetime bug, not future hardening. The fix belongs to the typed thread lifetime audit and must preserve `DEAD != FREE` rather than papering over it in the syscall.
+- **Fix the anonymous VMO/PMEM ownership leak as part of the lifetime audit before substantially increasing anonymous-VMO consumers.** Current anonymous backing can permanently lose physical pages when descriptors/caps disappear. More ELF launch/init work would multiply the number of paths that depend on these ownership semantics, so establish the correct ownership/reclamation rule now rather than adding loader-specific cleanup hacks.
+- **Audit/fix the known capability global-lock/destructor ordering and reachable AS destruction lifetime problems before adding more cap handoff/destruction users.** Do not run arbitrary subsystem destructors while `global_caps_table_lock` is held; do not use copied `cap_t *` pointers after dropping the lock; ensure lookup/acquire is atomic with unregister for destructible/refcounted targets. These are foundation semantics that cap transfer/init would otherwise build upon.
+
+For tonight's blocking pass, prefer small explicit invariants and regression tests over new frameworks. Build/test after each bounded subsystem change. The goal is not formal perfection; it is to stop knowingly building new functionality on top of reachable UAF, leak, deadlock, authority-check, or whole-system-failure bugs.
+
+#### Important, but may be deferred past tonight
+
+- **Full transactional ELF commit/rollback:** the admission/commit split should be established now, but complete rollback becomes much easier and more trustworthy once VMO/mapping ownership and destruction are sound. Do not invent ad-hoc loader lifetime rules. After the lifetime fixes, make a failed commit unmap everything installed by that load and release everything it created.
+- **Loader allocation/resource budgets:** hostile ELF input can direct the loader's factory authority into very large allocations/work even though the ELF process itself has no factory cap. This is a real confused-deputy/resource-exhaustion issue before arbitrary untrusted ELF submission is supported. Do not design the final quota/accounting architecture tonight. The existing later resource-accounting section is the right home; generous temporary sanity ceilings are acceptable if trivial, but are not a substitute for eventual delegated accounting/budgets.
+- **Loader death waking a synchronous launch coordinator:** a loader fault/death can currently leave a coordinator blocked waiting for a status IPC. This is real robustness work, but the general answer belongs with thread/IPC endpoint lifetime/death semantics rather than ELF parsing. Revisit during the lifetime/IPC lifecycle work before relying on the loader as a robust long-running service.
+- **Partial-page information exposure:** current source-VMO construction zeroes the rounded allocation before copying the ELF, so current padding is initialized/non-secret. Document that as a required temporary source-VMO contract. Later private boundary-page materialization/COW/demand paging can remove the assumption; do not implement the pager now.
+- **Source VMO sealing/immutability against other aliases:** the current profile gives the source image no write authority, which is sufficient for the controlled path. A reusable file-backed loader eventually needs a stronger immutable/sealed backing contract if another cap could mutate backing that target processes map directly. This belongs with later VMO semantics.
+- **W+X policy:** `PF_W|PF_X` is not by itself a capability escape. Decide later whether Sharkix's supported ELF policy rejects it by default; do not let this become an unrelated W^X project tonight unless current consumers require a decision.
+- **General target-AS/forbidden-range policy:** current loading assumes a fresh, separate target AS. Document that assumption now. Let the generic launcher/bootstrap work define stack/guard/bootstrap reservations and a reusable forbidden-range contract when it has concrete consumers.
+
+#### Loader finish line for the current milestone
+
+Treat the loader as good enough to stop touching once: its accepted static ELF subset is explicit; admission is side-effect-free; all accepted address/file arithmetic and page relationships are validated; page-overlap and entry-point semantics are deterministic; malformed input cannot make the loader perform an out-of-range source access; and ordinary load failure cannot halt the machine. Then let the lifetime audit repair the ownership machinery underneath it. Do not expand this milestone into general ELF conformance, dynamic linking, COW, demand paging, or resource-accounting architecture.
+
+#### Regression tests to retain
+
+For every concrete hostile-ELF finding fixed, keep a regression input/test where practical: incongruent offset/vaddr, rounded-page overlap, entry in non-executable or executable-page padding, unsupported/unreadable load flags, stack/reserved-range collision once that policy exists, arithmetic/bounds edge cases, and a later-invalid header after earlier valid-looking headers. Re-run the existing large initialized writable-data + BSS + RO protection tests as the normal positive case.
+
 ## 2. Lifetime / destruction audit
 
 Do the deliberate, finite audit in the lifetime section below now that AS and thread creation are reachable from userspace. Prioritize reachable UAF, destruction/unregister races, cap-lock/destructor ordering, persistent references, and resource leaks. The kthread/reaper stale-pointer issue above is part of this audit, not a reason to invent a universal object framework.
@@ -672,6 +711,66 @@ Potential future model:
 
 Do not design pager chaining, large-scale concurrent fault queues, or fancy
 personality semantics before the boring ELF loader works.
+
+# STOP-THE-LINE CHECK BEFORE FUN WORK
+
+Use this as the practical gate when deciding whether to keep auditing or go build something enjoyable.
+
+**Do it now** if a known issue can, on currently reachable paths and without assuming a hostile production user: corrupt/free live kernel memory, dereference a freed object, leak physical memory repeatedly during normal development/launch, deadlock/hang launch indefinitely, halt the whole machine on an ordinary recoverable failure, bypass an intended capability check, or establish ownership/lifetime semantics that imminent init/cap-handoff work would multiply and make harder to change.
+
+Under the currently known findings, the stop-the-line set is:
+
+1. bounded ELF admission fixes and removal of the ELF-triggered `cli; hlt` failure path;
+2. explicit `AS_THREAD_CREATE` enforcement;
+3. kthread/reaper stale-pointer lifetime fix;
+4. anonymous VMO/PMEM backing ownership and reclamation sufficient that create/map/unmap/destroy/failure paths do not permanently leak pages;
+5. reachable AS acquire/unregister/destruction correctness and the global capability-lock/destructor rule, including no unsafe `cap_t *` lifetime across unlock;
+6. any additional concrete UAF/deadlock/double-free/irrecoverable leak discovered while fixing those exact paths.
+
+Do **not** recursively promote every theoretical issue found by the audit into tonight's blocker list. Once the known stop-the-line set is green and tests pass, it is legitimate to do feature work while keeping the finite lifetime audit as the next deliberate reliability project.
+
+## Fun work allowed after the stop-the-line set is green
+
+Pick from these without feeling that the whole audit must be completed first:
+
+- implement the minimum `CAP_DERIVE` / `CAP_TRANSFER` / `CAP_FORWARD` semantics needed for init, **provided the cap destruction/ownership foundations above are already sound**;
+- define the small standard initial userspace stack/cap bootstrap ABI and make generic ELF launch work end-to-end;
+- bring up the first deliberately boring ring3 init and have it launch one real controlled service/driver;
+- migrate one existing flat/ring3 payload to ordinary ELF startup as an integration victory;
+- do a small core/subsystem boundary cleanup only where the current init work directly trips over a bad dependency;
+- add satisfying adversarial ELF regression tests around the just-fixed loader invariants.
+
+The most rewarding near-term feature milestone remains: **real ring3 init uses generic facilities to construct a restricted domain, load an ELF, provide its bootstrap caps, create its initial thread, and start it without bespoke kernel launch code.**
+
+## Dreaded boring audit work that remains important
+
+After (or interleaved in bounded chunks with) the fun milestone work, continue the finite typed lifetime audit rather than doing an open-ended rewrite:
+
+``` text
+AS / registry acquire-unregister-release invariants
+    ↓
+kthread + core scheduler thread relationship / reap semantics
+    ↓
+VMO + PMEM backing ownership / refs / final reclamation
+    ↓
+VMO sets + AS mappings / persistent refs
+    ↓
+cap REMOVE vs DESTROY + concurrent destructive operations
+    ↓
+IPC endpoint/service death and blocked-waiter semantics
+    ↓
+notifications
+    ↓
+IRQ
+```
+
+Adjust the exact order when a concrete dependency demands it, but keep each pass typed and bounded: read-only inspection -> state the intended lifetime rule -> identify violations -> smallest understandable fix -> build/test -> commit. Comments should explain ownership/state invariants to a human reader, not narrate syntax.
+
+The finite audit is done when capability-visible objects needed by init have coherent ownership, acquisition/unregister/free rules and there are no known reachable UAFs, deadlocks, double-destroys, or permanent resource leaks on implemented paths. It is **not** done only when every hypothetical future object and concurrency model has been designed.
+
+## Explicitly not tonight
+
+Unless a stop-the-line bug proves one is required, do not spend tonight on: COW/demand paging; a general pager; dynamic ELF/linker/TLS support; final quota/resource-accounting architecture; a universal kobject/lifetime framework; cap-over-IPC; PUBSUB policy completeness; buddy allocation; driver metadata framework design; personality forwarding; generalized userspace exception handling; boot-protocol portability; or polishing unrelated subsystem naming/refactors.
 
 # DEVELOPMENT ORDER
 
