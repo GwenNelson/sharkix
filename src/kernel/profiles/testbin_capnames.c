@@ -3,7 +3,7 @@
 
 #include <sharkix/kernel/subsystems/kcaps.h>
 #include "console.h"
-#include <sharkix/kernel/subsystems/ipc.h>
+#include <sharkix/kernel/subsystems/kipc.h>
 #include "memory.h"
 #include "program.h"
 #include "startup.h"
@@ -30,7 +30,7 @@ static void kernel_worker(void *argument)
     static const char renamed[] = "renamed-cap";
 
     (void)argument;
-    if (ipc_recv(endpoint, &message) != IPC_OK || message.words[0] != 42 ||
+    if (kipc_recv(endpoint, &message) != IPC_OK || message.words[0] != 42 ||
         kcap_get_name(user_cap, name, sizeof(name), &name_len) != 0 ||
         name_len != sizeof(renamed) - 1 ||
         memcmp(name, renamed, name_len) != 0) {
@@ -90,7 +90,7 @@ void kernel_startup_profile(void)
     uint64_t *bootstrap = NULL;
     static const char initial_name[] = "hello-cap";
 
-    if (ipc_create(&endpoint) != IPC_OK ||
+    if (kipc_create(&endpoint) != IPC_OK ||
         kcap_create(endpoint, CAP_TYPE_IPC,
                     CAP_RIGHT_IPC_SEND | CAP_RIGHT_GETNAME | CAP_RIGHT_SETNAME,
                     &user_cap) != 0 ||
@@ -118,7 +118,7 @@ void kernel_startup_profile(void)
 
     if (kernel_worker_failed)
         console_write("testbin_capnames worker failed\n");
-    (void)ipc_destroy(endpoint);
+    (void)kipc_destroy(endpoint);
     (void)user_as;
     startup_reaper();
 }

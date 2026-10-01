@@ -4,7 +4,7 @@
 #include "arch.h"
 #include <sharkix/kernel/subsystems/kcaps.h>
 #include "console.h"
-#include <sharkix/kernel/subsystems/ipc.h>
+#include <sharkix/kernel/subsystems/kipc.h>
 #include "memory.h"
 #include "program.h"
 #include "startup.h"
@@ -58,12 +58,12 @@ static void raw_worker(void *argument)
 
     ++raw_ready;
     for (;;) {
-        if (ipc_recv(raw_endpoints[worker], &message) != IPC_OK)
+        if (kipc_recv(raw_endpoints[worker], &message) != IPC_OK)
             break;
 
         if (worker == 0 && !measuring && round == BENCH_WARMUP_ROUNDS) {
             uint64_t start = benchmark_tsc_start();
-            (void)ipc_send(thread_current(), raw_endpoints[1], &message);
+            (void)kipc_send(thread_current(), raw_endpoints[1], &message);
             measuring = 1;
             round = 0;
             /* The end boundary is taken after the final dependent receive. */
@@ -79,7 +79,7 @@ static void raw_worker(void *argument)
                 break;
             }
         }
-        (void)ipc_send(thread_current(),
+        (void)kipc_send(thread_current(),
                        raw_endpoints[(worker + 1U) % BENCH_WORKERS], &message);
         if (worker == 0 && !measuring)
             ++round;
@@ -111,7 +111,7 @@ static void run_raw_benchmark(void)
     raw_finished = 0;
     raw_total_cycles = 0;
     for (i = 0; i < BENCH_WORKERS; ++i) {
-        if (ipc_create(&raw_endpoints[i]) != IPC_OK)
+        if (kipc_create(&raw_endpoints[i]) != IPC_OK)
             benchmark_halt("raw endpoint create");
         indices[i] = i;
     }
@@ -131,12 +131,12 @@ static void run_raw_benchmark(void)
     }
     wait_until(&raw_ready, BENCH_WORKERS);
     token.type = IPC_MSGTYPE_SEND;
-    if (ipc_send(thread_current(), raw_endpoints[0], &token) != IPC_OK)
+    if (kipc_send(thread_current(), raw_endpoints[0], &token) != IPC_OK)
         benchmark_halt("raw token injection");
     wait_until(&raw_finished, 1);
 
     for (i = 0; i < BENCH_WORKERS; ++i)
-        (void)ipc_destroy(raw_endpoints[i]);
+        (void)kipc_destroy(raw_endpoints[i]);
     wait_for_threads(raw_thread_ids);
 
     console_write("raw IPC:\n  hops: ");
@@ -201,7 +201,7 @@ static void run_user_benchmark(void)
 
     syscall_benchmark_reset();
     for (i = 0; i < BENCH_WORKERS; ++i)
-        if (ipc_create(&endpoints[i]) != IPC_OK)
+        if (kipc_create(&endpoints[i]) != IPC_OK)
             benchmark_halt("user endpoint create");
     for (i = 0; i < BENCH_WORKERS; ++i) {
         if (create_user_bench_task(&image, i, &tasks[i]) != 0)
@@ -223,13 +223,13 @@ static void run_user_benchmark(void)
             benchmark_halt("user thread start");
     while (syscall_benchmark_ready_count() < BENCH_WORKERS)
         thread_yield();
-    if (ipc_send(thread_current(), endpoints[0], &token) != IPC_OK)
+    if (kipc_send(thread_current(), endpoints[0], &token) != IPC_OK)
         benchmark_halt("user token injection");
     while (!syscall_benchmark_stop_tsc())
         thread_yield();
 
     for (i = 0; i < BENCH_WORKERS; ++i)
-        (void)ipc_destroy(endpoints[i]);
+        (void)kipc_destroy(endpoints[i]);
     wait_for_threads(thread_ids);
     for (i = 0; i < BENCH_WORKERS; ++i) {
         address_space_release(tasks[i].address_space);

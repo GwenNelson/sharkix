@@ -3,7 +3,7 @@
 
 #include <sharkix/kernel/subsystems/kcaps.h>
 #include "console.h"
-#include <sharkix/kernel/subsystems/ipc.h>
+#include <sharkix/kernel/subsystems/kipc.h>
 #include "memory.h"
 #include "startup.h"
 #include "thread.h"
@@ -18,20 +18,20 @@ void kernel_startup_profile(void) {
      ipc_handle_t subC;
 
      console_write("\nTesting publisher creation\n");
-     status = ipc_create_publisher(&pub);
+     status = kipc_create_publisher(&pub);
      if(status != IPC_OK) {
-	console_write("ipc_create_publisher() failed! Error return:");
+	console_write("kipc_create_publisher() failed! Error return:");
 	console_decimal(status);
 	for(;;) thread_yield();
      }
 
      console_write("Creating subscribers...\n");
-     status = ipc_subscribe(pub,&subA);
-     status = ipc_subscribe(pub,&subB);
-     status = ipc_subscribe(pub,&subC);
+     status = kipc_subscribe(pub,&subA);
+     status = kipc_subscribe(pub,&subB);
+     status = kipc_subscribe(pub,&subC);
 
      if(status != IPC_OK) {
-	console_write("Failed ipc_subscribe()! Error return:");
+	console_write("Failed kipc_subscribe()! Error return:");
 	console_decimal(status);
 	for(;;) thread_yield();
      }
@@ -44,10 +44,10 @@ void kernel_startup_profile(void) {
      first_msg.words[3] = 666;
      first_msg.words[4] = 1987;
 
-     status = ipc_send(thread_current(),pub, &first_msg);
+     status = kipc_send(thread_current(),pub, &first_msg);
 
      if(status != IPC_OK) {
-	console_write("Failed ipc_send_nb()! Error return:");
+	console_write("Failed kipc_send_nb()! Error return:");
 	console_decimal(status);
 	for(;;) thread_yield();
      }
@@ -55,9 +55,9 @@ void kernel_startup_profile(void) {
      console_write("Testing ABC....\n");
 
      ipc_message_t a_msg = { 0 };
-     status = ipc_recv_nb(subA,&a_msg);
+     status = kipc_recv_nb(subA,&a_msg);
      if(status != IPC_OK) {
-	console_write("Failed ipc_recv_nb()! Error return:");
+	console_write("Failed kipc_recv_nb()! Error return:");
 	console_decimal(status);
 	for(;;) thread_yield();
      }
@@ -77,9 +77,9 @@ void kernel_startup_profile(void) {
      }
 
      ipc_message_t b_msg = { 0 };
-     status = ipc_recv_nb(subB,&b_msg);
+     status = kipc_recv_nb(subB,&b_msg);
      if(status != IPC_OK) {
-	console_write("Failed ipc_recv_nb()! Error return:");
+	console_write("Failed kipc_recv_nb()! Error return:");
 	console_decimal(status);
 	for(;;) thread_yield();
      }
@@ -101,9 +101,9 @@ void kernel_startup_profile(void) {
  
 
      ipc_message_t c_msg = { 0 };
-     status = ipc_recv_nb(subC,&c_msg);
+     status = kipc_recv_nb(subC,&c_msg);
      if(status != IPC_OK) {
-	console_write("Failed ipc_recv_nb()! Error return:");
+	console_write("Failed kipc_recv_nb()! Error return:");
 	console_decimal(status);
 	for(;;) thread_yield();
      }

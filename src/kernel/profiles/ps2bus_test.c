@@ -3,7 +3,7 @@
 
 #include "console.h"
 
-#include <sharkix/kernel/subsystems/ipc.h>
+#include <sharkix/kernel/subsystems/kipc.h>
 #include <sharkix/kernel/ipc_registry.h>
 
 void ps2bus_init(void);
@@ -85,7 +85,7 @@ void kernel_startup_profile(void)
         ipc_message_t message;
         uint8_t scancode;
 
-        if (ipc_recv(port1_endpoint, &message) != IPC_OK) {
+        if (kipc_recv(port1_endpoint, &message) != IPC_OK) {
             console_write("ps2bus_test: receive failed\n");
             continue;
         }

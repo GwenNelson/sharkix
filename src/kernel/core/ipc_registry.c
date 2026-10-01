@@ -1,5 +1,5 @@
 #include <sharkix/kernel/uthash.h>
-#include <sharkix/kernel/subsystems/ipc.h>
+#include <sharkix/kernel/subsystems/kipc.h>
 
 #include <sharkix/kernel/memory.h>
 #include <sharkix/kernel/sync.h>

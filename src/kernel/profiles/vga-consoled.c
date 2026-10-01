@@ -3,7 +3,7 @@
 
 #include <sharkix/kernel/subsystems/kcaps.h>
 #include "console.h"
-#include <sharkix/kernel/subsystems/ipc.h>
+#include <sharkix/kernel/subsystems/kipc.h>
 #include "memory.h"
 #include "program.h"
 #include "startup.h"
@@ -43,7 +43,7 @@ static void kernel_worker(void *argument) {
     ipc_message_t message = { 0 };
 
     (void)argument;
-    if (ipc_recv(vga_ready_endpoint, &message) != IPC_OK) {
+    if (kipc_recv(vga_ready_endpoint, &message) != IPC_OK) {
         console_write("vga-consoled ready receive failed\n");
         return;
     }
@@ -56,12 +56,12 @@ static void kernel_worker(void *argument) {
         .words = { 1, (uint64_t)'A', 0, 0, 0 }
     };
     for (;;) {
-        if (ipc_send(thread_current(), vga_endpoint, &message) != IPC_OK) {
+        if (kipc_send(thread_current(), vga_endpoint, &message) != IPC_OK) {
             console_write("vga-consoled output send failed\n");
             return;
         }
         message.words[1] = (uint64_t)'B';
-        if (ipc_send(thread_current(), vga_endpoint, &message) != IPC_OK) {
+        if (kipc_send(thread_current(), vga_endpoint, &message) != IPC_OK) {
             console_write("vga-consoled output send failed\n");
             return;
         }
@@ -125,11 +125,11 @@ void kernel_startup_profile(void) {
      }
 
      // setup the endpoints
-     if (ipc_create(&vga_endpoint) != IPC_OK ||
+     if (kipc_create(&vga_endpoint) != IPC_OK ||
          kcap_create(vga_endpoint, CAP_TYPE_IPC,
                      CAP_RIGHT_IPC_RECV | CAP_RIGHT_GETNAME,
                      &vga_endpoint_cap) != 0 ||
-         ipc_create(&vga_ready_endpoint) != IPC_OK ||
+         kipc_create(&vga_ready_endpoint) != IPC_OK ||
          kcap_create(vga_ready_endpoint, CAP_TYPE_IPC,
                      CAP_RIGHT_IPC_SEND | CAP_RIGHT_GETNAME,
                      &vga_ready_endpoint_cap) != 0) {

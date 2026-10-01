@@ -6,7 +6,7 @@
 #include <sharkix/kernel/uthash.h>
 
 // we need these headers for some subsystem-specific nonsense
-#include <sharkix/kernel/subsystems/ipc.h>
+#include <sharkix/kernel/subsystems/kipc.h>
 #include <sharkix/kernel/subsystems/pmem.h>
 #include <sharkix/kernel/subsystems/vmo.h>
 #include <sharkix/kernel/subsystems/portio.h>
@@ -214,7 +214,7 @@ int kcap_destroy_obj(cap_handle_t handle) {
 
     switch (found->type) {
     case CAP_TYPE_IPC:
-        status = ipc_destroy(found->obj_handle);
+        status = kipc_destroy(found->obj_handle);
         break;
 
     case CAP_TYPE_PMEM:

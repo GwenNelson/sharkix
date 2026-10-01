@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "console.h"
-#include <sharkix/kernel/subsystems/ipc.h>
+#include <sharkix/kernel/subsystems/kipc.h>
 #include "ipc_registry.h"
 #include "thread.h"
 #include "sync.h"
@@ -35,7 +35,7 @@ static kspinlock_t console_lock;
 void console_init_late(void) {
      kspin_init(&console_lock);
      init_thread = thread_current();
-     ipc_status_t status = ipc_create_publisher(&console_output_pub);
+     ipc_status_t status = kipc_create_publisher(&console_output_pub);
      if(status != IPC_OK) {
 	console_write("console.c:console_init_late() - could not create the IPC endpoint!\n");
         console_write("Can not continue");
@@ -75,7 +75,7 @@ void console_putc(char c) {
 
      if(late_drivers_ready) {
         ipc_message_t msg = { .type = IPC_MSGTYPE_SEND, .words = {1,(uint64_t)c,0,0,0 }};
-	ipc_send(init_thread,console_output_pub,&msg);
+	kipc_send(init_thread,console_output_pub,&msg);
      }
 
 }

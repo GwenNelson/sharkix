@@ -7,7 +7,7 @@
 #include <sharkix/kernel/subsystems/portio.h>
 #include "startup.h"
 #include <sharkix/kernel/subsystems/kcaps.h>
-#include <sharkix/kernel/subsystems/ipc.h>
+#include <sharkix/kernel/subsystems/kipc.h>
 #include "sync.h"
 #include "kvalloc.h"
 #include <sharkix/kernel/subsystems/vmo.h>
@@ -35,7 +35,7 @@ void kmain(void)
     }
     startup_common_init();
     ksync_init();
-    ipc_init();
+    kipc_init();
     kipc_registry_init();
     kpmem_init();
     kportio_init();

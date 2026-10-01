@@ -3,7 +3,7 @@
 
 #include <sharkix/kernel/subsystems/kcaps.h>
 #include "console.h"
-#include <sharkix/kernel/subsystems/ipc.h>
+#include <sharkix/kernel/subsystems/kipc.h>
 #include "memory.h"
 #include <sharkix/kernel/subsystems/pmem.h>
 #include "program.h"
@@ -71,7 +71,7 @@ static int wait_for_completion(ipc_handle_t endpoint, uint64_t expected)
 {
     ipc_message_t message = { 0 };
 
-    if (ipc_recv(endpoint, &message) != IPC_OK)
+    if (kipc_recv(endpoint, &message) != IPC_OK)
         return -1;
 
     return message.type == IPC_MSGTYPE_SEND && message.words[0] == expected
@@ -84,7 +84,7 @@ static int send_continue(ipc_handle_t endpoint)
 
     message.type = IPC_MSGTYPE_SEND;
     message.words[0] = 1;
-    return ipc_send_nb(thread_current(), endpoint, &message) == IPC_OK ? 0 : -1;
+    return kipc_send_nb(thread_current(), endpoint, &message) == IPC_OK ? 0 : -1;
 }
 
 static void vmuser_fail(void)
@@ -146,9 +146,9 @@ void kernel_startup_profile(void)
         vmuser_fail();
     console_write("VMO caps created\n");
 
-    if (ipc_create(&completion) != IPC_OK ||
-        ipc_create(&control_a) != IPC_OK ||
-        ipc_create(&control_b) != IPC_OK ||
+    if (kipc_create(&completion) != IPC_OK ||
+        kipc_create(&control_a) != IPC_OK ||
+        kipc_create(&control_b) != IPC_OK ||
         kcap_create((kobject_handle_t)completion, CAP_TYPE_IPC,
                     CAP_RIGHT_IPC_SEND, &a_completion_cap) != 0 ||
         kcap_create((kobject_handle_t)completion, CAP_TYPE_IPC,
@@ -193,9 +193,9 @@ void kernel_startup_profile(void)
     while (thread_reaped_count() < baseline_reaped + 2)
         thread_yield();
 
-    (void)ipc_destroy(completion);
-    (void)ipc_destroy(control_a);
-    (void)ipc_destroy(control_b);
+    (void)kipc_destroy(completion);
+    (void)kipc_destroy(control_a);
+    (void)kipc_destroy(control_b);
     (void)kvmo_destroy(vmo);
     (void)kpmem_destroy(pmem);
     phys_page_put(backing_page);

@@ -4,7 +4,7 @@
 #include "scheduler.h"
 #include "syscall.h"
 #include "errno.h"
-#include <sharkix/kernel/subsystems/ipc.h>
+#include <sharkix/kernel/subsystems/kipc.h>
 #include <sharkix/kernel/subsystems/kcaps.h>
 #include <sharkix/kernel/subsystems/portio.h>
 #include <sharkix/kernel/subsystems/vmo.h>
@@ -102,7 +102,7 @@ SHARKIX_SYSCALL_IMPL(IPC_CREATE) {
 	thread_t* caller = thread_current();
 	ipc_handle_t endpoint;
 	cap_handle_t cap;
-	ipc_status_t status = ipc_create(&endpoint);
+	ipc_status_t status = kipc_create(&endpoint);
 	ctx->rax = (uint64_t)status; // shove the IPC error code into rax
 	if(status != IPC_OK) {
 	   ctx->rdi = (uint64_t)IPC_INVALID_HANDLE;
@@ -113,14 +113,14 @@ SHARKIX_SYSCALL_IMPL(IPC_CREATE) {
 		         CAP_TYPE_IPC,
 			 CAP_IPC_VALID_RIGHTS,
 			 &cap) != 0) {
-		ipc_destroy(endpoint);
+		kipc_destroy(endpoint);
 		ctx->rax = IPC_ERR_FAILED_CAP_CREATE;
 		ctx->rdi = (uint64_t)IPC_INVALID_HANDLE;
 		return syscall_return();
 	}
 
 	if(kcapset_addcap(caller->address_space->capset, cap) != 0) {
-		ipc_destroy(endpoint);
+		kipc_destroy(endpoint);
 		kcap_destroy(cap);
 		ctx->rax = IPC_ERR_FAILED_CAP_CREATE;
 		ctx->rdi = (uint64_t)IPC_INVALID_HANDLE;
@@ -139,7 +139,7 @@ SHARKIX_SYSCALL_IMPL(IPC_CREATE_PUB) {
 	thread_t* caller = thread_current();
 	ipc_handle_t endpoint;
 	cap_handle_t cap;
-	ipc_status_t status = ipc_create_publisher(&endpoint);
+	ipc_status_t status = kipc_create_publisher(&endpoint);
 	
 	ctx->rax = (uint64_t)status;
 	if(status != IPC_OK) {
@@ -151,13 +151,13 @@ SHARKIX_SYSCALL_IMPL(IPC_CREATE_PUB) {
 			CAP_TYPE_IPC,
 			CAP_IPC_VALID_RIGHTS,
 			&cap) != 0) {
-		ipc_destroy(endpoint);
+		kipc_destroy(endpoint);
 		ctx->rax = IPC_ERR_FAILED_CAP_CREATE;
 		ctx->rdx = (uint64_t)IPC_INVALID_HANDLE;
 		return syscall_return();
 	}
 	if(kcapset_addcap(caller->address_space->capset, cap) != 0) {
-		ipc_destroy(endpoint);
+		kipc_destroy(endpoint);
 		kcap_destroy(cap);
 		ctx->rax = IPC_ERR_FAILED_CAP_CREATE;
 		ctx->rdi = (uint64_t)IPC_INVALID_HANDLE;
@@ -186,7 +186,7 @@ SHARKIX_SYSCALL_IMPL(IPC_SUBSCRIBE) {
 	}
 	ipc_handle_t dest_endpoint = (ipc_handle_t)obj_handle;
 	ipc_handle_t new_sub       = IPC_INVALID_HANDLE;
-	ipc_status_t status        = ipc_subscribe(dest_endpoint,&new_sub);
+	ipc_status_t status        = kipc_subscribe(dest_endpoint,&new_sub);
 	ctx->rax = (uint64_t)status;
 	ctx->rdi = (uint64_t)new_sub;
 	return syscall_return();
@@ -218,7 +218,7 @@ SHARKIX_SYSCALL_IMPL(IPC_SEND) {
 	}
 
 	ipc_handle_t dest_endpoint = (ipc_handle_t)obj_handle;
-	ipc_status_t status      = ipc_send(caller,dest_endpoint,&msg);
+	ipc_status_t status      = kipc_send(caller,dest_endpoint,&msg);
 
 	ctx->rax = (uint64_t)status;
 	return syscall_return();
@@ -242,7 +242,7 @@ SHARKIX_SYSCALL_IMPL(IPC_RECV) {
 	}
 
 	ipc_handle_t endpoint = (ipc_handle_t)obj_handle;
-	ipc_status_t status   = ipc_recv(endpoint,&msg);
+	ipc_status_t status   = kipc_recv(endpoint,&msg);
 
 	if(status == IPC_OK) {
 		ctx->rax = (uint64_t)msg.type;
@@ -275,7 +275,7 @@ SHARKIX_SYSCALL_IMPL(IPC_TRY_RECV) {
 	}
 
 	ipc_handle_t endpoint = (ipc_handle_t)obj_handle;
-	ipc_status_t status   = ipc_recv_nb(endpoint,&msg);
+	ipc_status_t status   = kipc_recv_nb(endpoint,&msg);
 	
 	if(status == IPC_OK) {
 		ctx->rax = (uint64_t)msg.type;
@@ -311,7 +311,7 @@ SHARKIX_SYSCALL_IMPL(IPC_BIND_NOTIFY) {
         return syscall_return();
     }
 
-    ctx->rax = (uint64_t)ipc_bind_notify((ipc_handle_t)endpoint_obj_handle,
+    ctx->rax = (uint64_t)kipc_bind_notify((ipc_handle_t)endpoint_obj_handle,
                                          (notify_handle_t)notify_obj_handle,
                                          (uint64_t)ctx->rdx);
     return syscall_return();
@@ -337,7 +337,7 @@ SHARKIX_SYSCALL_IMPL(IPC_UNBIND_NOTIFY) {
         return syscall_return();
     }
 
-    ctx->rax = (uint64_t)ipc_unbind_notify((ipc_handle_t)endpoint_obj_handle,
+    ctx->rax = (uint64_t)kipc_unbind_notify((ipc_handle_t)endpoint_obj_handle,
                                            (notify_handle_t)notify_obj_handle);
     return syscall_return();
 }

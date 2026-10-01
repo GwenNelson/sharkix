@@ -3,7 +3,7 @@
 
 #include <sharkix/kernel/subsystems/kcaps.h>
 #include "console.h"
-#include <sharkix/kernel/subsystems/ipc.h>
+#include <sharkix/kernel/subsystems/kipc.h>
 #include "ipc_registry.h"
 #include "memory.h"
 #include "program.h"
@@ -52,7 +52,7 @@ static void kernel_worker(void *argument) {
     ipc_message_t message = { 0 };
 
     (void)argument;
-    if (ipc_recv(serial_ready_endpoint, &message) != IPC_OK) {
+    if (kipc_recv(serial_ready_endpoint, &message) != IPC_OK) {
         console_write("serial-consoled ready receive failed\n");
         return;
     }
@@ -114,11 +114,11 @@ void console_serial_init(void) {
      }
 
      // setup the endpoints
-     if (ipc_subscribe(console_output_pub,&serial_endpoint) != IPC_OK ||
+     if (kipc_subscribe(console_output_pub,&serial_endpoint) != IPC_OK ||
          kcap_create(serial_endpoint, CAP_TYPE_IPC,
                      CAP_RIGHT_IPC_RECV | CAP_RIGHT_GETNAME,
                      &serial_output_cap) != 0 ||
-         ipc_create(&serial_ready_endpoint) != IPC_OK ||
+         kipc_create(&serial_ready_endpoint) != IPC_OK ||
          kcap_create(serial_ready_endpoint, CAP_TYPE_IPC,
                      CAP_RIGHT_IPC_SEND | CAP_RIGHT_GETNAME,
                      &serial_ready_cap) != 0) {

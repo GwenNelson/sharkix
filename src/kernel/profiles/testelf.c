@@ -5,7 +5,7 @@
 #include <sharkix/kernel/subsystems/kas.h>
 #include <sharkix/kernel/subsystems/kcaps.h>
 #include "console.h"
-#include <sharkix/kernel/subsystems/ipc.h>
+#include <sharkix/kernel/subsystems/kipc.h>
 #include "memory.h"
 #include <sharkix/kernel/subsystems/pmem.h>
 #include "program.h"
@@ -144,7 +144,7 @@ void kernel_startup_profile(void) {
 	if (create_source_vmo(&source_vmo) != 0 ||
 		!(target_as = address_space_create(0)) ||
 		kas_register(&target_handle, target_as) != 0 ||
-		ipc_create(&status_endpoint) != IPC_OK ||
+		kipc_create(&status_endpoint) != IPC_OK ||
 		create_loader_task(&loader_as, &loader_thread, &bootstrap) != 0 ||
 		install_named_cap(loader_as, source_vmo, CAP_TYPE_VMO,
 						  CAP_RIGHT_VMO_MAP | CAP_RIGHT_VMO_READ |
@@ -181,7 +181,7 @@ void kernel_startup_profile(void) {
 		for (;;) __asm__ volatile ("cli; hlt");
 	}
 
-	if (ipc_recv(status_endpoint, &message) != IPC_OK ||
+	if (kipc_recv(status_endpoint, &message) != IPC_OK ||
 		message.words[0] != 0) {
 		console_write("testelf loader reported failure\n");
 		(void)kas_unregister(target_handle);

@@ -2,7 +2,7 @@
 
 #define IPC_REGNAME_MAX 256
 
-#include <sharkix/kernel/subsystems/ipc.h>
+#include <sharkix/kernel/subsystems/kipc.h>
 
 void kipc_registry_init(void);
 

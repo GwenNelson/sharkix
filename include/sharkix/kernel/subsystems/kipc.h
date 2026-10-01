@@ -111,25 +111,25 @@ typedef enum ipc_status_t {
 } ipc_status_t;
 
 // must be called by the kernel before userspace runs, otherwise sycalls depending on IPC will fail!
-void ipc_init(void);
+void kipc_init(void);
 
-ipc_status_t ipc_create(ipc_handle_t *handle);
-ipc_status_t ipc_destroy(ipc_handle_t handle);
+ipc_status_t kipc_create(ipc_handle_t *handle);
+ipc_status_t kipc_destroy(ipc_handle_t handle);
 
 // creates a new PUBSUB publisher endpoint
-ipc_status_t ipc_create_publisher(ipc_handle_t *handle);
+ipc_status_t kipc_create_publisher(ipc_handle_t *handle);
 
 // creates a new PUBSUB subscriber endpoint, subscribed to an existing publisher
-ipc_status_t ipc_subscribe(ipc_handle_t publisher, ipc_handle_t* new_subscriber);
+ipc_status_t kipc_subscribe(ipc_handle_t publisher, ipc_handle_t* new_subscriber);
 
-ipc_status_t ipc_bind_notify(ipc_handle_t endpoint,
+ipc_status_t kipc_bind_notify(ipc_handle_t endpoint,
                              notify_handle_t notify,
                              uint64_t bits);
-ipc_status_t ipc_unbind_notify(ipc_handle_t endpoint,
+ipc_status_t kipc_unbind_notify(ipc_handle_t endpoint,
                                notify_handle_t notify);
 
-ipc_status_t ipc_send(thread_t* caller, ipc_handle_t handle, const ipc_message_t *message);
-ipc_status_t ipc_send_nb(thread_t* caller, ipc_handle_t handle, const ipc_message_t *message);
+ipc_status_t kipc_send(thread_t* caller, ipc_handle_t handle, const ipc_message_t *message);
+ipc_status_t kipc_send_nb(thread_t* caller, ipc_handle_t handle, const ipc_message_t *message);
 
-ipc_status_t ipc_recv(ipc_handle_t handle, ipc_message_t *message);
-ipc_status_t ipc_recv_nb(ipc_handle_t handle, ipc_message_t *message);
+ipc_status_t kipc_recv(ipc_handle_t handle, ipc_message_t *message);
+ipc_status_t kipc_recv_nb(ipc_handle_t handle, ipc_message_t *message);

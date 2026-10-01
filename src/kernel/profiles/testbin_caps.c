@@ -3,7 +3,7 @@
 
 #include <sharkix/kernel/subsystems/kcaps.h>
 #include "console.h"
-#include <sharkix/kernel/subsystems/ipc.h>
+#include <sharkix/kernel/subsystems/kipc.h>
 #include "memory.h"
 #include "program.h"
 #include "startup.h"
@@ -28,7 +28,7 @@ static void kernel_worker(void *argument)
     ipc_message_t message = { 0 };
 
     (void)argument;
-    if (ipc_recv(endpoint1, &message) != IPC_OK ||
+    if (kipc_recv(endpoint1, &message) != IPC_OK ||
         message.words[0] != (uint64_t)'A') {
         kernel_worker_failed = 1;
         return;
@@ -36,12 +36,12 @@ static void kernel_worker(void *argument)
     console_putc('A');
 
     message.words[0] = (uint64_t)'B';
-    if (ipc_send(thread_current(), endpoint2, &message) != IPC_OK) {
+    if (kipc_send(thread_current(), endpoint2, &message) != IPC_OK) {
         kernel_worker_failed = 1;
         return;
     }
 
-    if (ipc_recv(endpoint3, &message) != IPC_OK ||
+    if (kipc_recv(endpoint3, &message) != IPC_OK ||
         message.words[0] != (uint64_t)'C') {
         kernel_worker_failed = 1;
         return;
@@ -99,9 +99,9 @@ void kernel_startup_profile(void)
     uint64_t *bootstrap = NULL;
     cap_handle_t cap1, cap2, cap3;
 
-    if (ipc_create(&endpoint1) != IPC_OK ||
-        ipc_create(&endpoint2) != IPC_OK ||
-        ipc_create(&endpoint3) != IPC_OK ||
+    if (kipc_create(&endpoint1) != IPC_OK ||
+        kipc_create(&endpoint2) != IPC_OK ||
+        kipc_create(&endpoint3) != IPC_OK ||
         create_user_task(&user_as, &user_thread, &bootstrap) != 0 ||
         kcap_create(endpoint1, CAP_TYPE_IPC, CAP_RIGHT_IPC_SEND,
                     &cap1) != 0 ||
@@ -131,9 +131,9 @@ void kernel_startup_profile(void)
     while (!kernel_worker_done && !kernel_worker_failed)
         thread_yield();
 
-    (void)ipc_destroy(endpoint1);
-    (void)ipc_destroy(endpoint2);
-    (void)ipc_destroy(endpoint3);
+    (void)kipc_destroy(endpoint1);
+    (void)kipc_destroy(endpoint2);
+    (void)kipc_destroy(endpoint3);
     (void)user_as;
     startup_reaper();
 }

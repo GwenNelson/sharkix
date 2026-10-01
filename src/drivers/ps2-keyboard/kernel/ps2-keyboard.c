@@ -3,7 +3,7 @@
 
 #include <sharkix/kernel/subsystems/kcaps.h>
 #include "console.h"
-#include <sharkix/kernel/subsystems/ipc.h>
+#include <sharkix/kernel/subsystems/kipc.h>
 #include "ipc_registry.h"
 #include "memory.h"
 #include "program.h"
@@ -97,7 +97,7 @@ void ps2_keyboard_init(void)
         kcap_create(ps2_keyboard_port2_rx, CAP_TYPE_IPC,
                     CAP_RIGHT_IPC_RECV | CAP_RIGHT_GETNAME,
                     &ps2_keyboard_port2_rx_cap) != 0 ||
-        ipc_create(&ps2_keyboard_output) != IPC_OK ||
+        kipc_create(&ps2_keyboard_output) != IPC_OK ||
         kcap_create(ps2_keyboard_output, CAP_TYPE_IPC,
                     CAP_RIGHT_IPC_SEND | CAP_RIGHT_GETNAME,
                     &ps2_keyboard_output_cap) != 0 ||

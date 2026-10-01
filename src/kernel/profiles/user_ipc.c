@@ -3,7 +3,7 @@
 
 #include <sharkix/kernel/subsystems/kcaps.h>
 #include "console.h"
-#include <sharkix/kernel/subsystems/ipc.h>
+#include <sharkix/kernel/subsystems/kipc.h>
 #include "memory.h"
 #include "program.h"
 #include "startup.h"
@@ -187,7 +187,7 @@ void kernel_startup_profile(void)
                          &consumer_handle_slot) != 0)
         goto failed;
 
-    if (ipc_create(&endpoint) != IPC_OK)
+    if (kipc_create(&endpoint) != IPC_OK)
         goto failed;
 
     if (kcap_create((kobject_handle_t)endpoint,
@@ -276,7 +276,7 @@ failed:
         (void)kcap_destroy(consumer_cap);
 
     if (endpoint != IPC_INVALID_HANDLE)
-        (void)ipc_destroy(endpoint);
+        (void)kipc_destroy(endpoint);
 
     if (consumer && consumer->state == THREAD_STATE_READY)
         thread_destroy_unstarted(consumer);

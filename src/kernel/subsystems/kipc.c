@@ -1,6 +1,6 @@
 #include <string.h>
 
-#include <sharkix/kernel/subsystems/ipc.h>
+#include <sharkix/kernel/subsystems/kipc.h>
 #include <sharkix/kernel/memory.h>
 
 static ipc_endpoint_t *endpoints;
@@ -8,7 +8,7 @@ static ipc_handle_t next_handle;
 static kmutex_t endpoints_lock;
 
 
-static bool ipc_queue_push(ipc_endpoint_t *endpoint,
+static bool kipc_queue_push(ipc_endpoint_t *endpoint,
                            const ipc_message_t *message) {
              if (endpoint->queue_count == IPC_QUEUE_CAPACITY)
                  return false;
@@ -20,7 +20,7 @@ static bool ipc_queue_push(ipc_endpoint_t *endpoint,
 }
 
 
-static bool ipc_queue_pop(ipc_endpoint_t *endpoint,
+static bool kipc_queue_pop(ipc_endpoint_t *endpoint,
                           ipc_message_t *message) {
              if (endpoint->queue_count == 0)
                  return false;
@@ -32,7 +32,7 @@ static bool ipc_queue_pop(ipc_endpoint_t *endpoint,
 }
 
 /* Caller holds endpoint->lock. */
-static void ipc_signal_notify_bindings_locked(ipc_endpoint_t *endpoint) {
+static void kipc_signal_notify_bindings_locked(ipc_endpoint_t *endpoint) {
              ipc_notify_binding_t *binding;
 
              for (binding = endpoint->notify_bindings;
@@ -42,7 +42,7 @@ static void ipc_signal_notify_bindings_locked(ipc_endpoint_t *endpoint) {
 }
 
 /* Called only after the binding list has been detached under endpoint->lock. */
-static void ipc_free_notify_bindings(ipc_notify_binding_t *bindings) {
+static void kipc_free_notify_bindings(ipc_notify_binding_t *bindings) {
              while (bindings) {
                  ipc_notify_binding_t *next = bindings->next;
 
@@ -56,10 +56,10 @@ static void ipc_free_notify_bindings(ipc_notify_binding_t *bindings) {
 /*
  * Look up an endpoint and take a reference to it.
  *
- * Once an endpoint has been removed from the registry by ipc_destroy(),
+ * Once an endpoint has been removed from the registry by kipc_destroy(),
  * no new references can be acquired.
  */
-static ipc_endpoint_t *ipc_acquire(ipc_handle_t handle) {
+static ipc_endpoint_t *kipc_acquire(ipc_handle_t handle) {
                        ipc_endpoint_t *endpoint;
                        uint32_t hashv = (uint32_t)handle;
 
@@ -82,7 +82,7 @@ static ipc_endpoint_t *ipc_acquire(ipc_handle_t handle) {
  * This can only happen once it has been removed from the global registry
  * and there are no operations still holding references to it.
  */
-static void ipc_endpoint_free(ipc_endpoint_t *endpoint) {
+static void kipc_endpoint_free(ipc_endpoint_t *endpoint) {
             kfree(endpoint);
 }
 
@@ -91,10 +91,10 @@ static void ipc_endpoint_free(ipc_endpoint_t *endpoint) {
  * Drop an endpoint reference.
  *
  * The registry itself owns one reference for as long as the endpoint is
- * registered. ipc_destroy() removes it from the registry, wakes any blocked
+ * registered. kipc_destroy() removes it from the registry, wakes any blocked
  * operations, then drops that final registry reference.
  */
-static void ipc_release(ipc_endpoint_t *endpoint) {
+static void kipc_release(ipc_endpoint_t *endpoint) {
             bool free_endpoint = false;
 
             kmutex_lock(&endpoints_lock);
@@ -107,11 +107,11 @@ static void ipc_release(ipc_endpoint_t *endpoint) {
             kmutex_unlock(&endpoints_lock);
 
             if (free_endpoint)
-                ipc_endpoint_free(endpoint);
+                kipc_endpoint_free(endpoint);
 }
 
 
-void ipc_init(void) {
+void kipc_init(void) {
      endpoints = NULL;
      next_handle = 1;
 
@@ -119,7 +119,7 @@ void ipc_init(void) {
 }
 
 
-ipc_status_t ipc_create(ipc_handle_t *handle) {
+ipc_status_t kipc_create(ipc_handle_t *handle) {
              ipc_endpoint_t *endpoint;
 
              if (!handle)
@@ -163,57 +163,57 @@ ipc_status_t ipc_create(ipc_handle_t *handle) {
              return IPC_OK;
 }
 
-ipc_status_t ipc_create_publisher(ipc_handle_t* handle) {
+ipc_status_t kipc_create_publisher(ipc_handle_t* handle) {
 	     ipc_handle_t new_ep_handle;
 	     ipc_status_t status;
-	     status = ipc_create(&new_ep_handle);
+	     status = kipc_create(&new_ep_handle);
 	     if(status != IPC_OK) return status;
 	     
-	     ipc_endpoint_t* new_ep = ipc_acquire(new_ep_handle);
+	     ipc_endpoint_t* new_ep = kipc_acquire(new_ep_handle);
 	     if(!new_ep) return IPC_ERR_INVALID; // this shouldn't really happen
 	    
 	     new_ep->ep_type = IPC_ENDPOINT_PUBLISHER;
-	     ipc_release(new_ep);
+	     kipc_release(new_ep);
              *handle = new_ep_handle;
 	     return IPC_OK;
 }
 
-ipc_status_t ipc_subscribe(ipc_handle_t publisher, ipc_handle_t* new_subscriber) {
-	     ipc_endpoint_t *pub = ipc_acquire(publisher);
+ipc_status_t kipc_subscribe(ipc_handle_t publisher, ipc_handle_t* new_subscriber) {
+	     ipc_endpoint_t *pub = kipc_acquire(publisher);
 
 	     if(!pub) {
 		return IPC_ERR_NOT_FOUND;
 	     }
    	     if(pub->is_shutting_down) {
-	        ipc_release(pub);
+	        kipc_release(pub);
 		return IPC_ERR_ENDPOINT_CLOSED;
 	     }
 	     if(pub->ep_type != IPC_ENDPOINT_PUBLISHER) {
-	        ipc_release(pub);
+	        kipc_release(pub);
 		return IPC_ERR_INVALID;
 	     }
 
 	     ipc_handle_t new_sub_handle;
 	     ipc_status_t status;
 
-	     status = ipc_create(&new_sub_handle);
+	     status = kipc_create(&new_sub_handle);
              if(status != IPC_OK) {
-		ipc_release(pub);
+		kipc_release(pub);
 		return status;
 	     }
 
-	     ipc_endpoint_t* new_sub = ipc_acquire(new_sub_handle);
+	     ipc_endpoint_t* new_sub = kipc_acquire(new_sub_handle);
 	     if(!new_sub) {
-		ipc_release(pub); // TODO - should we cleanup new_sub here?
+		kipc_release(pub); // TODO - should we cleanup new_sub here?
 		return IPC_ERR_INVALID;
 	     }
 	     
 	     new_sub->ep_type = IPC_ENDPOINT_SUBSCRIBER;
 	     ipc_subscription_t *subscription = kmalloc(sizeof(*subscription));
 	     if (!subscription) {
-		ipc_release(new_sub);
-		ipc_release(pub);
-		ipc_destroy(new_sub_handle);
+		kipc_release(new_sub);
+		kipc_release(pub);
+		kipc_destroy(new_sub_handle);
 		return IPC_ERR_NO_MEMORY;
 	     }
 
@@ -225,9 +225,9 @@ ipc_status_t ipc_subscribe(ipc_handle_t publisher, ipc_handle_t* new_subscriber)
              if (pub->is_shutting_down) {
                 kmutex_unlock(&pub->lock);
                 kfree(subscription);
-                ipc_release(new_sub);
-                ipc_release(pub);
-                ipc_destroy(new_sub_handle);
+                kipc_release(new_sub);
+                kipc_release(pub);
+                kipc_destroy(new_sub_handle);
                 return IPC_ERR_ENDPOINT_CLOSED;
              }
 
@@ -240,12 +240,12 @@ ipc_status_t ipc_subscribe(ipc_handle_t publisher, ipc_handle_t* new_subscriber)
 	     kmutex_unlock(&pub->lock);
 
 	     *new_subscriber = new_sub_handle;
-	     ipc_release(new_sub);
-	     ipc_release(pub);
+	     kipc_release(new_sub);
+	     kipc_release(pub);
 	     return IPC_OK;
 }
 
-ipc_status_t ipc_destroy(ipc_handle_t handle) {
+ipc_status_t kipc_destroy(ipc_handle_t handle) {
              ipc_endpoint_t *endpoint;
              ipc_notify_binding_t *notify_bindings;
              size_t wake_senders;
@@ -258,7 +258,7 @@ ipc_status_t ipc_destroy(ipc_handle_t handle) {
 
              /*
               * We deliberately do this manually rather than through
-              * ipc_acquire(), because removal from the registry must be
+              * kipc_acquire(), because removal from the registry must be
               * atomic with respect to new acquisitions.
               */
              kmutex_lock(&endpoints_lock);
@@ -310,21 +310,21 @@ ipc_status_t ipc_destroy(ipc_handle_t handle) {
              for (i = 0; i < wake_receivers; i++)
                  ksem_post(&endpoint->receiver_sem);
 
-             ipc_free_notify_bindings(notify_bindings);
+             kipc_free_notify_bindings(notify_bindings);
 
              /*
               * Drop the reference which belonged to the registry.
               *
               * Active send/recv operations each hold their own reference, so
               * the endpoint cannot disappear until every woken operation has
-              * returned through ipc_release().
+              * returned through kipc_release().
               */
-             ipc_release(endpoint);
+             kipc_release(endpoint);
 
              return IPC_OK;
 }
 
-ipc_status_t ipc_bind_notify(ipc_handle_t handle,
+ipc_status_t kipc_bind_notify(ipc_handle_t handle,
                              notify_handle_t notify_handle,
                              uint64_t bits) {
              ipc_endpoint_t *endpoint;
@@ -350,7 +350,7 @@ ipc_status_t ipc_bind_notify(ipc_handle_t handle,
              new_binding->bits = bits;
              new_binding->next = NULL;
 
-             endpoint = ipc_acquire(handle);
+             endpoint = kipc_acquire(handle);
              if (!endpoint) {
                  kfree(new_binding);
                  knotify_release(notify);
@@ -361,7 +361,7 @@ ipc_status_t ipc_bind_notify(ipc_handle_t handle,
 
              if (endpoint->is_shutting_down) {
                  kmutex_unlock(&endpoint->lock);
-                 ipc_release(endpoint);
+                 kipc_release(endpoint);
                  kfree(new_binding);
                  knotify_release(notify);
                  return IPC_ERR_ENDPOINT_CLOSED;
@@ -375,7 +375,7 @@ ipc_status_t ipc_bind_notify(ipc_handle_t handle,
                      if (endpoint->queue_count != 0)
                          knotify_signal_ref(notify, bits);
                      kmutex_unlock(&endpoint->lock);
-                     ipc_release(endpoint);
+                     kipc_release(endpoint);
                      kfree(new_binding);
                      knotify_release(notify);
                      return IPC_OK;
@@ -388,11 +388,11 @@ ipc_status_t ipc_bind_notify(ipc_handle_t handle,
                  knotify_signal_ref(notify, bits);
 
              kmutex_unlock(&endpoint->lock);
-             ipc_release(endpoint);
+             kipc_release(endpoint);
              return IPC_OK;
 }
 
-ipc_status_t ipc_unbind_notify(ipc_handle_t handle,
+ipc_status_t kipc_unbind_notify(ipc_handle_t handle,
                                notify_handle_t notify_handle) {
              ipc_endpoint_t *endpoint;
              ipc_notify_binding_t **current;
@@ -402,7 +402,7 @@ ipc_status_t ipc_unbind_notify(ipc_handle_t handle,
                  notify_handle == NOTIFY_INVALID_HANDLE)
                  return IPC_ERR_INVALID;
 
-             endpoint = ipc_acquire(handle);
+             endpoint = kipc_acquire(handle);
              if (!endpoint)
                  return IPC_ERR_NOT_FOUND;
 
@@ -410,7 +410,7 @@ ipc_status_t ipc_unbind_notify(ipc_handle_t handle,
 
              if (endpoint->is_shutting_down) {
                  kmutex_unlock(&endpoint->lock);
-                 ipc_release(endpoint);
+                 kipc_release(endpoint);
                  return IPC_ERR_ENDPOINT_CLOSED;
              }
 
@@ -421,7 +421,7 @@ ipc_status_t ipc_unbind_notify(ipc_handle_t handle,
              binding = *current;
              if (!binding) {
                  kmutex_unlock(&endpoint->lock);
-                 ipc_release(endpoint);
+                 kipc_release(endpoint);
                  return IPC_ERR_NOT_FOUND;
              }
 
@@ -432,7 +432,7 @@ ipc_status_t ipc_unbind_notify(ipc_handle_t handle,
 
              knotify_release(binding->notify);
              kfree(binding);
-             ipc_release(endpoint);
+             kipc_release(endpoint);
              return IPC_OK;
 }
 
@@ -441,7 +441,7 @@ ipc_status_t ipc_unbind_notify(ipc_handle_t handle,
  * Queue a message on an already referenced endpoint. A full queue waits for
  * a receiver to make room. The caller owns and releases the endpoint reference.
  */
-static ipc_status_t ipc_enqueue_blocking(ipc_endpoint_t *endpoint,
+static ipc_status_t kipc_enqueue_blocking(ipc_endpoint_t *endpoint,
                                          const ipc_message_t *queued) {
              for (;;) {
                  kmutex_lock(&endpoint->lock);
@@ -451,8 +451,8 @@ static ipc_status_t ipc_enqueue_blocking(ipc_endpoint_t *endpoint,
                      return IPC_ERR_ENDPOINT_CLOSED;
                  }
 
-                 if (ipc_queue_push(endpoint, queued)) {
-                     ipc_signal_notify_bindings_locked(endpoint);
+                 if (kipc_queue_push(endpoint, queued)) {
+                     kipc_signal_notify_bindings_locked(endpoint);
 
                      /*
                       * Wake exactly one receiver if one is waiting.
@@ -496,7 +496,7 @@ static ipc_status_t ipc_enqueue_blocking(ipc_endpoint_t *endpoint,
 }
 
 /* Queue without waiting for space. The caller holds an endpoint reference. */
-static ipc_status_t ipc_enqueue_nonblocking(ipc_endpoint_t *endpoint,
+static ipc_status_t kipc_enqueue_nonblocking(ipc_endpoint_t *endpoint,
                                             const ipc_message_t *queued) {
              kmutex_lock(&endpoint->lock);
 
@@ -505,12 +505,12 @@ static ipc_status_t ipc_enqueue_nonblocking(ipc_endpoint_t *endpoint,
                  return IPC_ERR_ENDPOINT_CLOSED;
              }
 
-             if (!ipc_queue_push(endpoint, queued)) {
+             if (!kipc_queue_push(endpoint, queued)) {
                  kmutex_unlock(&endpoint->lock);
                  return IPC_ERR_CANCELLED;
              }
 
-             ipc_signal_notify_bindings_locked(endpoint);
+             kipc_signal_notify_bindings_locked(endpoint);
 
              if (endpoint->waiting_receivers) {
                  endpoint->waiting_receivers--;
@@ -522,7 +522,7 @@ static ipc_status_t ipc_enqueue_nonblocking(ipc_endpoint_t *endpoint,
 }
 
 /* Subscription links are only prepended; no current path removes or frees one. */
-static ipc_status_t ipc_publish(ipc_endpoint_t *publisher,
+static ipc_status_t kipc_publish(ipc_endpoint_t *publisher,
                                 const ipc_message_t *queued) {
              ipc_subscription_t *subscription = NULL;
 
@@ -545,14 +545,14 @@ static ipc_status_t ipc_publish(ipc_endpoint_t *publisher,
                  subscriber_handle = subscription->subscriber;
                  kmutex_unlock(&publisher->lock);
 
-                 subscriber = ipc_acquire(subscriber_handle);
+                 subscriber = kipc_acquire(subscriber_handle);
                  if (!subscriber)
                      continue;
 
                  if (subscriber->ep_type == IPC_ENDPOINT_SUBSCRIBER)
-                     (void)ipc_enqueue_nonblocking(subscriber, queued);
+                     (void)kipc_enqueue_nonblocking(subscriber, queued);
 
-                 ipc_release(subscriber);
+                 kipc_release(subscriber);
              }
 }
 
@@ -560,7 +560,7 @@ static ipc_status_t ipc_publish(ipc_endpoint_t *publisher,
  * Blocking send to a normal endpoint, or non-blocking fan-out from a
  * publisher. Direct sends to subscriber endpoints are rejected.
  */
-ipc_status_t ipc_send(thread_t *caller, ipc_handle_t handle, const ipc_message_t *message) {
+ipc_status_t kipc_send(thread_t *caller, ipc_handle_t handle, const ipc_message_t *message) {
              ipc_endpoint_t *endpoint;
              ipc_message_t queued;
              ipc_status_t status;
@@ -568,12 +568,12 @@ ipc_status_t ipc_send(thread_t *caller, ipc_handle_t handle, const ipc_message_t
              if (!caller || !handle || !message)
                  return IPC_ERR_INVALID;
 
-             endpoint = ipc_acquire(handle);
+             endpoint = kipc_acquire(handle);
              if (!endpoint)
                  return IPC_ERR_NOT_FOUND;
 
              if (endpoint->ep_type == IPC_ENDPOINT_SUBSCRIBER) {
-                 ipc_release(endpoint);
+                 kipc_release(endpoint);
                  return IPC_ERR_INVALID;
              }
 
@@ -581,11 +581,11 @@ ipc_status_t ipc_send(thread_t *caller, ipc_handle_t handle, const ipc_message_t
              queued.sender_tid = caller->id;
 
              if (endpoint->ep_type == IPC_ENDPOINT_PUBLISHER)
-                 status = ipc_publish(endpoint, &queued);
+                 status = kipc_publish(endpoint, &queued);
              else
-                 status = ipc_enqueue_blocking(endpoint, &queued);
+                 status = kipc_enqueue_blocking(endpoint, &queued);
 
-             ipc_release(endpoint);
+             kipc_release(endpoint);
              return status;
 }
 
@@ -595,7 +595,7 @@ ipc_status_t ipc_send(thread_t *caller, ipc_handle_t handle, const ipc_message_t
  *
  * A full queue returns IPC_ERR_CANCELLED.
  */
-ipc_status_t ipc_send_nb(thread_t *caller, ipc_handle_t handle, const ipc_message_t *message) {
+ipc_status_t kipc_send_nb(thread_t *caller, ipc_handle_t handle, const ipc_message_t *message) {
              ipc_endpoint_t *endpoint;
              ipc_message_t queued;
              ipc_status_t status;
@@ -603,14 +603,14 @@ ipc_status_t ipc_send_nb(thread_t *caller, ipc_handle_t handle, const ipc_messag
              if (!caller || !handle || !message)
                  return IPC_ERR_INVALID;
 
-             endpoint = ipc_acquire(handle);
+             endpoint = kipc_acquire(handle);
              if (!endpoint)
                  return IPC_ERR_NOT_FOUND;
 
              queued = *message;
              queued.sender_tid = caller->id;
-             status = ipc_enqueue_nonblocking(endpoint, &queued);
-             ipc_release(endpoint);
+             status = kipc_enqueue_nonblocking(endpoint, &queued);
+             kipc_release(endpoint);
              return status;
 }
 
@@ -619,13 +619,13 @@ ipc_status_t ipc_send_nb(thread_t *caller, ipc_handle_t handle, const ipc_messag
  * Blocking receive.
  *
  */
-ipc_status_t ipc_recv(ipc_handle_t handle, ipc_message_t *message) {
+ipc_status_t kipc_recv(ipc_handle_t handle, ipc_message_t *message) {
              ipc_endpoint_t *endpoint;
 
              if ( !handle || !message)
                  return IPC_ERR_INVALID;
 
-             endpoint = ipc_acquire(handle);
+             endpoint = kipc_acquire(handle);
              if (!endpoint)
                  return IPC_ERR_NOT_FOUND;
 
@@ -635,12 +635,12 @@ ipc_status_t ipc_recv(ipc_handle_t handle, ipc_message_t *message) {
 
                  if (endpoint->is_shutting_down) {
                      kmutex_unlock(&endpoint->lock);
-                     ipc_release(endpoint);
+                     kipc_release(endpoint);
 
                      return IPC_ERR_ENDPOINT_CLOSED;
                  }
 
-                 if (ipc_queue_pop(endpoint, message)) {
+                 if (kipc_queue_pop(endpoint, message)) {
                      /*
                       * One queue slot just became available.
                       */
@@ -651,7 +651,7 @@ ipc_status_t ipc_recv(ipc_handle_t handle, ipc_message_t *message) {
 
                      kmutex_unlock(&endpoint->lock);
 
-                     ipc_release(endpoint);
+                     kipc_release(endpoint);
 
                      return IPC_OK;
                  }
@@ -674,13 +674,13 @@ ipc_status_t ipc_recv(ipc_handle_t handle, ipc_message_t *message) {
  *
  * Empty queue returns IPC_ERR_CANCELLED.
  */
-ipc_status_t ipc_recv_nb(ipc_handle_t handle, ipc_message_t *message) {
+ipc_status_t kipc_recv_nb(ipc_handle_t handle, ipc_message_t *message) {
              ipc_endpoint_t *endpoint;
 
              if (!handle || !message)
                  return IPC_ERR_INVALID;
 
-             endpoint = ipc_acquire(handle);
+             endpoint = kipc_acquire(handle);
              if (!endpoint)
                  return IPC_ERR_NOT_FOUND;
 
@@ -688,14 +688,14 @@ ipc_status_t ipc_recv_nb(ipc_handle_t handle, ipc_message_t *message) {
 
              if (endpoint->is_shutting_down) {
                  kmutex_unlock(&endpoint->lock);
-                 ipc_release(endpoint);
+                 kipc_release(endpoint);
 
                  return IPC_ERR_ENDPOINT_CLOSED;
              }
 
-             if (!ipc_queue_pop(endpoint, message)) {
+             if (!kipc_queue_pop(endpoint, message)) {
                  kmutex_unlock(&endpoint->lock);
-                 ipc_release(endpoint);
+                 kipc_release(endpoint);
 
                  return IPC_ERR_CANCELLED;
              }
@@ -707,7 +707,7 @@ ipc_status_t ipc_recv_nb(ipc_handle_t handle, ipc_message_t *message) {
 
              kmutex_unlock(&endpoint->lock);
 
-             ipc_release(endpoint);
+             kipc_release(endpoint);
 
              return IPC_OK;
 }
