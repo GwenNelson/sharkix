@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <sharkix/kernel/subsystems/caps.h>
+#include <sharkix/kernel/subsystems/kcaps.h>
 #include <sharkix/kernel/subsystems/vmo.h>
 
 #define PHYSMAP_BASE       0xffff800000000000ULL

@@ -2,7 +2,7 @@
 #include <stdint.h>
 
 #include "arch.h"
-#include <sharkix/kernel/subsystems/caps.h>
+#include <sharkix/kernel/subsystems/kcaps.h>
 #include "console.h"
 #include <sharkix/kernel/subsystems/ipc.h>
 #include "memory.h"

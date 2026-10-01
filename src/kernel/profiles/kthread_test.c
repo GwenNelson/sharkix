@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <sharkix/kernel/subsystems/caps.h>
+#include <sharkix/kernel/subsystems/kcaps.h>
 #include <sharkix/kernel/subsystems/pmem.h>
 #include <sharkix/kernel/subsystems/vmo.h>
 #include "console.h"

@@ -6,7 +6,7 @@
 #include <sharkix/kernel/subsystems/pmem.h>
 #include <sharkix/kernel/subsystems/portio.h>
 #include "startup.h"
-#include <sharkix/kernel/subsystems/caps.h>
+#include <sharkix/kernel/subsystems/kcaps.h>
 #include <sharkix/kernel/subsystems/ipc.h>
 #include "sync.h"
 #include "kvalloc.h"

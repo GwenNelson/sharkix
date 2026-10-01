@@ -1,4 +1,4 @@
-#include <sharkix/kernel/subsystems/caps.h>
+#include <sharkix/kernel/subsystems/kcaps.h>
 #include <sharkix/kernel/memory.h>
 #include <stdint.h>
 #include <stdbool.h>

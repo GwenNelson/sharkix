@@ -1,7 +1,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <sharkix/kernel/subsystems/caps.h>
+#include <sharkix/kernel/subsystems/kcaps.h>
 #include "console.h"
 #include <sharkix/kernel/subsystems/ipc.h>
 #include "ipc_registry.h"

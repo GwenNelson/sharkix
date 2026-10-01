@@ -3,7 +3,7 @@
 #include <string.h>
 
 #include <sharkix/kernel/subsystems/kas.h>
-#include <sharkix/kernel/subsystems/caps.h>
+#include <sharkix/kernel/subsystems/kcaps.h>
 #include "console.h"
 #include <sharkix/kernel/subsystems/ipc.h>
 #include "memory.h"

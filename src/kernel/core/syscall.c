@@ -5,7 +5,7 @@
 #include "syscall.h"
 #include "errno.h"
 #include <sharkix/kernel/subsystems/ipc.h>
-#include <sharkix/kernel/subsystems/caps.h>
+#include <sharkix/kernel/subsystems/kcaps.h>
 #include <sharkix/kernel/subsystems/portio.h>
 #include <sharkix/kernel/subsystems/vmo.h>
 #include <sharkix/kernel/subsystems/kas.h>
