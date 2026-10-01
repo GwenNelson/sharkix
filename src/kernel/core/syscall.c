@@ -11,7 +11,7 @@
 #include <sharkix/kernel/subsystems/kas.h>
 #include <sharkix/kernel/subsystems/kthread.h>
 #include <sharkix/kernel/subsystems/kirq.h>
-#include <sharkix/kernel/subsystems/notification.h>
+#include <sharkix/kernel/subsystems/knotify.h>
 
 static uint64_t announced_a;
 static uint64_t announced_b;

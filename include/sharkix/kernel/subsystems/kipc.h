@@ -7,7 +7,7 @@
 #include <sharkix/kernel/sync.h>
 #include <sharkix/kernel/thread.h>
 #include <sharkix/kernel/uthash.h>
-#include <sharkix/kernel/subsystems/notification.h>
+#include <sharkix/kernel/subsystems/knotify.h>
 
 typedef uint64_t ipc_handle_t;
 

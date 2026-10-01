@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 
-#include <sharkix/kernel/subsystems/notification.h>
+#include <sharkix/kernel/subsystems/knotify.h>
 
 #include <sharkix/kernel/memory.h>
 #include <sharkix/kernel/sync.h>

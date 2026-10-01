@@ -9,7 +9,7 @@
 #include "thread.h"
 #include <sharkix/kernel/ipc_registry.h>
 #include <sharkix/kernel/subsystems/kirq.h>
-#include <sharkix/kernel/subsystems/notification.h>
+#include <sharkix/kernel/subsystems/knotify.h>
 #include <sharkix/kernel/subsystems/portio.h>
 
 enum {

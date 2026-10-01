@@ -11,7 +11,7 @@
 #include "sync.h"
 #include "kvalloc.h"
 #include <sharkix/kernel/subsystems/vmo.h>
-#include <sharkix/kernel/subsystems/notification.h>
+#include <sharkix/kernel/subsystems/knotify.h>
 #include <sharkix/kernel/subsystems/kirq.h>
 #include "ipc_registry.h"
 #include <sharkix/kernel/subsystems/kas.h>
