@@ -25,3 +25,5 @@ void kthread_init(void);
 int kthread_create(as_handle_t as, uintptr_t entry, uintptr_t stack, kthread_handle_t *out);
 
 int kthread_start(kthread_handle_t handle);
+
+void kthread_destroy_unstarted(kthread_handle_t handle);

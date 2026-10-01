@@ -95,3 +95,20 @@ int kthread_start(kthread_handle_t handle) {
 	kmutex_unlock(&kthreads_lock);
 	return result == 0 ? 0 : -1;
 }
+
+void kthread_destroy_unstarted(kthread_handle_t handle) {
+	kthread_t *kthread = NULL;
+	uint32_t hashv = (uint32_t)handle;
+
+	kmutex_lock(&kthreads_lock);
+	HASH_FIND_BYHASHVALUE(hh, kthreads, &handle, sizeof(handle), hashv, kthread);
+	if (kthread) {
+		HASH_DEL(kthreads, kthread);
+	}
+	kmutex_unlock(&kthreads_lock);
+
+	if (kthread) {
+		thread_destroy_unstarted(kthread->thread);
+		kfree(kthread);
+	}
+}

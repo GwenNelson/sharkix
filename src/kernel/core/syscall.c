@@ -9,6 +9,7 @@
 #include <sharkix/kernel/subsystems/portio.h>
 #include <sharkix/kernel/subsystems/vmo.h>
 #include <sharkix/kernel/subsystems/as.h>
+#include <sharkix/kernel/subsystems/kthread.h>
 #include <sharkix/kernel/subsystems/irq.h>
 #include <sharkix/kernel/subsystems/notification.h>
 
@@ -750,6 +751,69 @@ SHARKIX_SYSCALL_IMPL(AS_CREATE) {
 
 fail:
 	ctx->rdi = CAP_INVALID_HANDLE;
+	return syscall_return();
+}
+
+/* RDI = thread factory cap, RSI = AS cap, RDX = entry, R10 = stack.
+ * RAX = 0 on success or -1 on failure; RDI = new thread cap on success. */
+SHARKIX_SYSCALL_IMPL(THREAD_CREATE) {
+	thread_t *caller = thread_current();
+	kobject_handle_t object;
+	kthread_handle_t thread_handle;
+	cap_handle_t thread_cap;
+
+	ctx->rax = (uint64_t)-1;
+	if (!caller || !caller->address_space)
+		goto fail;
+
+	if (kcapset_resolve_handle(caller->address_space->capset,
+				   (cap_handle_t)ctx->rdi,
+				   CAP_TYPE_FACTORY_THREAD, 0, &object) != 0 ||
+	    kcapset_resolve_handle(caller->address_space->capset,
+				   (cap_handle_t)ctx->rsi,
+				   CAP_TYPE_AS, 0, &object) != 0)
+		goto fail;
+
+	if (kthread_create((as_handle_t)object, (uintptr_t)ctx->rdx,
+			   (uintptr_t)ctx->r10, &thread_handle) != 0)
+		goto fail;
+
+	if (kcap_create((kobject_handle_t)thread_handle, CAP_TYPE_THREAD,
+			CAP_THREAD_VALID_RIGHTS & ~CAP_RIGHT_DESTROY,
+			&thread_cap) != 0) {
+		kthread_destroy_unstarted(thread_handle);
+		goto fail;
+	}
+
+	if (kcapset_addcap(caller->address_space->capset, thread_cap) != 0) {
+		kcap_destroy(thread_cap);
+		kthread_destroy_unstarted(thread_handle);
+		goto fail;
+	}
+
+	ctx->rax = 0;
+	ctx->rdi = thread_cap;
+	return syscall_return();
+
+fail:
+	ctx->rdi = CAP_INVALID_HANDLE;
+	return syscall_return();
+}
+
+/* RDI = thread cap; RAX = 0 on success or -1 on failure. */
+SHARKIX_SYSCALL_IMPL(THREAD_START) {
+	thread_t *caller = thread_current();
+	kobject_handle_t object;
+
+	ctx->rax = (uint64_t)-1;
+	if (!caller || !caller->address_space ||
+	    kcapset_resolve_handle(caller->address_space->capset,
+				   (cap_handle_t)ctx->rdi,
+				   CAP_TYPE_THREAD, CAP_RIGHT_THREAD_START,
+				   &object) != 0)
+		return syscall_return();
+
+	ctx->rax = (uint64_t)kthread_start((kthread_handle_t)object);
 	return syscall_return();
 }
 
