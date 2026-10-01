@@ -1,7 +1,7 @@
 #include "startup.h"
 #include "thread.h"
 
-#include <sharkix/kernel/subsystems/irq.h>
+#include <sharkix/kernel/subsystems/kirq.h>
 #include <sharkix/kernel/subsystems/portio.h>
 
 #define KBD_IRQ  0x01

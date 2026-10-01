@@ -10,7 +10,7 @@
 #include <sharkix/kernel/subsystems/vmo.h>
 #include <sharkix/kernel/subsystems/kas.h>
 #include <sharkix/kernel/subsystems/kthread.h>
-#include <sharkix/kernel/subsystems/irq.h>
+#include <sharkix/kernel/subsystems/kirq.h>
 #include <sharkix/kernel/subsystems/notification.h>
 
 static uint64_t announced_a;

@@ -10,7 +10,7 @@
 #include <sharkix/kernel/subsystems/pmem.h>
 #include <sharkix/kernel/subsystems/vmo.h>
 #include <sharkix/kernel/subsystems/portio.h>
-#include <sharkix/kernel/subsystems/irq.h>
+#include <sharkix/kernel/subsystems/kirq.h>
 #include <sharkix/kernel/subsystems/kas.h>
 
 static cap_handle_t next_cap_handle = 0;

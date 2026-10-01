@@ -8,7 +8,7 @@
 #include "program.h"
 #include "thread.h"
 #include <sharkix/kernel/ipc_registry.h>
-#include <sharkix/kernel/subsystems/irq.h>
+#include <sharkix/kernel/subsystems/kirq.h>
 #include <sharkix/kernel/subsystems/notification.h>
 #include <sharkix/kernel/subsystems/portio.h>
 
