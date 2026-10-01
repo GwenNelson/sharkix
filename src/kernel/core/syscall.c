@@ -8,7 +8,7 @@
 #include <sharkix/kernel/subsystems/caps.h>
 #include <sharkix/kernel/subsystems/portio.h>
 #include <sharkix/kernel/subsystems/vmo.h>
-#include <sharkix/kernel/subsystems/as.h>
+#include <sharkix/kernel/subsystems/kas.h>
 #include <sharkix/kernel/subsystems/kthread.h>
 #include <sharkix/kernel/subsystems/irq.h>
 #include <sharkix/kernel/subsystems/notification.h>

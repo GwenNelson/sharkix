@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <sharkix/kernel/subsystems/as.h>
+#include <sharkix/kernel/subsystems/kas.h>
 #include <sharkix/kernel/subsystems/caps.h>
 #include "console.h"
 #include <sharkix/kernel/subsystems/ipc.h>

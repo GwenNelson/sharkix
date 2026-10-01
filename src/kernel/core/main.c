@@ -14,7 +14,7 @@
 #include <sharkix/kernel/subsystems/notification.h>
 #include <sharkix/kernel/subsystems/irq.h>
 #include "ipc_registry.h"
-#include <sharkix/kernel/subsystems/as.h>
+#include <sharkix/kernel/subsystems/kas.h>
 #include <sharkix/kernel/subsystems/kthread.h>
 
 static void kernel_start_task(void *argument)

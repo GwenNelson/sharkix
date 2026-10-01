@@ -4,7 +4,7 @@
 #include <stddef.h>
 
 #include <sharkix/kernel/thread.h>
-#include <sharkix/kernel/subsystems/as.h>
+#include <sharkix/kernel/subsystems/kas.h>
 
 typedef uint64_t kthread_handle_t;
 
