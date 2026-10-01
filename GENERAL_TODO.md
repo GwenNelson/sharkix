@@ -5,64 +5,48 @@ marked done.
 
 # NEXT CODING SESSION
 
-The load-only ELF path, including anonymous-VMO BSS/partial-page handling and
-the deliberate read-only `.rodata` fault test, is working. Treat that loader
-milestone as complete enough for current purposes; do not disappear into ELF
-conformance work without a concrete consumer.
+The userspace thread-launch milestone is now working: an authorized ring3 task can create address spaces, map payload/stack VMOs, create dormant threads, and start them. Treat `AS_CREATE`, the AS/thread factories, `THREAD_CREATE` / `THREAD_START`, and the basic `kthread_test` launch path as implemented. Do not frameworkize the test.
 
-## 1. Clean up the syscall namespace
+Before migrating long-running drivers, close the concrete correctness gaps found by the post-milestone source review, then do the bounded lifetime/destruction audit.
 
-Begin defining the positive/stable syscall table as the real init/userspace
-environment comes into existence.
+## 1. Fix concrete thread / ELF launch correctness issues
 
-- clean up/refactor the temporary/test syscall-number assignments;
-- preserve useful test syscalls, but keep them out of the namespace/layout
-  intended for the stable positive syscall ABI;
-- do not design the permanent table around bootstrap tests;
-- let concrete init/generic-launch requirements drive new syscall additions.
+- fix the kthread wrapper lifetime bug: it currently keeps a `thread_t *` that may outlive the scheduler thread after `thread_reap()` frees it; a still-valid thread cap must never dereference a reaped thread. Fold this into the thread lifetime audit and preserve `DEAD != FREE`;
+- make the authority rule for thread creation explicit and enforce it: creating a thread in an address space must require the intended `AS_THREAD_CREATE` (or equivalent final chosen) right rather than accepting any cap of AS type;
+- fix writable file-backed ELF `PT_LOAD` handling. Do not map a writable target segment directly from a read/execute-only shared source ELF VMO; use private writable backing where the target page must differ from the source image;
+- tighten ELF admission before relying on the loader for general driver ELFs: validate required `p_offset` / `p_vaddr` page congruence; correctly handle or deliberately reject overlapping `PT_LOAD` page ranges; and validate that `e_entry` lies in an executable loaded segment;
+- keep this bounded to concrete loader correctness. Do not turn it into general ELF conformance or dynamic-linker work yet.
 
-## 2. Add the typed factories needed for generic launch
+## 2. Lifetime / destruction audit
 
-`CAP_TYPE_FACTORY_VMO` already exists. `CAP_TYPE_FACTORY_AS` and the simple
-`AS_CREATE(as_factory) -> as_cap` path are the current implementation step. Add
-the remaining narrow typed creation authorities needed by a real launcher/init:
+Do the deliberate, finite audit in the lifetime section below now that AS and thread creation are reachable from userspace. Prioritize reachable UAF, destruction/unregister races, cap-lock/destructor ordering, persistent references, and resource leaks. The kthread/reaper stale-pointer issue above is part of this audit, not a reason to invent a universal object framework.
 
-- `CAP_TYPE_FACTORY_AS` for address-space creation, with `AS_CREATE` treated as
-  the straightforward factory operation rather than a new abstraction layer;
-- `CAP_TYPE_FACTORY_THREAD` for schedulable thread creation;
-- expose threads through a lightweight `kthread` managed-object subsystem,
-  keeping `core/thread.c` as the scheduler/execution machinery;
-- factory possession is creation authority; do not invent redundant CREATE
-  rights or a universal factory;
-- keep CPU/core authority separate from thread-creation authority;
-- address lifetime/refcount details only as required to make these real
-  userspace-visible objects safe.
+Definition of done for this pass: capability-visible objects needed by init have coherent, explainable lifetime rules and no known reachable UAF/deadlock or unsafe destruction race on their implemented paths.
 
-## 3. Generic launch/bootstrap path
+## 3. Finish capability handoff needed by ring3 init
 
-Use the new factories to make load and launch genuinely separate operations:
+A userspace init must be able to construct a restricted capability set for a new domain. The current `CAP_TRANSFER`, `CAP_FORWARD`, and `CAP_DERIVE` stubs are a concrete integration blocker for replacing kernel-profile provisioning with a real ring3 launcher.
+
+- implement only the derivation/transfer/forward semantics actually needed by generic launch and init;
+- preserve attenuation: init should be able to hand a service only the rights it needs;
+- keep ownership explicit: moving a cap changes ownership; deriving/copying creates a distinct cap;
+- do not design capability-over-IPC merely to solve initial bootstrap handoff if a simpler generic launch mechanism suffices.
+
+## 4. Standard bootstrap ABI + generic ELF launch
 
 - define a simple standard Sharkix initial userspace stack/bootstrap format;
-- allow a launcher to place the target's initial capability information on
-  that stack;
-- create the target address space through its typed factory;
-- obtain/supply the ELF VMO and invoke the existing load-only ELF loader;
-- create the initial thread with:
-  - RIP = ELF entry point returned by the loader;
-  - RSP = launcher-created initial stack;
-- start the thread only after loading and bootstrap setup are complete.
+- allow the launcher to place the target's initial capability information there;
+- create the target AS through its factory and load the ELF using the corrected load-only loader;
+- create the initial thread with RIP = validated ELF entry and RSP = launcher stack top;
+- start it only after mappings and bootstrap state are complete.
 
-The existing named-cap bootstrap scheme is the starting point. Do not invent
-a more elaborate ABI unless a concrete need appears.
+The existing named-cap bootstrap scheme is the starting point. Do not invent a more elaborate ABI without a concrete consumer.
 
-## 4. Bring up a boring real init
+## 5. Bring up a boring real init
 
-Once generic launch is sufficient, begin the real ring3 init path and let its
-requirements drive the next factories/syscalls. Do not pre-build every
-conceivable creation facility.
+Once generic launch and cap handoff are sufficient, begin the real ring3 init path. Let real driver/service requirements drive further factories and syscalls. Do not pre-build every conceivable creation facility.
 
-
-## Kernel core / subsystem boundary cleanup
+# Kernel core / subsystem boundary cleanup
 
 After the immediate AS/thread factory and generic-launch work is green, continue
 the source-boundary cleanup so `core/` knows as little as practical about
@@ -205,13 +189,7 @@ language.
 Where the audit shows that init needs to manufacture privileged objects,
 provide small generic capability-controlled facilities.
 
-Immediate concrete consumers are generic launch/init:
-
-``` text
-CAP_TYPE_FACTORY_VMO       already exists
-CAP_TYPE_FACTORY_AS        current / AS_CREATE
-CAP_TYPE_FACTORY_THREAD    next
-```
+The VMO, AS, and thread factories required for the basic generic-launch path now exist.
 
 Add further typed factories only when a real consumer requires them. Possible
 later consumers may include VMO sets, IPC endpoints, notifications, or other
@@ -469,23 +447,23 @@ Do NOT block the current ELF/BSS work on replacing the allocator.
 
 ## Threads / kthread
 
-Expose the userspace-visible managed thread object through a lightweight
-`kthread` subsystem:
+The userspace-visible `kthread` wrapper and basic create/start syscalls now work. Keep the intended boundary:
 
 ``` text
 core/thread.c          scheduler/execution machinery
 subsystems/kthread.c   managed kobject/handle/lifetime wrapper
 ```
 
-Give exposed thread objects sensible lifetime semantics.
+Remaining lifetime/correctness work:
+
+- fix the stale `thread_t *` relationship between the kthread wrapper and the scheduler reaper; a reaped scheduler thread must not leave a dereferenceable pointer behind a valid kthread cap;
+- review remaining raw `thread_lookup()` pointer lifetime and establish the appropriate acquire/state/identity contract;
+- make dormant/runnable/dead/reaped transitions explicit enough that implemented operations such as `THREAD_START` fail safely in every state;
+- keep CPU-core objects and CPU affinity/control authority separate from thread creation.
 
 ``` text
 DEAD != FREE
 ```
-
-Review raw `thread_lookup()` pointer lifetime as part of the thread-factory /
-generic-launch work. Keep CPU-core objects and CPU affinity/control authority
-separate from thread creation.
 
 ## PortIO / sync / CPU objects
 
@@ -517,19 +495,18 @@ debug output remains independent.
 
 # OTHER IMPORTANT WORK
 
-## Capability transfer
+## Capability derivation / handoff / transfer
 
-Eventually support sending capabilities over IPC once the object/cap-transfer
-semantics underneath it are clear.
+The generic capability operations needed by ring3 init are now immediate work: `CAP_DERIVE`, `CAP_TRANSFER`, and `CAP_FORWARD` are currently stubbed, and init needs a safe way to construct restricted capability sets for newly launched domains. Implement the minimum semantics required by generic launch/init, with clear ownership and attenuation rules.
 
-Conceptually:
+Capability transfer over ordinary IPC remains later work once a concrete consumer requires it. A possible eventual shape remains:
 
 ``` text
 SYS_IPC_SEND_CAPS
 SYS_IPC_RECV_CAPS
 ```
 
-Do not settle the exact syscall family prematurely.
+Do not settle that IPC syscall family prematurely.
 
 ## Error numbers
 
@@ -644,8 +621,14 @@ does not accidentally depend on x86_64 or a particular boot protocol.
 
 ## Personality layer
 
-Start the personality layer only after ordinary ELF loading, generic program
-launch, and the normal userspace service/driver boot path are established.
+Start the personality layer only after ordinary ELF loading, generic program launch, and the normal userspace service/driver boot path are established.
+
+The overall shape remains plausible for Unix personalities, but the forwarding ABI is not designed yet. When this becomes the active consumer:
+
+- replace/relocate temporary positive-number test syscalls so the stable positive namespace can be personality-serviced cleanly;
+- define per-domain personality binding and forwarding of unhandled positive syscalls to an authorized userspace personality service;
+- let concrete Linux/BSD compatibility work drive process/thread, signal, VM and executable-startup contracts rather than putting those semantics into the microkernel pre-emptively;
+- dynamic linking/interpreter and auxiliary-vector compatibility are later personality/loader ABI work, not blockers for controlled static driver ELFs.
 
 # LATER: USERSPACE EXCEPTION / PAGE-FAULT HANDLING
 
@@ -681,15 +664,15 @@ personality semantics before the boring ELF loader works.
 # DEVELOPMENT ORDER
 
 ``` text
-POSITIVE SYSCALL NAMESPACE CLEANUP
+FIX CONCRETE KTHREAD / ELF LAUNCH CORRECTNESS GAPS
     ↓
-AS_CREATE + KTHREAD/THREAD FACTORY
+LIFETIME / DESTRUCTION / RESOURCE-LEAK AUDIT
     ↓
-LIFETIME / DESTRUCTION AUDIT AS CONCRETE OBJECTS BECOME REACHABLE
+IMPLEMENT MINIMUM CAP DERIVE / TRANSFER / FORWARD HANDOFF NEEDED BY INIT
     ↓
 KERNEL CORE / SUBSYSTEM BOUNDARY CLEANUP AS NEEDED
     ↓
-STANDARD STACK / CAP BOOTSTRAP + GENERIC LAUNCH
+STANDARD STACK / CAP BOOTSTRAP + GENERIC ELF LAUNCH
     ↓
 BEGIN BORING REAL INIT; LET ITS NEEDS DRIVE FURTHER FACTORIES/SYSCALLS
     ↓
@@ -702,6 +685,8 @@ ADD ONLY FURTHER GENERIC FACTORIES/FACILITIES REAL CONSUMERS REQUIRE
 MIGRATE DRIVERS/SERVICES TO NORMAL ELF STARTUP
     ↓
 DEPENDENCY-ORDERED INIT / REMOVE OBSOLETE DRIVER-SPECIFIC RING0 + FLATBIN PATHS
+    ↓
+CLEAN UP STABLE POSITIVE SYSCALL NAMESPACE AS PERSONALITY ABI BECOMES CONCRETE
     ↓
 RETURN TO EARLY-BOOT / ARCH PORTABILITY REFACTOR:
   SPLIT MULTIBOOT1 FROM X86_64 BOOTSTRAP
@@ -716,7 +701,7 @@ BUDDY PHYSICAL ALLOCATOR / SCATTERED ANON-VMO BACKING WHEN IT BECOMES WORTH IT
     ↓
 PERSONALITY LAYER
     ↓
-PUBSUB POLICY / CAP TRANSFER / OTHER FOLLOW-UP AS CONSUMERS REQUIRE
+PUBSUB POLICY / CAP-OVER-IPC / OTHER FOLLOW-UP AS CONSUMERS REQUIRE
     ↓
 FANCY EXCEPTION/PAGER STUFF
 ```
