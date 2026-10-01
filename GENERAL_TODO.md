@@ -13,9 +13,21 @@ Before migrating long-running drivers, close the concrete correctness gaps found
 
 - fix the kthread wrapper lifetime bug: it currently keeps a `thread_t *` that may outlive the scheduler thread after `thread_reap()` frees it; a still-valid thread cap must never dereference a reaped thread. Fold this into the thread lifetime audit and preserve `DEAD != FREE`;
 - make the authority rule for thread creation explicit and enforce it: creating a thread in an address space must require the intended `AS_THREAD_CREATE` (or equivalent final chosen) right rather than accepting any cap of AS type;
-- fix writable file-backed ELF `PT_LOAD` handling. Do not map a writable target segment directly from a read/execute-only shared source ELF VMO; use private writable backing where the target page must differ from the source image;
+- writable file-backed ELF `PT_LOAD` handling now uses eager private copies rather than directly mapping the shared source ELF VMO. This deliberately avoids needing COW/private-file mapping semantics in the current VMO subsystem;
 - tighten ELF admission before relying on the loader for general driver ELFs: validate required `p_offset` / `p_vaddr` page congruence; correctly handle or deliberately reject overlapping `PT_LOAD` page ranges; and validate that `e_entry` lies in an executable loaded segment;
 - keep this bounded to concrete loader correctness. Do not turn it into general ELF conformance or dynamic-linker work yet.
+
+### Later ELF / VMO optimization: private demand-paged file backing
+
+The current eager-copy loader is intentionally the simple implementation. Later, once the VMO/page-fault machinery has a concrete reason to support it, investigate private file-backed mappings with copy-on-write / copy-on-demand semantics:
+
+- allow clean ELF-backed pages to remain shared with the source image where their required contents are identical;
+- allow initialized writable `PT_LOAD` pages to begin from shared file backing but materialize private pages on write (COW), without granting write authority to the source ELF VMO;
+- materialize mixed file/BSS boundary pages on demand by copying the valid file bytes and zeroing the remainder;
+- consider demand paging so untouched executable pages need not be copied/read into private memory at launch time;
+- keep this as general VMO/VM/page-fault machinery rather than ELF-loader-specific cleverness.
+
+Do not block the current loader/init work on this optimization. The eager-copy path is the intended implementation until the VM subsystem can express these semantics cleanly.
 
 ## 2. Lifetime / destruction audit
 
