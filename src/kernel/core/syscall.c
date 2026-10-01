@@ -6,8 +6,8 @@
 #include "errno.h"
 #include <sharkix/kernel/subsystems/kipc.h>
 #include <sharkix/kernel/subsystems/kcaps.h>
-#include <sharkix/kernel/subsystems/portio.h>
-#include <sharkix/kernel/subsystems/vmo.h>
+#include <sharkix/kernel/subsystems/kportio.h>
+#include <sharkix/kernel/subsystems/kvmo.h>
 #include <sharkix/kernel/subsystems/kas.h>
 #include <sharkix/kernel/subsystems/kthread.h>
 #include <sharkix/kernel/subsystems/kirq.h>

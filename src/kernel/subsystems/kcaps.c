@@ -7,9 +7,9 @@
 
 // we need these headers for some subsystem-specific nonsense
 #include <sharkix/kernel/subsystems/kipc.h>
-#include <sharkix/kernel/subsystems/pmem.h>
-#include <sharkix/kernel/subsystems/vmo.h>
-#include <sharkix/kernel/subsystems/portio.h>
+#include <sharkix/kernel/subsystems/kpmem.h>
+#include <sharkix/kernel/subsystems/kvmo.h>
+#include <sharkix/kernel/subsystems/kportio.h>
 #include <sharkix/kernel/subsystems/kirq.h>
 #include <sharkix/kernel/subsystems/kas.h>
 

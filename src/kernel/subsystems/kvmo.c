@@ -1,11 +1,11 @@
-#include <sharkix/kernel/subsystems/vmo.h>
+#include <sharkix/kernel/subsystems/kvmo.h>
 
 #include <stdint.h>
 #include <stddef.h>
 
 #include <sharkix/kernel/kmalloc.h>
 #include <sharkix/kernel/sync.h>
-#include <sharkix/kernel/subsystems/pmem.h>
+#include <sharkix/kernel/subsystems/kpmem.h>
 #include <sharkix/kernel/memory.h>
 
 /*
@@ -25,7 +25,7 @@ static vmoset_handle_t next_vmoset_handle = 1;
  *
  * Caller must hold the corresponding global table lock.
  */
-static vmo_t *vmo_lookup_locked(vmo_handle_t handle)
+static vmo_t *kvmo_lookup_locked(vmo_handle_t handle)
 {
     vmo_t *vmo = NULL;
     uint32_t hashv = (uint32_t)handle;
@@ -159,7 +159,7 @@ int kvmo_create_anon(vmo_handle_t *out,
 
 	// now we can grab the lock, grab the actual VMO, and set the flag on it
 	kspin_lock(&vmos_lock);
-	vmo = vmo_lookup_locked(new_vmo);
+	vmo = kvmo_lookup_locked(new_vmo);
 	if(!vmo) {
 		memory_panic("New anonymous VMO vanished!"); // this should actually NEVER happen, but just in case....
 	}
@@ -231,7 +231,7 @@ int kvmo_get(vmo_handle_t handle, vmo_t *out)
 
     kspin_lock(&vmos_lock);
 
-    vmo = vmo_lookup_locked(handle);
+    vmo = kvmo_lookup_locked(handle);
     if (vmo == NULL) {
         kspin_unlock(&vmos_lock);
         return -1;
@@ -284,7 +284,7 @@ int kvmo_destroy(vmo_handle_t handle)
 
     kspin_lock(&vmos_lock);
 
-    vmo = vmo_lookup_locked(handle);
+    vmo = kvmo_lookup_locked(handle);
     if (vmo == NULL) {
         kspin_unlock(&vmos_lock);
         return -1;

@@ -3,14 +3,14 @@
 #include "arch.h"
 #include "console.h"
 #include "memory.h"
-#include <sharkix/kernel/subsystems/pmem.h>
-#include <sharkix/kernel/subsystems/portio.h>
+#include <sharkix/kernel/subsystems/kpmem.h>
+#include <sharkix/kernel/subsystems/kportio.h>
 #include "startup.h"
 #include <sharkix/kernel/subsystems/kcaps.h>
 #include <sharkix/kernel/subsystems/kipc.h>
 #include "sync.h"
 #include "kvalloc.h"
-#include <sharkix/kernel/subsystems/vmo.h>
+#include <sharkix/kernel/subsystems/kvmo.h>
 #include <sharkix/kernel/subsystems/knotify.h>
 #include <sharkix/kernel/subsystems/kirq.h>
 #include "ipc_registry.h"

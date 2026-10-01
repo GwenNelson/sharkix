@@ -7,11 +7,11 @@
 #include "console.h"
 #include <sharkix/kernel/subsystems/kipc.h>
 #include "memory.h"
-#include <sharkix/kernel/subsystems/pmem.h>
+#include <sharkix/kernel/subsystems/kpmem.h>
 #include "program.h"
 #include "startup.h"
 #include "thread.h"
-#include <sharkix/kernel/subsystems/vmo.h>
+#include <sharkix/kernel/subsystems/kvmo.h>
 
 enum {
     TESTELF_BOOTSTRAP_WORDS = 6,

@@ -5,7 +5,7 @@
 
 #include <sharkix/kernel/memory.h>
 #include <sharkix/kernel/subsystems/kirq.h>
-#include <sharkix/kernel/subsystems/portio.h>
+#include <sharkix/kernel/subsystems/kportio.h>
 #include <sharkix/kernel/console.h>
 #include <sharkix/kernel/sync.h>
 

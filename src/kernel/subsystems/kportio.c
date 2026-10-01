@@ -1,7 +1,7 @@
 #include <string.h>
 
 #include <sharkix/kernel/memory.h>
-#include <sharkix/kernel/subsystems/portio.h>
+#include <sharkix/kernel/subsystems/kportio.h>
 #include <sharkix/kernel/sync.h>
 
 static portio_t *global_portio_table;

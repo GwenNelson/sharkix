@@ -9,8 +9,8 @@
 #include "program.h"
 #include "startup.h"
 #include "thread.h"
-#include <sharkix/kernel/subsystems/pmem.h>
-#include <sharkix/kernel/subsystems/portio.h>
+#include <sharkix/kernel/subsystems/kpmem.h>
+#include <sharkix/kernel/subsystems/kportio.h>
 #include <sharkix/ddk/console-driver.h>
 
 

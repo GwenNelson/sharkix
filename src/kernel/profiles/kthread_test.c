@@ -3,8 +3,8 @@
 #include <string.h>
 
 #include <sharkix/kernel/subsystems/kcaps.h>
-#include <sharkix/kernel/subsystems/pmem.h>
-#include <sharkix/kernel/subsystems/vmo.h>
+#include <sharkix/kernel/subsystems/kpmem.h>
+#include <sharkix/kernel/subsystems/kvmo.h>
 #include "console.h"
 #include "memory.h"
 #include "program.h"

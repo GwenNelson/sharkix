@@ -2,7 +2,7 @@
 #include "thread.h"
 
 #include <sharkix/kernel/subsystems/kirq.h>
-#include <sharkix/kernel/subsystems/portio.h>
+#include <sharkix/kernel/subsystems/kportio.h>
 
 #define KBD_IRQ  0x01
 #define KBD_PORT 0x60

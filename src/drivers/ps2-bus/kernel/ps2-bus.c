@@ -10,7 +10,7 @@
 #include <sharkix/kernel/ipc_registry.h>
 #include <sharkix/kernel/subsystems/kirq.h>
 #include <sharkix/kernel/subsystems/knotify.h>
-#include <sharkix/kernel/subsystems/portio.h>
+#include <sharkix/kernel/subsystems/kportio.h>
 
 enum {
     PS2BUS_BOOTSTRAP_CAPS = 10,
