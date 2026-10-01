@@ -8,15 +8,16 @@
 #include <sharkix/kernel/subsystems/caps.h>
 #include <sharkix/kernel/subsystems/vmo.h>
 
-#define PHYSMAP_BASE 0xffff800000000000ULL
-#define KHEAP_BASE 0xffffc00000000000ULL
-#define KERNEL_BASE 0xffffffff80000000ULL
+#define PHYSMAP_BASE       0xffff800000000000ULL
+#define KHEAP_BASE         0xffffc00000000000ULL
+#define KERNEL_BASE        0xffffffff80000000ULL
 #define USER_CANONICAL_TOP 0x0000800000000000ULL
-#define PAGE_SIZE 4096ULL
-#define PAGE_ADDR_MASK 0x000ffffffffff000ULL
-#define PAGE_PRESENT 0x001ULL
-#define PAGE_WRITABLE 0x002ULL
-#define PAGE_USER 0x004ULL
+#define USER_STACK_TOP     0x00007ffffffff000ULL
+#define PAGE_SIZE          4096ULL
+#define PAGE_ADDR_MASK     0x000ffffffffff000ULL
+#define PAGE_PRESENT       0x001ULL
+#define PAGE_WRITABLE      0x002ULL
+#define PAGE_USER          0x004ULL
 #define PAGE_NX (1ULL << 63)
 #define ADDRESS_SPACE_MAP_OWNED (1ULL << 48)
 
