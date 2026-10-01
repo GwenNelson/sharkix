@@ -5,8 +5,23 @@
 #include <sharkix/libsharkix/syscalls.h>
 
 #define TEST_ARRAY_SIZE (16 * 1024)
+#define TEST_INITIALIZED_DATA_SIZE (2 * 4096)
 
 uint8_t test_array[TEST_ARRAY_SIZE];
+
+/*
+ * Keep more than one page of initialized writable data in the ELF file.
+ *
+ * This is a regression case for the ELF loader: writable PT_LOAD contents
+ * must be copied into private anonymous backing.  A tiny .data section only
+ * exercises the loader's mixed data/BSS page, while this array guarantees
+ * that the segment also contains complete file-backed writable pages.
+ */
+static uint8_t initialized_data[TEST_INITIALIZED_DATA_SIZE] = {
+	[0] = 0x12,
+	[TEST_INITIALIZED_DATA_SIZE / 2] = 0x34,
+	[TEST_INITIALIZED_DATA_SIZE - 1] = 0x56,
+};
 
 static uint64_t data_value = 0x123456789abcdef0ULL;
 static const uint64_t rodata_value = 0xfedcba9876543210ULL;
@@ -48,6 +63,21 @@ bool test_data_write(void) {
 	return *value == 0x1122334455667788ULL;
 }
 
+bool test_large_initialized_data(void) {
+	if(initialized_data[0] != 0x12 ||
+	   initialized_data[TEST_INITIALIZED_DATA_SIZE / 2] != 0x34 ||
+	   initialized_data[TEST_INITIALIZED_DATA_SIZE - 1] != 0x56)
+		return false;
+
+	initialized_data[0] = 0x65;
+	initialized_data[TEST_INITIALIZED_DATA_SIZE / 2] = 0x43;
+	initialized_data[TEST_INITIALIZED_DATA_SIZE - 1] = 0x21;
+
+	return initialized_data[0] == 0x65 &&
+	       initialized_data[TEST_INITIALIZED_DATA_SIZE / 2] == 0x43 &&
+	       initialized_data[TEST_INITIALIZED_DATA_SIZE - 1] == 0x21;
+}
+
 bool test_bss_write(void) {
 	test_array[0] = 0x12;
 	test_array[TEST_ARRAY_SIZE / 2] = 0x34;
@@ -73,6 +103,8 @@ void _start(void) {
 	TEST(test_rodata,      ".rodata value is correctly initialized");
 	TEST(test_data,        ".data value is correctly initialized");
 	TEST(test_data_write,  ".data is writable");
+	TEST(test_large_initialized_data,
+	     "multi-page initialized .data is private and writable");
 	TEST(test_bss_write,   ".bss is writable");
 
 	sharkix_debug_puts("\nAbout to attempt write to .rodata...\n");

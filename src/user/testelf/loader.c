@@ -4,8 +4,19 @@
 #include <sharkix/elf64.h>
 
 // where we map the source VMO in our own space, 64 TiB - this should accomodate any realistic ELF we could ever encounter in practice
-#define ELF_LOAD_BASE 0x0000400000000000 
-#define ELF_SCRATCH_BASE 0x00003ffffffff000
+#define ELF_LOAD_BASE 0x0000400000000000
+
+/*
+ * Temporary mappings used while copying ELF data live immediately below the
+ * source image.  They grow downwards from 64 TiB and may use up to 16 TiB.
+ *
+ * Keeping this as an explicit range makes the layout easy to reason about:
+ * scratch mappings cannot overlap the source image above them, and malformed
+ * input cannot make them grow all the way down into the loader's ordinary
+ * code, data, or stack mappings.
+ */
+#define ELF_SCRATCH_TOP    ELF_LOAD_BASE
+#define ELF_SCRATCH_BOTTOM 0x0000300000000000
 
 // TODO - at some point we really need to move a lot of this stuff into libsharkix
 //        perhaps a shared ABI header for all the caps and other stuff?
@@ -76,6 +87,31 @@ int create_anon(uint64_t vmo_factory, uint64_t req_size, uint64_t map_rights, ui
 		*actual_size = 0;
 		return -1;
 	}
+}
+
+/*
+ * Reserve one page-aligned range in the loader's scratch area.
+ *
+ * Scratch mappings are never reused during one load.  The loader is a short
+ * lived process, so keeping each temporary mapping until the loader exits is
+ * simpler than teaching this test loader to unmap and recycle them.
+ */
+static int reserve_scratch_range(uint64_t size,
+				 uint64_t *scratch_used,
+				 uintptr_t *out_vaddr) {
+	uint64_t scratch_capacity = ELF_SCRATCH_TOP - ELF_SCRATCH_BOTTOM;
+
+	if(!scratch_used || !out_vaddr || size == 0 ||
+	   (size & (PAGE_SIZE - 1)) != 0)
+		return -1;
+
+	if(*scratch_used > scratch_capacity ||
+	   size > scratch_capacity - *scratch_used)
+		return -1;
+
+	*scratch_used += size;
+	*out_vaddr = (uintptr_t)(ELF_SCRATCH_TOP - *scratch_used);
+	return 0;
 }
 
 int elf_load(uint64_t source_vmo, uint64_t target_as, uint64_t elf_file_len, uint64_t vmo_factory, uint64_t *entry_out) {
@@ -178,6 +214,7 @@ int elf_load(uint64_t source_vmo, uint64_t target_as, uint64_t elf_file_len, uin
 	}
 
 	Elf64_Phdr *phdrs = (Elf64_Phdr *)(elf + ehdr->e_phoff);
+	uint64_t scratch_used = 0;
 
 	for(uint16_t i = 0; i < ehdr->e_phnum; i++) {
 		Elf64_Phdr *phdr = &phdrs[i];
@@ -252,6 +289,77 @@ int elf_load(uint64_t source_vmo, uint64_t target_as, uint64_t elf_file_len, uin
 		if(phdr->p_flags & PF_X)
 			prot |= VMO_EXEC;
 
+		/*
+		 * Writable segments must never be mapped directly from source_vmo.
+		 *
+		 * source_vmo contains the original ELF file and may be shared.  If a
+		 * process could write through a mapping backed by that VMO, it would
+		 * modify the original image and could affect another process loaded
+		 * from the same source.
+		 *
+		 * Give every writable PT_LOAD one private anonymous VMO instead:
+		 *
+		 *   1. create zero-filled backing for the whole rounded segment;
+		 *   2. map it temporarily into this loader;
+		 *   3. copy only the p_filesz bytes supplied by the ELF;
+		 *   4. map the private VMO into the target with the ELF permissions.
+		 *
+		 * The anonymous VMO starts zero-filled.  Bytes before an unaligned
+		 * p_vaddr, the BSS from p_filesz to p_memsz, and final page padding
+		 * therefore remain zero without needing separate special cases.
+		 */
+		if(phdr->p_flags & PF_W) {
+			uint64_t private_vmo;
+			uint64_t private_actual_size;
+			uintptr_t scratch_vaddr;
+
+			/*
+			 * The loader needs WRITE while filling the VMO and READ because
+			 * Sharkix cannot represent a present, non-readable x86 mapping.
+			 * EXEC is retained only when the ELF requested it.
+			 */
+			uint64_t private_rights = prot | VMO_READ | VMO_WRITE;
+
+			if(create_anon(vmo_factory,vmo_size,private_rights,
+				       &private_actual_size,&private_vmo) != 0 ||
+			   private_actual_size < vmo_size) {
+				sharkix_debug_puts("\nERROR! Failed to create private VMO for writable ELF segment!\n");
+				return -1;
+			}
+
+			if(reserve_scratch_range(vmo_size,&scratch_used,
+						 &scratch_vaddr) != 0) {
+				sharkix_debug_puts("\nERROR! Writable ELF segment does not fit in loader scratch space!\n");
+				return -1;
+			}
+
+			if(map_vmo_self(private_vmo,scratch_vaddr,0,vmo_size,
+					VMO_READ|VMO_WRITE) != 0) {
+				sharkix_debug_puts("\nERROR! Failed to map private writable ELF segment into loader!\n");
+				return -1;
+			}
+
+			/*
+			 * p_filesz was bounds checked against the source ELF above, and
+			 * page_offset + p_memsz was checked before vmo_size was rounded.
+			 * Since p_filesz <= p_memsz, both ends of this copy are valid.
+			 */
+			uint8_t *src = elf + phdr->p_offset;
+			uint8_t *dst = (uint8_t *)scratch_vaddr + page_offset;
+
+			for(uint64_t j = 0; j < phdr->p_filesz; j++)
+				dst[j] = src[j];
+
+			if(map_vmo_target(target_as,private_vmo,page_vaddr,0,
+					  vmo_size,prot) != 0) {
+				sharkix_debug_puts("\nERROR! Failed to map private writable ELF segment into target!\n");
+				return -1;
+			}
+
+			/* This segment is complete; the shared-source path is read-only. */
+			continue;
+		}
+
 		// calculate where to map the thing
 
 		uint64_t file_page = phdr->p_offset & ~(PAGE_SIZE - 1);
@@ -297,7 +405,13 @@ int elf_load(uint64_t source_vmo, uint64_t target_as, uint64_t elf_file_len, uin
 				return -1;
 			}
 
-			uintptr_t scratch_vaddr = ELF_SCRATCH_BASE - ((uint64_t)i * PAGE_SIZE);
+			uintptr_t scratch_vaddr;
+
+			if(reserve_scratch_range(PAGE_SIZE,&scratch_used,
+						 &scratch_vaddr) != 0) {
+				sharkix_debug_puts("\nERROR! Mixed BSS page does not fit in loader scratch space!\n");
+				return -1;
+			}
 
 			if(map_vmo_self(mixed_vmo,scratch_vaddr,0,PAGE_SIZE,VMO_READ|VMO_WRITE) != 0) {
 				sharkix_debug_puts("\nERROR! Failed to map mixed BSS page into loader!\n");
