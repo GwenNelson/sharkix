@@ -236,7 +236,10 @@ static void do_the_test(uint64_t as_factory, uint64_t thread_factory, uint64_t v
 	}
 
 	// M for "main"
-	for(;;) test_write("M"); 
+	for(;;) {
+		test_write("M"); 
+		 __asm__ volatile ("int $0x90" ::: "memory");
+	}
 }
 
 void kthread_test_main(uint64_t *bootstrap)
