@@ -29,4 +29,4 @@ int kthread_create(as_handle_t as, uintptr_t entry, uintptr_t stack, kthread_han
 
 int kthread_start(kthread_handle_t handle);
 
-void kthread_destroy_unstarted(kthread_handle_t handle);
+int kthread_destroy_unstarted(kthread_handle_t handle);

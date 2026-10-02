@@ -781,13 +781,15 @@ SHARKIX_SYSCALL_IMPL(THREAD_CREATE) {
 	if (kcap_create((kobject_handle_t)thread_handle, CAP_TYPE_THREAD,
 			CAP_THREAD_VALID_RIGHTS & ~CAP_RIGHT_DESTROY,
 			&thread_cap) != 0) {
-		kthread_destroy_unstarted(thread_handle);
+		if (kthread_destroy_unstarted(thread_handle) != 0)
+			ctx->rax = (uint64_t)-1;
 		goto fail;
 	}
 
 	if (kcapset_addcap(caller->address_space->capset, thread_cap) != 0) {
 		kcap_destroy(thread_cap);
-		kthread_destroy_unstarted(thread_handle);
+		if (kthread_destroy_unstarted(thread_handle) != 0)
+			ctx->rax = (uint64_t)-1;
 		goto fail;
 	}
 

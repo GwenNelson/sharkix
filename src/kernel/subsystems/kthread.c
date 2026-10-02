@@ -103,7 +103,7 @@ int kthread_start(kthread_handle_t handle) {
 	return result == 0 ? 0 : -1;
 }
 
-void kthread_destroy_unstarted(kthread_handle_t handle) {
+int kthread_destroy_unstarted(kthread_handle_t handle) {
 	kthread_t *kthread = NULL;
 	uint32_t hashv = (uint32_t)handle;
 
@@ -112,7 +112,7 @@ void kthread_destroy_unstarted(kthread_handle_t handle) {
 	if (kthread) {
 		if(kthread->started) {
 			kmutex_unlock(&kthreads_lock);
-			return; // TODO - should make this return -1, which means changing this function to an int, like others
+			return -1;
 		}
 		HASH_DEL(kthreads, kthread);
 	}
@@ -121,5 +121,9 @@ void kthread_destroy_unstarted(kthread_handle_t handle) {
 	if (kthread) {
 		thread_destroy_unstarted(kthread->thread);
 		kfree(kthread);
+	} else {
+		// this is almost entirely impossible, but let's be careful, gcc can optimize this out if it's LITERALLY impossible
+		return -1;
 	}
+	return 0;
 }
