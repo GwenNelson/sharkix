@@ -118,6 +118,7 @@ void kirq_init(void) {
     irq_subsys_ready = true;
 }
 
+// NOTE - NEVER EVER EVER call this function without holding the lock
 static int kirq_find_by_hwirq(irq_handle_t* out, uint32_t hwirq) {
 	irq_t *irq;
 	irq_t *tmp;
