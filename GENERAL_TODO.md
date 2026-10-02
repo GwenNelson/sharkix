@@ -25,9 +25,7 @@ literally said: *"I want to get the fucking lifetime audit finished."*
 Do not let interesting ELF/init/architecture work displace the bounded
 subsystem audit.**
 
-Assume the `kportio` lifetime audit has just been completed cleanly and
-committed. Do not reopen KAS, basic kthread, or kportio without a
-concrete new finding.
+The local `kportio.c` lifetime audit and the PortIO syscall-consumer pass are complete and clean. Do not reopen KAS, basic kthread, or kportio itself without a concrete new finding. **PortIO is not globally closed yet:** when auditing `kirq` and the driver/profile code, inspect every external `kportio_*` relationship found by `grep -R 'kportio_' src/` and verify that those consumers do not retain unsafe assumptions about PortIO object lifetime. Treat those checks as part of the owning consumer subsystem/driver audit rather than reopening `kportio.c`.
 
 Work through the remaining subsystems in this order, keeping each pass
 typed and bounded:
@@ -77,6 +75,8 @@ concrete dependency requires a bounded check. Fix concrete
 UAF/deadlock/double-free/leak/race issues; do not invent a universal
 lifetime framework.
 
+**Do not accidentally scope the audit to kernel subsystem implementation files only.** For each subsystem, after the local pass, use `grep` to check all real consumers: syscall glue, other kernel subsystems, ring0 driver/setup code, userspace drivers/services, startup profiles, tests, and bootstrap/profile code where applicable. We have already deliberately deferred the non-syscall PortIO consumers this way. As the remaining audits proceed, explicitly ask whether an earlier subsystem was rushed through without checking one of these consumer classes; if so, add the bounded consumer pass rather than assuming the local implementation audit covered it.
+
 Cross-subsystem horrors are allowed to become precise TODO items when
 solving them would explode the current pass. The objective is to finish
 as much of the finite audit as possible, not to let one difficult
@@ -87,7 +87,7 @@ The intended near-term progression is therefore:
 ``` text
 KAS                         DONE
 basic kthread               DONE for implemented operations
-kportio                     ASSUME DONE when this file is next read
+kportio local + syscalls    DONE; external consumers deferred to their audits
     ↓
 knotify (local)
     ↓
@@ -328,6 +328,7 @@ Keep moving subsystem by subsystem rather than reopening completed work.
 
 Completed for the current implemented paths:
 
+-   `kportio.c` local lifetime/destruction semantics and the PortIO syscall-facing consumers have been audited. External PortIO consumers remain deliberately deferred: inspect `kirq`, drivers, startup/profile/bootstrap code, and any other users found by `grep -R 'kportio_' src/` during their owning audits.
 -   KAS registry/acquire/unregister/reaper ownership has been audited;
     registry publication/acquisition is serialized and unregister
     transfers the registry-owned reference to deferred cleanup. Keep the
