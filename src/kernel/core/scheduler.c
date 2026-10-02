@@ -141,6 +141,7 @@ void scheduler_start(void)
     arch_scheduler_start(first->saved_context);
 }
 
+// TODO - should really examine the use of arch_irq_* calls here when it comes time for SMP, this doesn't look safe right now
 int scheduler_make_runnable(thread_t *thread)
 {
     uintptr_t flags = arch_irq_save();
