@@ -42,7 +42,7 @@ static void kas_reaper_task(void* argument) {
 static void kas_reaper_enqueue(as_t* dead) {
 	kmutex_lock(&kas_reaper_lock);
 
-	if(!fifo_push(reaper_queue, dead) {
+	if(!fifo_push(reaper_queue, dead)) {
 		// if we get here, it's because the queue is full, probably, but we should double check
 		if(!fifo_full(reaper_queue)) {
 			// this should NEVER happen, it means the queue wasn't full but push still failed
@@ -50,7 +50,7 @@ static void kas_reaper_enqueue(as_t* dead) {
 			for(;;); // TODO - seriously, we need a fucking kpanic
 		}
 		size_t old_capacity = fifo_capacity(reaper_queue);
-		if(old_capacity > (SIZE_MAX - KAS_REAPER_CAPACITY) {
+		if(old_capacity > (SIZE_MAX - KAS_REAPER_CAPACITY)) {
 			// seriously, kpanic is URGENTLY needed in this thing
 			console_write("kas.c:kas_reaper_enqueue() - we literally mathematically can't allocate enough for the reaper queue growth! Can not continue\n");
 			for(;;);
