@@ -5,6 +5,7 @@
 
 static thread_t *reaper_thread;
 
+// TODO - this, along with startup_common_init and all this other stuff (except for the spinner) should probably move somewhere else, like inside the core thread.c
 static void reaper_task(void *argument)
 {
     (void)argument;
