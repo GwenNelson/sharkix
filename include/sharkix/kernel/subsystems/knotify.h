@@ -25,6 +25,11 @@ typedef struct notify_t {
 void knotify_init(void);
 
 int knotify_create(notify_handle_t *out);
+
+
+// this is equivalent to POSIX unlink, in other words it ensures that once the last waiter is done, the notification object goes away
+// this prevents waiters from dereferencing NULL and crashing the kernel, or needing some complicated "was that a normal wakeup or a destroy wakeup?"
+// it keeps the API simple
 int knotify_destroy(notify_handle_t handle);
 
 // Notification-specific lifetime references for persistent kernel bindings

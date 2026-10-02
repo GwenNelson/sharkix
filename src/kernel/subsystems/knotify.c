@@ -53,9 +53,22 @@ void knotify_release(notify_t *notify) {
         return;
 
     kmutex_lock(&global_notify_table_lock);
-    notify->references--;
-    if (notify->references == 0)
-        free_notify = true;
+    if(notify->references > 0) {
+       notify->references--;
+    } else {
+       // ack! it is yog-soggoth and the black goat of the woods with a thousand young
+       // all is lost, this is THE THING THAT SHOULD NOT BE
+       // human minds can not comprehend the horror of "WHY THE FUCK WASN'T THIS ALREADY CLEANED UP?"
+       // so we'll kpanic, once we have kpanic
+       // TODO - fix the lovecraftian horror
+       // also, blame the osdev.org wiki for this, seriously
+       // https://wiki.osdev.org/Category:Lovecraftian 
+
+       // without this, in strange aeons even death may die - personally i'm FOR that for human beings, but not kobjects
+       console_write("knotify.c:knotify_release() - lovecraftian abomination error - somehow we tried to release that which was already refcount==0, and that should be impossible\n");
+       for(;;);
+    }
+    if (notify->references == 0) free_notify = true;
     kmutex_unlock(&global_notify_table_lock);
 
     if (free_notify)
@@ -73,6 +86,8 @@ int knotify_create(notify_handle_t *out) {
 
     if (!out)
         return -1;
+
+    *out = NOTIFY_INVALID_HANDLE;
 
     notify = kmalloc(sizeof(*notify));
     if (!notify)
