@@ -60,12 +60,16 @@ int kportio_create(portio_handle_t *out, uint16_t base, uint32_t length) {
 	portio_t *portio;
 	int result;
 
-	if (!out || length == 0 || length > UINT32_C(0x10000) - (uint32_t)base)
+	if(!out || length == 0 || length > UINT32_C(0x10000) - (uint32_t)base) {
 		return -1;
+	}
+
+	*out = PORTIO_INVALID_HANDLE;
 
 	portio = kmalloc(sizeof(*portio));
-	if (!portio)
+	if(!portio) {
 		return -1;
+	}
 
 	memset(portio, 0, sizeof(*portio));
 	portio->base = base;
@@ -73,22 +77,28 @@ int kportio_create(portio_handle_t *out, uint16_t base, uint32_t length) {
 
 	kmutex_lock(&global_portio_table_lock);
 	result = kportio_insert_locked(portio);
+	if(result == 0) {
+		*out = portio->handle;
+	}
 	kmutex_unlock(&global_portio_table_lock);
 
-	if (result < 0) {
+	if(result != 0) {
 		kfree(portio);
 		return -1;
 	}
 
-	*out = portio->handle;
 	return 0;
 }
 
 int kportio_get(portio_handle_t handle, portio_t *out) {
 	portio_t *portio;
 
-	if (!out || handle == PORTIO_INVALID_HANDLE)
+	if (!out || handle == PORTIO_INVALID_HANDLE) {
 		return -1;
+	}
+
+	memset(out, 0, sizeof(*out));
+	out->handle = PORTIO_INVALID_HANDLE;
 
 	kmutex_lock(&global_portio_table_lock);
 
@@ -109,8 +119,9 @@ int kportio_get(portio_handle_t handle, portio_t *out) {
 int kportio_destroy(portio_handle_t handle) {
 	portio_t *portio;
 
-	if (handle == PORTIO_INVALID_HANDLE)
+	if (handle == PORTIO_INVALID_HANDLE) {
 		return -1;
+	}
 
 	kmutex_lock(&global_portio_table_lock);
 
@@ -131,8 +142,9 @@ int kportio_destroy(portio_handle_t handle) {
 int kportio_inb(portio_handle_t handle, uint32_t offset, uint8_t *value) {
 	uint16_t port;
 
-	if (!value)
+	if (!value) {
 		return -1;
+	}
 
 	kmutex_lock(&global_portio_table_lock);
 	if (kportio_resolve_port_locked(handle, offset, sizeof(*value), &port) != 0) {
@@ -149,8 +161,9 @@ int kportio_inb(portio_handle_t handle, uint32_t offset, uint8_t *value) {
 int kportio_inw(portio_handle_t handle, uint32_t offset, uint16_t *value) {
 	uint16_t port;
 
-	if (!value)
+	if (!value) {
 		return -1;
+	}
 
 	kmutex_lock(&global_portio_table_lock);
 	if (kportio_resolve_port_locked(handle, offset, sizeof(*value), &port) != 0) {
@@ -167,8 +180,9 @@ int kportio_inw(portio_handle_t handle, uint32_t offset, uint16_t *value) {
 int kportio_inl(portio_handle_t handle, uint32_t offset, uint32_t *value) {
 	uint16_t port;
 
-	if (!value)
+	if (!value) {
 		return -1;
+	}
 
 	kmutex_lock(&global_portio_table_lock);
 	if (kportio_resolve_port_locked(handle, offset, sizeof(*value), &port) != 0) {
