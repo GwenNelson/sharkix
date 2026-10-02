@@ -41,6 +41,18 @@ typedef struct {
 #define EV_CURRENT    1
 #define EM_X86_64     62  /* 0x3E */
 
+#define EF_X86_64     0 /* e_flags */
+
+#define EH_SIZE	      64
+#define PHENT_SIZE    56
+#define SHENT_SIZE    64
+
+#define ELF_MAX_SHNUM 1024 /* probably overkill, but we validate it's all valid */
+
+#define SHN_UNDEF     0
+#define OSABI_SYSV    0
+#define OSABI_VERSION 0
+
 #define EI_MAG0       0
 #define EI_MAG1       1
 #define EI_MAG2       2

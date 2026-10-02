@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdbool.h>
 
 #include <sharkix/libsharkix/syscalls.h>
 #include <sharkix/elf64.h>
@@ -114,6 +115,80 @@ static int reserve_scratch_range(uint64_t size,
 	return 0;
 }
 
+// strongly validates an ELF64 header
+// returns false if ANYTHING is wrong
+bool validate_elf_header(Elf64_Ehdr *hdr, uint64_t file_len) {
+	// check the magic first (see if the Owens sisters are behind this...)
+	if(hdr->e_ident[EI_MAG0] != 0x7F) return false;
+	if(hdr->e_ident[EI_MAG1] != 'E')  return false;
+	if(hdr->e_ident[EI_MAG2] != 'L')  return false;
+	if(hdr->e_ident[EI_MAG3] != 'F')  return false;
+	// if we get here, there's probably no dead boyfriend (to get the joke, watch Practical Magic, 1998)
+
+	// for now we're still only x86-64
+	// TODO: should probably make this check the exact arch, but a 32-bit platform is going to be really tricky for other parts of sharkix
+	//       so therefore, let's only accept 64-bit
+	if(hdr->e_ident[EI_CLASS] != ELFCLASS64)  return false;
+	if(hdr->e_ident[EI_DATA]  != ELFDATA2LSB) return false;
+	
+	if(hdr->e_ident[EI_VERSION]    != EV_CURRENT)    return false;
+	if(hdr->e_ident[EI_OSABI]      != OSABI_SYSV)    return false; // this is a standard and generic enough one for now, but perhaps we might want to accept others?
+	if(hdr->e_ident[EI_ABIVERSION] != OSABI_VERSION) return false; // might want to consider potentially using this for own purposes? maybe?
+
+	for(int i=9; i<15; i++) {
+		if(hdr->e_ident[i] != 0x00) return false;
+	}
+
+	// if we get here, e_ident is okay, yay!
+
+	// let's inspect the other fields now
+	if(hdr->e_type    != ET_EXEC) return false;
+
+	// TODO - as per above, this should at some point be updated as per architecture once we port to other platforms
+	if(hdr->e_machine != EM_X86_64)  return false;
+
+	if(hdr->e_version != EV_CURRENT) return false;
+	if(hdr->e_entry > file_len)      return false;
+	if(hdr->e_phoff > file_len)      return false;
+	if(hdr->e_shoff > file_len)      return false;
+
+	if(hdr->e_flags  != EF_X86_64)   return false;
+	if(hdr->e_ehsize != EH_SIZE)     return false;
+
+	if(hdr->e_phentsize != PHENT_SIZE) return false;
+
+	if(hdr->e_phnum == 0)  return false; // if there's no program headers, wtf are we doing here? let's not waste time on this
+	if(hdr->e_phnum >  64) return false; // we can redefine this later if REALLY needed, but come on
+
+	if(hdr->e_phnum > SIZE_MAX / hdr->e_phentsize) return false;
+
+	uint64_t ph_total_size = (uint64_t)(hdr->e_phnum) * hdr->e_phentsize;
+	if(ph_total_size > file_len) return false;
+
+	uint64_t ph_end_offset = hdr->e_phoff + ph_total_size;
+	if(ph_end_offset > file_len) return false;
+
+	if(hdr->e_shentsize != SHENT_SIZE) return false;
+
+	if(hdr->e_shnum > ELF_MAX_SHNUM) return false; // we don't actually care about section headers, but we do care about attempted murder of elf-loader.bin
+
+	if(hdr->e_shnum > 0) {
+		// again, we don't actually care about section headers, but we DO care about correctness, and it might save us in future if we do begin to care
+		if(hdr->e_shnum > SIZE_MAX / hdr->e_shentsize) return false;
+		
+		uint64_t sh_total_size = (uint64_t)(hdr->e_shnum) * hdr->e_shentsize;
+		if(sh_total_size > file_len) return false;
+
+		uint64_t sh_end_offset = hdr->e_shoff + sh_total_size;
+		if(sh_end_offset > file_len) return false;
+	
+		if(hdr->e_shstrndx >= hdr->e_shnum && hdr->e_shstrndx != SHN_UNDEF) return false;
+	}
+
+	// only if EVERYTHING above passes do we get to say it's valid
+	return true;
+}
+
 int elf_load(uint64_t source_vmo, uint64_t target_as, uint64_t elf_file_len, uint64_t vmo_factory, uint64_t *entry_out) {
 	// sanity checks first, get length etc
 	uint64_t page_len=0;
@@ -149,6 +224,11 @@ int elf_load(uint64_t source_vmo, uint64_t target_as, uint64_t elf_file_len, uin
 	}
 
 	Elf64_Ehdr* ehdr = (Elf64_Ehdr*)elf;
+
+	if(!validate_elf_header(ehdr,elf_file_len)) {
+		sharkix_debug_puts("\nERROR! ELF header failed validation!\n");
+		return -1;
+	}
 
 	// check if there's a dead boyfriend involved here
 	if((elf[0] != 0x7F) || (elf[1] != 'E') || (elf[2] != 'L') || (elf[3] != 'F')) {
