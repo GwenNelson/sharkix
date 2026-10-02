@@ -1,6 +1,10 @@
 Quick note for next TODO review - startup_kernel_thread being in startup.h doesn't seem right to me, probably a good refactoring target
 that function is used all over the place, it's very very useful and probably better in thread.c/thread.h instead
 
+Another quick note:
+    I want to add something to IPC endpoint creation allowing for dynamic resizing - something like "maximum free slots" and "minimum free slots", with sane defaults
+    Can probably just add some new kipc_ calls to the subsystem, then add some new optional bits to the relevant syscall, and treat 0 as "leave the default static size"
+
 # Sharkix TODO / Architecture Notes
 
 This file tracks remaining work only. Completed work is removed rather than
