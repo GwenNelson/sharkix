@@ -1,3 +1,6 @@
+Quick note for next TODO review - startup_kernel_thread being in startup.h doesn't seem right to me, probably a good refactoring target
+that function is used all over the place, it's very very useful and probably better in thread.c/thread.h instead
+
 # Sharkix TODO / Architecture Notes
 
 This file tracks remaining work only. Completed work is removed rather than

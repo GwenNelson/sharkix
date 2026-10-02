@@ -1,10 +1,21 @@
 #include <sharkix/kernel/subsystems/kas.h>
-
+#include <sharkix/kernel/memory.h>
+#include <sharkix/kernel/startup.h>
+#include <sharkix/kernel/thread.h>
+#include <sharkix/kernel/console.h>
+#include <libfifo/fifo.h>
 #include <sharkix/kernel/kmalloc.h>
 
 static as_t *address_spaces;
 static as_handle_t next_as_handle;
 static kmutex_t address_spaces_lock;
+
+// 64 ought to be enough for anyone...
+#define KAS_REAPER_CAPACITY 64
+
+static fifo_t  *reaper_queue;
+static as_t   **reaper_queue_storage; 
+
 
 static as_t *kas_find_locked(as_handle_t handle)
 {
@@ -15,10 +26,33 @@ static as_t *kas_find_locked(as_handle_t handle)
 	return as;
 }
 
+static void kas_reaper_task(void* argument) {
+	(void)argument;
+	for(;;) {
+		as_t* dead = fifo_pop_wait(reaper_queue);
+		address_space_release(dead->address_space);
+		kfree(dead);
+	}
+}
+
 void kas_init(void) {
 	address_spaces = NULL;
 	next_as_handle = 1;
 	kmutex_init(&address_spaces_lock);
+
+	reaper_queue         = kmalloc(sizeof(fifo_t));
+	reaper_queue_storage = kmalloc(sizeof(as_t*)*KAS_REAPER_CAPACITY);
+	if(!reaper_queue || !reaper_queue_storage) {
+		console_write("kas.c:kas_init() - could not kmalloc the reaper queue! will not continue\n");
+		for(;;);
+	}
+
+	fifo_init(reaper_queue,(void**)reaper_queue_storage,KAS_REAPER_CAPACITY);
+
+	if(!startup_kernel_thread(kas_reaper_task,"kas-reaper",THREAD_PRIORITY_NORMAL)) {
+		console_write("kas.c:kas_init() - could not launch reaper! will not continue\n");
+		for(;;); // TODO - we really really need a proper kpanic
+	}
 }
 
 int kas_register(as_handle_t *out, address_space_t *address_space) {
@@ -101,9 +135,18 @@ int kas_unregister(as_handle_t handle) {
 	}
 
 	HASH_DEL(address_spaces, as);
+
+	// deferred free, reaper will handle it for us, no need to free it here
+	fifo_push_wait(reaper_queue, as);
+	
 	kmutex_unlock(&address_spaces_lock);
 
-	address_space_release(as->address_space);
-	kfree(as);
+	// i'm leaving these here and commented out
+	// to future me, other potential future devs and AI agents working on this code:
+	// DO NOT UNCOMMENT THESE LINES UNLESS YOU KNOW WHAT YOU'RE DOING, DOUBLE FREE MADNESS AWAITS
+	// AND IT WON'T IMMEDIATELY BE OBVIOUS IN SOME EDGE CASES EITHER
+	// THIS IS HERE JUST TO DOCUMENT IT, DON'T ASK WHY
+	//address_space_release(as->address_space); /* SERIOUSLY, in case you grep for just this, DO NOT UNCOMMENT IT */
+	//kfree(as);				    /* I MEAN IT - DO NOT UNCOMMENT THIS LINE, AND DON'T ASK WHY IT REMAINS - I HAVE MY REASONS*/
 	return 0;
 }
