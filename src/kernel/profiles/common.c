@@ -28,6 +28,8 @@ thread_t *startup_kernel_thread(thread_entry_t entry, const char *name,
     return thread_create_started(address_space_kernel(), THREAD_PRIVILEGE_KERNEL, &params);
 }
 
+// TODO - this also seems a bit backwards, why doesn't startup_common_init call startup_reaper instead of the other way around? fracking toasters wrote weird code here
+//        good thing i'm refactoring heavily
 void startup_common_init(void)
 {
     if (reaper_thread) return;
