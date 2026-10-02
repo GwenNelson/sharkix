@@ -18,6 +18,99 @@ complete and the currently implemented kthread
 create/start/unstarted-destroy paths have been checked; do not reopen
 completed passes without a concrete reason.
 
+## IMMEDIATE PRIORITY: FINISH THE FUCKING LIFETIME AUDIT
+
+**This is the immediate priority when this file is next opened. Gwen
+literally said: *"I want to get the fucking lifetime audit finished."*
+Do not let interesting ELF/init/architecture work displace the bounded
+subsystem audit.**
+
+Assume the `kportio` lifetime audit has just been completed cleanly and
+committed. Do not reopen KAS, basic kthread, or kportio without a
+concrete new finding.
+
+Work through the remaining subsystems in this order, keeping each pass
+typed and bounded:
+
+1.  **`knotify` --- easy locally.** Audit its own registry/refcount/wait
+    lifetime first. Then record the incoming persistent-reference
+    contracts from IRQ and IPC for deliberate revisit when those
+    consumers are audited. Destruction/waiter wake-or-cancel semantics
+    are a liveness question to settle explicitly, but do not let IPC
+    drag the local notification pass out of scope.
+2.  **`kirq` --- low/medium, but cross-subsystem.** Audit its PortIO
+    relationship, retained notification references, interrupt-context
+    publication/locking, semaphore waiters, and current
+    deliberately-immortal IRQ-object semantics. Revisit the IRQ-facing
+    `knotify` contract immediately afterwards. If genuine IRQ
+    destruction would require a larger cancellation/lifetime design, pin
+    that exact work here rather than widening the pass.
+3.  **`kpmem` --- medium locally, incomplete without VMO.** Audit
+    registry/descriptor mechanics and local ownership first, but do not
+    declare the overall PMEM lifetime contract finished until VMO
+    backing ownership is settled.
+4.  **`kvmo` / VMO sets --- medium-high and expected to be annoying.**
+    Settle PMEM backing ownership, anonymous `owns_pmem` reclamation,
+    VMO references, VMO-set/mapping persistent references, address-space
+    teardown interactions, rollback/partial-failure behaviour, and who
+    unmaps/releases what. Then revisit `kpmem` and close the PMEM/VMO
+    contract.
+5.  **`kipc` --- high.** Leave it until the simpler object contracts are
+    understood. Audit endpoint registry refs/acquire-release, shutdown,
+    blocked senders/receivers, waiter wakeup/cancellation, queued
+    messages, notification bindings, PUBSUB reference graphs,
+    destruction ordering, and removal of discoverability before
+    reference draining. Revisit the IPC-facing `knotify` contract here.
+6.  **`kcaps` --- last and highest-risk.** Audit it only after target
+    subsystem destructors have defined contracts. Then settle
+    cap-record/capset/object lifetimes, REMOVE vs DESTROY,
+    aliases/derived caps, destructive-operation linearization,
+    global-cap-lock/destructor ordering, and safe handling of cap data
+    across unlock.
+
+### Audit discipline
+
+For each subsystem: **birth → every access → destruction**, then `grep`
+every external user and inspect only the relationships that actually
+exist. Assume lower layers satisfy their documented contracts until a
+concrete dependency requires a bounded check. Fix concrete
+UAF/deadlock/double-free/leak/race issues; do not invent a universal
+lifetime framework.
+
+Cross-subsystem horrors are allowed to become precise TODO items when
+solving them would explode the current pass. The objective is to finish
+as much of the finite audit as possible, not to let one difficult
+cancellation or teardown problem hold every simpler subsystem hostage.
+
+The intended near-term progression is therefore:
+
+``` text
+KAS                         DONE
+basic kthread               DONE for implemented operations
+kportio                     ASSUME DONE when this file is next read
+    ↓
+knotify (local)
+    ↓
+kirq + revisit IRQ→knotify
+    ↓
+kpmem (local)
+    ↓
+kvmo / VMO sets + close PMEM↔VMO contract
+    ↓
+kipc + revisit IPC→knotify
+    ↓
+kcaps LAST
+    ↓
+THE FUCKING LIFETIME AUDIT IS FINISHED
+```
+
+Started-thread arbitrary termination remains an explicit deferred
+cross-subsystem thread/scheduler problem; do not reopen it merely to
+avoid progressing through the remaining audit. Likewise, existing
+ELF/init/driver/architecture work below remains important, but it is
+**below this immediate audit priority** until the audit is finished or a
+concrete dependency genuinely blocks progress.
+
 ## 1. Fix concrete thread / ELF launch correctness issues
 
 -   finish started-thread destruction semantics before exposing broader
