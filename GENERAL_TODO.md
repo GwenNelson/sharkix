@@ -40,7 +40,8 @@ These are either reachable correctness/security bugs on the current path, can tu
 - **ELF admission must become a complete side-effect-free pass before commit.** Validate all relevant program headers and compute all rounded ranges before creating VMOs or changing the target AS. This is the structural fix that makes malformed input rejection deterministic and prevents a late bad header from being discovered only after earlier mutations.
 - **Enforce `p_offset` / `p_vaddr` page congruence and supported `p_align` semantics before any copying/mapping.** The current missing congruence check can make the loader calculate a mixed-page source outside the mapped source VMO and fault instead of rejecting the ELF.
 - **Reject overlapping page-rounded `PT_LOAD` ranges explicitly during admission.** Do not depend on the current lower VM layer incidentally rejecting replacement mappings; the loader's accepted format and security result must not change if mapping internals later change.
-- **Validate `e_entry` against the declared byte range of an admitted executable `PT_LOAD` (`PF_X`), not merely against a mapped/rounded page.**
+- **Validate `e_entry` against the declared byte range of an admitted executable `PT_LOAD` (`PF_X`), not merely against a mapped/rounded page.** Keep the temporary header-level `e_entry` sanity check only until this real admission check exists; `e_entry` is a virtual address and is not fundamentally bounded by ELF file length.
+- **Keep ELF header/table sanity deliberately strict even for metadata the loader does not consume.** Bound ordinary program headers generously but finitely (`e_phnum <= 64`) because they drive loader work; allow a generous ordinary section-header count (`e_shnum <= 1024`) because sections are ignored at runtime, but require any claimed PHDR/SHDR table to fit wholly inside the logical ELF length using overflow-safe subtraction/division checks. Reject unsupported extended numbering rather than accidentally interpreting it. The point is structural sanity, not caring about section contents.
 - **Reject load permissions/semantics the current VM cannot faithfully represent.** In particular reject a `PT_LOAD` without `PF_R`, reject unknown `p_flags` bits, and explicitly reject unsupported executable semantics/features rather than silently pretending to support them. Keep this narrowly scoped to the static ELF subset Sharkix actually consumes; do not begin dynamic-linker/TLS implementation merely because those ELF features exist.
 - **Remove the ELF-triggerable whole-machine halt path.** A segment can currently occupy the later fixed stack range, causing stack setup failure and the test startup profile to execute `cli; hlt` forever. Any ELF/launch failure must become an ordinary failed launch/cleanup path, never a deliberate system halt. A generalized forbidden-range mechanism may wait for the generic launcher; fixing the catastrophic failure behavior may not.
 - **Fix/enforce the intended `AS_THREAD_CREATE` authority check for `THREAD_CREATE`.** This is a current capability-boundary correctness gap and should not be carried into generic launch.
@@ -731,14 +732,49 @@ Do **not** recursively promote every theoretical issue found by the audit into t
 
 ## Fun work allowed after the stop-the-line set is green
 
-Pick from these without feeling that the whole audit must be completed first:
+These are real feature-development choices, not consolation-prize cleanup. Pick whichever is motivating once the stop-the-line foundations it depends on are green. Prefer work that exercises the new generic mechanisms and exposes the next concrete requirement.
 
-- implement the minimum `CAP_DERIVE` / `CAP_TRANSFER` / `CAP_FORWARD` semantics needed for init, **provided the cap destruction/ownership foundations above are already sound**;
-- define the small standard initial userspace stack/cap bootstrap ABI and make generic ELF launch work end-to-end;
-- bring up the first deliberately boring ring3 init and have it launch one real controlled service/driver;
-- migrate one existing flat/ring3 payload to ordinary ELF startup as an integration victory;
-- do a small core/subsystem boundary cleanup only where the current init work directly trips over a bad dependency;
-- add satisfying adversarial ELF regression tests around the just-fixed loader invariants.
+### Option A — begin the real ring3 init (**best near-term feature target**)
+
+Start a deliberately tiny `init` now, even before it can launch the whole system. Keep the first version aggressively boring: enter in ring3 through the standard bootstrap path, inspect/consume its bootstrap information, print an unmistakable `hello from init`/diagnostic, and become the place where subsequent generic launch policy will live. Grow it only as the required cap-handoff and launch mechanisms become available. Do not start dependency graphs, supervision frameworks, configuration languages, or driver metadata yet.
+
+This is useful even if init initially cannot launch another service: it gives the bootstrap ABI and capability handoff work a real consumer instead of designing them in the abstract.
+
+### Option B — add the minimum syscalls/factories that init immediately needs
+
+Adding syscalls is fair game when a concrete init/driver consumer is waiting for them. Prefer small capability-controlled mechanisms over speculative syscall families. Immediate candidates are the minimum `CAP_DERIVE` / `CAP_TRANSFER` / `CAP_FORWARD` semantics needed to construct a restricted child domain, **provided cap ownership/destruction foundations are sound first**. If init exposes another missing primitive, add that primitive narrowly and document which consumer required it.
+
+Do not add syscalls merely because they seem generally Unix-like or might be useful to a future personality. Let init and the first migrated services pull the ABI into existence.
+
+### Option C — standard bootstrap ABI + generic ELF launch
+
+Define the small initial userspace stack/cap bootstrap format and make one generic launcher path perform: create AS -> load admitted ELF -> map stack/bootstrap -> install restricted initial caps -> create initial thread at validated RIP/RSP -> start. This is both fun and directly on the critical path to init. Keep the existing named-cap bootstrap idea as the starting point and resist making a miniature process framework.
+
+### Option D — migrate a driver/service to ELF (**tempting, but gated**)
+
+Do **not** migrate a long-running or authority-rich real driver while the current stop-the-line loader/lifetime issues remain. Once loader admission, thread lifetime, VMO/PMEM reclamation, AS/cap destruction foundations, and generic launch are green, migrate **one** existing controlled ring3 payload/service as the integration test. Pick something with limited authority and simple bootstrap needs before PS/2 or another driver holding juicy hardware caps.
+
+The migration is valuable because it will reveal which bootstrap caps, factories, registry operations, readiness mechanisms, and metadata are genuinely required. Do not design the complete driver metadata system before this experiment.
+
+### Option E — add a small syscall because it is intrinsically fun
+
+Allowed after the stop-the-line set, but give it a rule: the syscall must either exercise an existing subsystem safely or have a concrete near-term init/service consumer. Good small additions are operations that complete an already-existing object's minimal useful interface. Bad additions tonight are broad POSIX/process APIs, personality forwarding, pager/fault APIs, or speculative lifecycle controls that would force lifetime semantics not yet audited.
+
+### Option F — adversarial integration toys
+
+Keep malformed-ELF regression specimens, thread-state torture tests, and create/map/destroy memory reclamation loops. These count as fun when they make the kernel visibly reject attempted murder. They also turn tonight's boring fixes into permanent executable claims about Sharkix behaviour.
+
+### Suggested motivation loop
+
+Do not require an entire audit phase before touching features. A sane loop is:
+
+``` text
+fix one stop-the-line invariant
+    -> add/prove its regression test
+    -> do one bounded piece of init/generic-launch/syscall work
+    -> if that exposes a concrete foundational bug, fix it before building further
+    -> return to fun work
+```
 
 The most rewarding near-term feature milestone remains: **real ring3 init uses generic facilities to construct a restricted domain, load an ELF, provide its bootstrap caps, create its initial thread, and start it without bespoke kernel launch code.**
 
