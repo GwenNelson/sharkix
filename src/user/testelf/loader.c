@@ -145,49 +145,52 @@ bool validate_elf_header(Elf64_Ehdr *hdr, uint64_t file_len) {
 	if(hdr->e_type    != ET_EXEC) return false;
 
 	// TODO - as per above, this should at some point be updated as per architecture once we port to other platforms
-	if(hdr->e_machine != EM_X86_64)  return false;
+	if(hdr->e_machine != EM_X86_64) return false;
 
 	if(hdr->e_version != EV_CURRENT) return false;
-	if(hdr->e_entry > file_len)      return false;
+	//if(hdr->e_entry > file_len)      return false; // TODO: properly validate this against executable PT_LOAD segments during admission
 	if(hdr->e_phoff > file_len)      return false;
 	if(hdr->e_shoff > file_len)      return false;
 
-	if(hdr->e_flags  != EF_X86_64)   return false;
-	if(hdr->e_ehsize != EH_SIZE)     return false;
+	if(hdr->e_flags  != EF_X86_64) return false;
+	if(hdr->e_ehsize != EH_SIZE)   return false;
 
 	if(hdr->e_phentsize != PHENT_SIZE) return false;
 
 	if(hdr->e_phnum == 0)  return false; // if there's no program headers, wtf are we doing here? let's not waste time on this
 	if(hdr->e_phnum >  64) return false; // we can redefine this later if REALLY needed, but come on
 
-	if(hdr->e_phnum > SIZE_MAX / hdr->e_phentsize) return false;
+	// make sure the entire program header table really exists inside the file
+	// do the bounds check before multiplying so hostile values can't overflow anything
+	if((uint64_t)hdr->e_phnum > (file_len - hdr->e_phoff) / hdr->e_phentsize) return false;
 
 	uint64_t ph_total_size = (uint64_t)(hdr->e_phnum) * hdr->e_phentsize;
 	if(ph_total_size > file_len) return false;
 
-	uint64_t ph_end_offset = hdr->e_phoff + ph_total_size;
-	if(ph_end_offset > file_len) return false;
-
-	if(hdr->e_shentsize != SHENT_SIZE) return false;
-
 	if(hdr->e_shnum > ELF_MAX_SHNUM) return false; // we don't actually care about section headers, but we do care about attempted murder of elf-loader.bin
 
-	if(hdr->e_shnum > 0) {
+	if(hdr->e_shnum == 0) {
+		// we don't support extended section numbering - zero means there is no section table
+		if(hdr->e_shoff     != 0)         return false;
+		if(hdr->e_shstrndx  != SHN_UNDEF) return false;
+	} else {
 		// again, we don't actually care about section headers, but we DO care about correctness, and it might save us in future if we do begin to care
-		if(hdr->e_shnum > SIZE_MAX / hdr->e_shentsize) return false;
-		
+		if(hdr->e_shentsize != SHENT_SIZE) return false;
+		if(hdr->e_shoff == 0)              return false;
+
+		// same deal as the program headers - prove the whole table fits before multiplying
+		if((uint64_t)hdr->e_shnum > (file_len - hdr->e_shoff) / hdr->e_shentsize) return false;
+
 		uint64_t sh_total_size = (uint64_t)(hdr->e_shnum) * hdr->e_shentsize;
 		if(sh_total_size > file_len) return false;
 
-		uint64_t sh_end_offset = hdr->e_shoff + sh_total_size;
-		if(sh_end_offset > file_len) return false;
-	
 		if(hdr->e_shstrndx >= hdr->e_shnum && hdr->e_shstrndx != SHN_UNDEF) return false;
 	}
 
 	// only if EVERYTHING above passes do we get to say it's valid
 	return true;
 }
+
 
 int elf_load(uint64_t source_vmo, uint64_t target_as, uint64_t elf_file_len, uint64_t vmo_factory, uint64_t *entry_out) {
 	// sanity checks first, get length etc
