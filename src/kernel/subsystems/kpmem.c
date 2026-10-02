@@ -8,13 +8,13 @@ static pmem_t *global_pmem_table;
 static pmem_handle_t next_pmem_handle;
 static kmutex_t global_pmem_table_lock;
 
-static int kpmem_get_end(uintptr_t base, size_t length, uintptr_t *end)
-{
-    if ((uintmax_t)length > (uintmax_t)UINTPTR_MAX - (uintmax_t)base)
-        return -1;
+static int kpmem_get_end(uintptr_t base, size_t length, uintptr_t *end) {
+	if(!end) return -1;
 
-    *end = base + (uintptr_t)length;
-    return 0;
+	if ((uintmax_t)length > (uintmax_t)UINTPTR_MAX - (uintmax_t)base) return -1;
+
+	*end = base + (uintptr_t)length;
+	return 0;
 }
 
 static pmem_t *kpmem_find_locked(pmem_handle_t handle)
@@ -52,8 +52,7 @@ void kpmem_init(void)
     kmutex_init(&global_pmem_table_lock);
 }
 
-int kpmem_get(pmem_handle_t handle, pmem_t *out)
-{
+int kpmem_get(pmem_handle_t handle, pmem_t *out) {
     pmem_t *pmem;
 
     if (!out || handle == PMEM_INVALID_HANDLE)
@@ -75,14 +74,15 @@ int kpmem_get(pmem_handle_t handle, pmem_t *out)
     return 0;
 }
 
-int kpmem_create(pmem_handle_t *out, uintptr_t base, size_t len)
-{
+int kpmem_create(pmem_handle_t *out, uintptr_t base, size_t len) {
     pmem_t *pmem;
     uintptr_t end;
     int result;
 
     if (!out)
         return -1;
+
+    *out = PMEM_INVALID_HANDLE;
 
     if (kpmem_get_end(base, len, &end) < 0)
         return -1;
