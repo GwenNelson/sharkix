@@ -51,9 +51,9 @@ int kas_register(as_handle_t *out, address_space_t *address_space) {
 			     sizeof(as->handle),
 			     hashv,
 			     as);
-	kmutex_unlock(&address_spaces_lock);
 
 	*out = as->handle;
+	kmutex_unlock(&address_spaces_lock);
 	return 0;
 }
 
