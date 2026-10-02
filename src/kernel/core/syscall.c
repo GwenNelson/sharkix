@@ -893,12 +893,14 @@ SHARKIX_SYSCALL_IMPL(AS_MAP) {
 	                           required_cap_rights,
 	                           &vmo_obj_handle) != 0) {
 		ctx->rax = VM_ERR_PERMISSION;
+		ctx->rdx = 0;
 		goto release_target_as;
 	}
 
 	vmo_handle = (vmo_handle_t)vmo_obj_handle;
 	if (kvmo_map(vmo_handle, target_as, va, offset, length, rights) != 0) {
 		ctx->rax = VM_ERR_INVALID;
+		ctx->rdx = 0;
 		goto release_target_as;
 	}
 

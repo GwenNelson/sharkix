@@ -1,3 +1,5 @@
+#include <stdbool.h>
+
 #include <sharkix/kernel/subsystems/kas.h>
 #include <sharkix/kernel/memory.h>
 #include <sharkix/kernel/startup.h>
@@ -16,6 +18,7 @@ static kmutex_t address_spaces_lock;
 static fifo_t  *reaper_queue;
 static as_t   **reaper_queue_storage; 
 
+static kmutex_t kas_reaper_lock;
 
 static as_t *kas_find_locked(as_handle_t handle)
 {
@@ -35,10 +38,55 @@ static void kas_reaper_task(void* argument) {
 	}
 }
 
+// TODO - consider dynamically shrinking the FIFO if it has excessive free capacity
+static void kas_reaper_enqueue(as_t* dead) {
+	kmutex_lock(&kas_reaper_lock);
+
+	if(!fifo_push(reaper_queue, dead) {
+		// if we get here, it's because the queue is full, probably, but we should double check
+		if(!fifo_full(reaper_queue)) {
+			// this should NEVER happen, it means the queue wasn't full but push still failed
+			console_write("kas.c:kas_reaper_enqueue() - fifo_push() failed but FIFO not full! Can not continue\n");
+			for(;;); // TODO - seriously, we need a fucking kpanic
+		}
+		size_t old_capacity = fifo_capacity(reaper_queue);
+		if(old_capacity > (SIZE_MAX - KAS_REAPER_CAPACITY) {
+			// seriously, kpanic is URGENTLY needed in this thing
+			console_write("kas.c:kas_reaper_enqueue() - we literally mathematically can't allocate enough for the reaper queue growth! Can not continue\n");
+			for(;;);
+		}
+		size_t new_capacity = old_capacity + KAS_REAPER_CAPACITY;
+
+		as_t** new_storage = kmalloc(sizeof(as_t*) * new_capacity);
+		if(!new_storage) {
+			console_write("kas.c:kas_reaper_enqueue() - OOM allocating new storage for reaper FIFO! Can not continue\n");
+			for(;;);
+		}
+		as_t** old_storage = reaper_queue_storage;
+		if(!fifo_resize(reaper_queue,(void**)new_storage,new_capacity)) {
+			console_write("kas.c:kas_reaper_enqueue() - failed fifo_resize()! Can not continue\n");
+			for(;;);
+		}
+		// if we get here, yay! let's free the old storage now
+		reaper_queue_storage = new_storage;
+		kfree(old_storage);
+
+		// now let's try again...
+		if(!fifo_push(reaper_queue, dead)) {
+			// this should be impossible, but here we are...
+			console_write("kas.c:kas_reaper_enqueue() - fifo_push() failed after resize, this should be impossible! Can not continue\n");
+			for(;;);
+		}
+	}
+
+	kmutex_unlock(&kas_reaper_lock);
+}
+
 void kas_init(void) {
 	address_spaces = NULL;
 	next_as_handle = 1;
 	kmutex_init(&address_spaces_lock);
+	kmutex_init(&kas_reaper_lock);
 
 	reaper_queue         = kmalloc(sizeof(fifo_t));
 	reaper_queue_storage = kmalloc(sizeof(as_t*)*KAS_REAPER_CAPACITY);
@@ -137,8 +185,8 @@ int kas_unregister(as_handle_t handle) {
 	HASH_DEL(address_spaces, as);
 
 	// deferred free, reaper will handle it for us, no need to free it here
-	fifo_push_wait(reaper_queue, as);
-	
+	kas_reaper_enqueue(as);
+
 	kmutex_unlock(&address_spaces_lock);
 
 	// i'm leaving these here and commented out
