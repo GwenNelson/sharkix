@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 
 #include <sharkix/kernel/thread.h>
 #include <sharkix/kernel/subsystems/kas.h>
@@ -15,6 +16,8 @@ typedef struct kthread_t {
 
 	thread_t*	thread;
 	as_handle_t	as_handle;
+
+	bool started; // this might seem redundant, but it's because it allows us to abstract a change to kernel core's thread.c
 
 	UT_hash_handle hh;
 } kthread_t;

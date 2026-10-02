@@ -1,3 +1,5 @@
+#include <stdbool.h>
+
 #include <sharkix/kernel/thread.h>
 #include <sharkix/kernel/memory.h>
 #include <sharkix/kernel/subsystems/kthread.h>
@@ -52,8 +54,9 @@ int kthread_create(as_handle_t as, uintptr_t entry, uintptr_t stack, kthread_han
 	}
 
 	kas_release(aspace);
-	new_kthread->thread = thread;
+	new_kthread->thread    = thread;
 	new_kthread->as_handle = as;
+	new_kthread->started   = false;
 
 	kmutex_lock(&kthreads_lock);
 	if (next_kthread_handle == KTHREAD_INVALID_HANDLE) {
@@ -92,7 +95,11 @@ int kthread_start(kthread_handle_t handle) {
 	}
 
 	int result = thread_start(kthread->thread);
+	if(result==0) {
+		kthread->started = true;
+	}
 	kmutex_unlock(&kthreads_lock);
+
 	return result == 0 ? 0 : -1;
 }
 
@@ -103,6 +110,10 @@ void kthread_destroy_unstarted(kthread_handle_t handle) {
 	kmutex_lock(&kthreads_lock);
 	HASH_FIND_BYHASHVALUE(hh, kthreads, &handle, sizeof(handle), hashv, kthread);
 	if (kthread) {
+		if(kthread->started) {
+			kmutex_unlock(&kthreads_lock);
+			return; // TODO - should make this return -1, which means changing this function to an int, like others
+		}
 		HASH_DEL(kthreads, kthread);
 	}
 	kmutex_unlock(&kthreads_lock);
