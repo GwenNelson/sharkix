@@ -5,6 +5,9 @@ Another quick note:
     I want to add something to IPC endpoint creation allowing for dynamic resizing - something like "maximum free slots" and "minimum free slots", with sane defaults
     Can probably just add some new kipc_ calls to the subsystem, then add some new optional bits to the relevant syscall, and treat 0 as "leave the default static size"
 
+Another one!
+    Need to ensure that the thread reaper reclaims kernel stacks, it currently does not as of time of writing (4:53 am, 2nd october 2026)
+
 # Sharkix TODO / Architecture Notes
 
 This file tracks remaining work only. Completed work is removed rather than
