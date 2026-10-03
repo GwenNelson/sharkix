@@ -24,7 +24,7 @@ Sharkix is split up into a few basic layers:
  2. The kernel core, in src/kernel/core - again, the abstraction isn't perfect yet, but it's intended that absolutely core stuff that can't go elsewhere lives entirely here, you'll find the scheduler, basic virtual memory,
     page allocator and other "every kernel needs this" stuff there, a lot of older code lives here and is scheduled for rewriting
  3. The "subsystems" and kobjects - these represent various "objects" (not in the traditional OOP sense) with handles - every handle is a uint64_t and each subsystem is responsible for allocation and operations on these
-    objects. The rest of the kernel should NOT ever directly operate directly on pointers to these objects as far as possible, unless unavoidable. This has the IPC subsystem, abstract VMOs (Virtual Memory Objects),
+    objects. The rest of the kernel should NOT ever directly operate on pointers to these objects as far as possible, unless unavoidable. This has the IPC subsystem, abstract VMOs (Virtual Memory Objects),
     knotify (notification objects) and other useful stuff.
  4. Caps/capabilities - this is technically another subsystem, but it's a special one - a cap is just a handle with a set of permissions attached via a bitmask, and it is ESSENTIAL that nothing in ring3 is able to ever touch
     subsystems except via caps. This is how sharkix guarantees security, and any access via ring3 to a kobject, or worse, into core, is considered a critical security bug.
@@ -40,7 +40,7 @@ Sharkix is split up into a few basic layers:
  9. Init system - not yet implemented, will eventually be responsible for running the drivers, resolving dependencies and handing out resources to them, spawning the personality layer and whatever else makes this thing an actual
     operating system, somewhat akin to (but not quite the same as) an seL4 root task.
 
-## Design philosopy
+## Design philosophy
 
 Sharkix is a microkernel - if you don't know what that means, please research the subject.
 
@@ -83,7 +83,7 @@ The kernel core currently contains an IPC registry, intended for use by drivers 
 
 The IPC system is NOT meant to be the correct place for bulk transfers - for that use shared VMOs (Virtual Memory Objects) instead, and use IPC for control operations.
 
-IPC endpoints can be bound to knotify objects instead of having to poll repeatedly - this is useful for checking multiple endpoints at once, similar to the traditonal POSIX select call, so a single thread can service multiple endpoints.
+IPC endpoints can be bound to knotify objects instead of having to poll repeatedly - this is useful for checking multiple endpoints at once, similar to the traditional POSIX select call, so a single thread can service multiple endpoints.
 
 ## IRQ handling and knotify
 
