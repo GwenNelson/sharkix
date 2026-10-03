@@ -69,6 +69,7 @@ int kpmem_get(pmem_handle_t handle, pmem_t *out) {
     out->handle = pmem->handle;
     out->phys_base = pmem->phys_base;
     out->length = pmem->length;
+    out->owns_pages = pmem->owns_pages;
 
     kmutex_unlock(&global_pmem_table_lock);
     return 0;
@@ -94,6 +95,7 @@ int kpmem_create(pmem_handle_t *out, uintptr_t base, size_t len) {
     memset(pmem, 0, sizeof(*pmem));
     pmem->phys_base = base;
     pmem->length = len;
+    pmem->owns_pages = false;
 
     kmutex_lock(&global_pmem_table_lock);
     result = kpmem_insert_locked(pmem);
@@ -130,6 +132,7 @@ int kpmem_derive(pmem_handle_t source,
         return -1;
 
     memset(derived, 0, sizeof(*derived));
+    derived->owns_pages = false;
 
     kmutex_lock(&global_pmem_table_lock);
 
@@ -180,6 +183,7 @@ int kpmem_merge(pmem_handle_t a, pmem_handle_t b, pmem_handle_t *out)
         return -1;
 
     memset(merged, 0, sizeof(*merged));
+    merged->owns_pages = false;
 
     kmutex_lock(&global_pmem_table_lock);
 
@@ -252,6 +256,9 @@ int kpmem_merge(pmem_handle_t a, pmem_handle_t b, pmem_handle_t *out)
 int kpmem_destroy(pmem_handle_t handle)
 {
     pmem_t *pmem;
+    uintptr_t phys_base;
+    size_t page_count;
+    bool owns_pages;
 
     kmutex_lock(&global_pmem_table_lock);
 
@@ -263,7 +270,14 @@ int kpmem_destroy(pmem_handle_t handle)
 
     HASH_DEL(global_pmem_table, pmem);
 
+    phys_base = pmem->phys_base;
+    page_count = pmem->length / PAGE_SIZE;
+    owns_pages = pmem->owns_pages;
+
     kmutex_unlock(&global_pmem_table_lock);
+
+    if (owns_pages)
+        phys_free_pages((uint64_t)phys_base, page_count);
 
     kfree(pmem);
     return 0;

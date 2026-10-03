@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -14,6 +15,7 @@ typedef struct pmem_t {
 	pmem_handle_t handle;
 	uintptr_t     phys_base;
 	size_t        length;
+	bool          owns_pages;
 
 	UT_hash_handle hh;
 } pmem_t;
@@ -38,5 +40,6 @@ int kpmem_merge(pmem_handle_t a, pmem_handle_t b, pmem_handle_t *out);
 // that'd require like a robot that yanks DIMMs out, and that belongs in userspace
 // implementing DIMM-yanking robots is out of scope for the kernel
 //
-// but seriously, it returns -1 on failure, and only frees the pmem_t* structure
+// but seriously, it returns -1 on failure and frees the pmem_t structure.
+// If the object owns its physical pages, those pages are released as well.
 int kpmem_destroy(pmem_handle_t handle);
