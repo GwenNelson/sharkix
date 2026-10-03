@@ -11,105 +11,58 @@ dormant threads, and start them. Treat `AS_CREATE`, the AS/thread
 factories, `THREAD_CREATE` / `THREAD_START`, and the basic
 `kthread_test` launch path as implemented. Do not frameworkize the test.
 
-Before migrating long-running drivers, close the concrete correctness
-gaps found by the post-milestone source review and continue the bounded,
-subsystem-by-subsystem lifetime/destruction audit. The KAS pass is
-complete and the currently implemented kthread
-create/start/unstarted-destroy paths have been checked; do not reopen
-completed passes without a concrete reason.
+The bounded lifetime audit made substantial progress on 2026-10-03.
+Completed passes are removed from the active queue rather than repeatedly
+re-audited: KAS, basic implemented kthread paths, PortIO and its real
+consumers, notifications, IRQ, and local PMEM mechanics are closed unless a
+concrete new dependency or bug reopens them.
 
-## IMMEDIATE PRIORITY: FINISH THE FUCKING LIFETIME AUDIT
+PMEM now has real backing lifetime semantics for the implemented local paths:
+anonymous allocations own and release their pages; PMEM descriptors are
+refcounted; derived and merged PMEMs retain their parent objects; destroying a
+parent handle immediately removes discoverability while retained descendants
+keep the backing alive; final release is iterative; and PMEM allocation and
+derivation failure paths unwind correctly. `PMEM_DERIVE` is implemented with
+page-aligned offset/length validation, attenuation against the source cap,
+stale-target handling, and the standard RSI=new-cap / RDX=length result. The
+default verification build and `git diff --check` passed; there is not yet a
+dedicated runtime PMEM_DERIVE test.
 
-**This is the immediate priority when this file is next opened. Gwen
-literally said: *"I want to get the fucking lifetime audit finished."*
-Do not let interesting ELF/init/architecture work displace the bounded
-subsystem audit.**
+The remaining lifetime queue is deliberately smaller:
 
-The local `kportio.c` lifetime audit and the PortIO syscall-consumer pass are complete and clean. Do not reopen KAS, basic kthread, or kportio itself without a concrete new finding. **PortIO is not globally closed yet:** when auditing `kirq` and the driver/profile code, inspect every external `kportio_*` relationship found by `grep -R 'kportio_' src/` and verify that those consumers do not retain unsafe assumptions about PortIO object lifetime. Treat those checks as part of the owning consumer subsystem/driver audit rather than reopening `kportio.c`.
+1. **`kvmo` / VMO sets.** This is the next PMEM boundary when returning to
+   audit work. A VMO currently stores a PMEM handle without retaining the PMEM;
+   `PMEM_NEW_VMO` therefore does not yet establish a safe backing lifetime, and
+   `kvmo_destroy()` still needs its `owns_pmem` semantics reconciled with the
+   new PMEM reference model. Add an appropriate VMO-facing PMEM retain/release
+   interface, then audit VMO refs, VMO-set/mapping persistent refs, AS teardown,
+   rollback and final reclamation. Close the PMEM↔VMO contract here.
+2. **`kipc`.** Audit endpoint registry refs/acquire-release, shutdown, blocked
+   senders/receivers, waiter wakeup/cancellation, queued messages, notification
+   bindings, PUBSUB reference graphs, destruction ordering, and removal of
+   discoverability before reference draining. Notification itself is already
+   audited; only revisit the IPC-facing relationship if IPC exposes a concrete
+   problem.
+3. **`kcaps` last.** Settle cap-record/capset/object lifetimes, REMOVE vs
+   DESTROY, aliases/derived caps, destructive-operation linearization, global
+   cap-lock/destructor ordering, and safe handling of cap data across unlock.
 
-Work through the remaining subsystems in this order, keeping each pass
-typed and bounded:
-
-1.  **`knotify` --- easy locally.** Audit its own registry/refcount/wait
-    lifetime first. Then record the incoming persistent-reference
-    contracts from IRQ and IPC for deliberate revisit when those
-    consumers are audited. Destruction/waiter wake-or-cancel semantics
-    are a liveness question to settle explicitly, but do not let IPC
-    drag the local notification pass out of scope.
-2.  **`kirq` --- low/medium, but cross-subsystem.** Audit its PortIO
-    relationship, retained notification references, interrupt-context
-    publication/locking, semaphore waiters, and current
-    deliberately-immortal IRQ-object semantics. Revisit the IRQ-facing
-    `knotify` contract immediately afterwards. If genuine IRQ
-    destruction would require a larger cancellation/lifetime design, pin
-    that exact work here rather than widening the pass.
-3.  **`kpmem` --- medium locally, incomplete without VMO.** Audit
-    registry/descriptor mechanics and local ownership first, but do not
-    declare the overall PMEM lifetime contract finished until VMO
-    backing ownership is settled.
-4.  **`kvmo` / VMO sets --- medium-high and expected to be annoying.**
-    Settle PMEM backing ownership, anonymous `owns_pmem` reclamation,
-    VMO references, VMO-set/mapping persistent references, address-space
-    teardown interactions, rollback/partial-failure behaviour, and who
-    unmaps/releases what. Then revisit `kpmem` and close the PMEM/VMO
-    contract.
-5.  **`kipc` --- high.** Leave it until the simpler object contracts are
-    understood. Audit endpoint registry refs/acquire-release, shutdown,
-    blocked senders/receivers, waiter wakeup/cancellation, queued
-    messages, notification bindings, PUBSUB reference graphs,
-    destruction ordering, and removal of discoverability before
-    reference draining. Revisit the IPC-facing `knotify` contract here.
-6.  **`kcaps` --- last and highest-risk.** Audit it only after target
-    subsystem destructors have defined contracts. Then settle
-    cap-record/capset/object lifetimes, REMOVE vs DESTROY,
-    aliases/derived caps, destructive-operation linearization,
-    global-cap-lock/destructor ordering, and safe handling of cap data
-    across unlock.
+Do not turn this remaining queue into a ban on feature work. Gwen is explicitly
+taking a break from the audit after landing PMEM_DERIVE. Return to the finite
+audit in bounded chunks, and stop feature work only when it encounters a
+concrete lifetime/correctness dependency.
 
 ### Audit discipline
 
-For each subsystem: **birth → every access → destruction**, then `grep`
-every external user and inspect only the relationships that actually
-exist. Assume lower layers satisfy their documented contracts until a
-concrete dependency requires a bounded check. Fix concrete
-UAF/deadlock/double-free/leak/race issues; do not invent a universal
-lifetime framework.
+For each remaining subsystem: **birth → every access → destruction**, then
+`grep` every external user and inspect only relationships that actually exist.
+Assume lower layers satisfy their documented contracts until a concrete
+dependency requires a bounded check. Fix concrete UAF/deadlock/double-free/leak/
+race issues; do not invent a universal lifetime framework.
 
-**Do not accidentally scope the audit to kernel subsystem implementation files only.** For each subsystem, after the local pass, use `grep` to check all real consumers: syscall glue, other kernel subsystems, ring0 driver/setup code, userspace drivers/services, startup profiles, tests, and bootstrap/profile code where applicable. We have already deliberately deferred the non-syscall PortIO consumers this way. As the remaining audits proceed, explicitly ask whether an earlier subsystem was rushed through without checking one of these consumer classes; if so, add the bounded consumer pass rather than assuming the local implementation audit covered it.
-
-Cross-subsystem horrors are allowed to become precise TODO items when
-solving them would explode the current pass. The objective is to finish
-as much of the finite audit as possible, not to let one difficult
-cancellation or teardown problem hold every simpler subsystem hostage.
-
-The intended near-term progression is therefore:
-
-``` text
-KAS                         DONE
-basic kthread               DONE for implemented operations
-kportio local + syscalls    DONE; external consumers deferred to their audits
-    ↓
-knotify (local)
-    ↓
-kirq + revisit IRQ→knotify
-    ↓
-kpmem (local)
-    ↓
-kvmo / VMO sets + close PMEM↔VMO contract
-    ↓
-kipc + revisit IPC→knotify
-    ↓
-kcaps LAST
-    ↓
-THE FUCKING LIFETIME AUDIT IS FINISHED
-```
-
-Started-thread arbitrary termination remains an explicit deferred
-cross-subsystem thread/scheduler problem; do not reopen it merely to
-avoid progressing through the remaining audit. Likewise, existing
-ELF/init/driver/architecture work below remains important, but it is
-**below this immediate audit priority** until the audit is finished or a
-concrete dependency genuinely blocks progress.
+Cross-subsystem horrors may become precise TODO items when solving them would
+explode the current pass. Completed subsystems stay closed without a concrete
+reason to reopen them.
 
 ## 1. Fix concrete thread / ELF launch correctness issues
 
@@ -168,12 +121,12 @@ malformed-input, resource-lifetime, and launch-protocol problems. Triage
 them according to the current project stage rather than treating every
 production-hardening item as an immediate blocker.
 
-#### MUST fix before more feature work / literally tonight
+#### Known launch-correctness backlog before relying on generic/untrusted ELF
 
-These are either reachable correctness/security bugs on the current
-path, can turn ordinary failure into whole-system failure/hang, or
-become harder to repair if more launch machinery is built on top of the
-present semantics:
+These are concrete correctness/security issues on the current launch path.
+Keep them as the bounded loader/thread backlog and fix them before treating
+generic or untrusted ELF launch as robust. They do not prohibit unrelated
+bounded feature work that does not depend on the affected path:
 
 -   **ELF admission must become a complete side-effect-free pass before
     commit.** Validate all relevant program headers and compute all
@@ -248,13 +201,12 @@ present semantics:
     targets. These are foundation semantics that cap transfer/init would
     otherwise build upon.
 
-For tonight's blocking pass, prefer small explicit invariants and
-regression tests over new frameworks. Build/test after each bounded
-subsystem change. The goal is not formal perfection; it is to stop
-knowingly building new functionality on top of reachable UAF, leak,
-deadlock, authority-check, or whole-system-failure bugs.
+When returning to this backlog, prefer small explicit invariants and regression
+tests over new frameworks. Build/test after each bounded change. Do not build
+new functionality directly on top of a known reachable UAF, leak, deadlock,
+authority-check bypass, or whole-system-failure bug.
 
-#### Important, but may be deferred past tonight
+#### Important later launch hardening
 
 -   **Full transactional ELF commit/rollback:** the admission/commit
     split should be established now, but complete rollback becomes much
@@ -267,7 +219,7 @@ deadlock, authority-check, or whole-system-failure bugs.
     though the ELF process itself has no factory cap. This is a real
     confused-deputy/resource-exhaustion issue before arbitrary untrusted
     ELF submission is supported. Do not design the final
-    quota/accounting architecture tonight. The existing later
+    quota/accounting architecture merely to close this item. The existing later
     resource-accounting section is the right home; generous temporary
     sanity ceilings are acceptable if trivial, but are not a substitute
     for eventual delegated accounting/budgets.
@@ -291,7 +243,7 @@ deadlock, authority-check, or whole-system-failure bugs.
     This belongs with later VMO semantics.
 -   **W+X policy:** `PF_W|PF_X` is not by itself a capability escape.
     Decide later whether Sharkix's supported ELF policy rejects it by
-    default; do not let this become an unrelated W\^X project tonight
+    default; do not let this become an unrelated W\^X project
     unless current consumers require a decision.
 -   **General target-AS/forbidden-range policy:** current loading
     assumes a fresh, separate target AS. Document that assumption now.
@@ -324,44 +276,25 @@ positive case.
 
 ## 2. Continue the bounded lifetime / destruction audit
 
-Keep moving subsystem by subsystem rather than reopening completed work.
+Completed passes have been purged from the active list. Do not reopen KAS,
+basic implemented kthread lifetime, PortIO, notification, IRQ, or local PMEM
+mechanics without a concrete new finding.
 
-Completed for the current implemented paths:
+Outstanding:
 
--   `kportio.c` local lifetime/destruction semantics and the PortIO syscall-facing consumers have been audited. External PortIO consumers remain deliberately deferred: inspect `kirq`, drivers, startup/profile/bootstrap code, and any other users found by `grep -R 'kportio_' src/` during their owning audits.
--   KAS registry/acquire/unregister/reaper ownership has been audited;
-    registry publication/acquisition is serialized and unregister
-    transfers the registry-owned reference to deferred cleanup. Keep the
-    known producer/reaper locking fix in place.
--   `kthread_init()`, `kthread_create()`, `kthread_start()`, and
-    `kthread_destroy_unstarted()` have been audited at the kthread
-    boundary. `kthread_t` now tracks whether start succeeded so
-    unstarted destruction does not depend on core `thread_t` state
-    representation.
--   `scheduler_make_runnable()` is acceptable under the current UP
-    model; revisit its IRQ-only synchronization when SMP becomes real.
+-   `kvmo` / VMO sets and the PMEM↔VMO backing contract;
+-   `kipc`, including endpoint/service death and blocked-waiter semantics;
+-   `kcaps` last, once target subsystem destruction contracts are understood.
 
-Pending thread work is deliberately separated from the completed basic
-kthread pass:
+Thread follow-up remains separate from the completed basic kthread pass:
+arbitrary started-thread termination needs scheduler/wait-queue cancellation,
+and current core reaper/kernel-stack reclamation should be verified before
+heavy thread churn. Do not add another kthread reaper.
 
--   inspect core `thread.c` lightly after the subsystem/call-site audit
-    to verify the execution-context lifetime assumptions and reaper
-    semantics;
--   implement arbitrary started-thread termination later as an explicit
-    scheduler/thread feature, including safe removal/cancellation from
-    every queue or wait structure that can retain the target;
--   self-destruction should use the existing non-returning
-    `thread_exit_current()` path after all kthread/cap bookkeeping and
-    locks are released;
--   do not add another reaper thread merely for kthread destruction.
-
-Then continue with simpler capability-visible subsystems. Prioritize
-reachable UAF, destruction/unregister races, cap-lock/destructor
-ordering, persistent references, and resource leaks.
-
-Definition of done for this pass: capability-visible objects needed by
-init have coherent, explainable lifetime rules and no known reachable
-UAF/deadlock or unsafe destruction race on their implemented paths.
+Definition of done for the remaining lifetime pass: capability-visible objects
+needed by init have coherent, explainable lifetime rules and no known reachable
+UAF/deadlock, unsafe destruction race, double-free, or permanent resource leak
+on implemented paths.
 
 ## 3. Finish capability handoff needed by ring3 init
 
@@ -789,23 +722,27 @@ Do not solve rebind authorization prematurely.
 
 ## PMEM / VMO / VMO sets
 
-Anonymous zero-filled VMOs now exist as a distinct kernel
-object/construction path. Keep their external semantics independent of
-how physical backing is allocated.
+Local PMEM lifetime mechanics are complete for the currently implemented paths.
+PMEM descriptors are refcounted; anonymous PMEM owns its allocated pages;
+derived and merged PMEMs retain parents; handle destruction removes
+discoverability immediately while references preserve backing; and final
+release reclaims owned pages exactly once. `PMEM_ALLOC` and `PMEM_DERIVE` are
+implemented with failure unwinding. PMEM_DERIVE still wants a direct runtime
+regression test.
 
-Remaining work:
+Remaining work is at the VMO boundary:
 
--   PMEM should be refcounted where live PMEM-backed VMOs depend on it;
--   a PMEM-backed VMO retains its backing PMEM;
--   `kvmo_destroy()` must destroy/release the backing PMEM and free its
-    physical pages when the VMO has `owns_pmem == true`; non-owning VMOs
-    must leave their backing PMEM alone;
--   VMOs should be refcounted where persistent relationships depend on
-    them;
+-   expose the narrow PMEM retain/release operation needed by VMO lifetime;
+-   a PMEM-backed VMO must retain its backing PMEM rather than merely storing a
+    handle;
+-   reconcile `kvmo_destroy()` / `owns_pmem` with PMEM refs so anonymous backing
+    is released exactly once and non-owning VMOs do not destroy unrelated PMEM;
+-   audit/refcount VMOs where persistent relationships depend on them;
 -   VMO-set entries/mappings retain the VMOs they depend upon;
 -   an address space retains its VMO set;
--   give VMO sets sensible ownership semantics because they are intended
-    to be transferable/configurable objects.
+-   give VMO sets sensible ownership semantics because they are intended to be
+    transferable/configurable objects;
+-   close `PMEM_NEW_VMO` only after this contract is implemented and tested.
 
 ### Physical allocator / fragmentation
 
@@ -1115,201 +1052,60 @@ Potential future model:
 Do not design pager chaining, large-scale concurrent fault queues, or
 fancy personality semantics before the boring ELF loader works.
 
-# STOP-THE-LINE CHECK BEFORE FUN WORK
+# FEATURE WORK / AUDIT CHECKPOINT
 
-Use this as the practical gate when deciding whether to keep auditing or
-go build something enjoyable.
+Fun work is explicitly allowed now. The lifetime audit has reached a clean
+stopping boundary after local PMEM refcounting and `PMEM_DERIVE`; do not require
+the entire remaining audit to finish before touching features.
 
-**Do it now** if a known issue can, on currently reachable paths and
-without assuming a hostile production user: corrupt/free live kernel
-memory, dereference a freed object, leak physical memory repeatedly
-during normal development/launch, deadlock/hang launch indefinitely,
-halt the whole machine on an ordinary recoverable failure, bypass an
-intended capability check, or establish ownership/lifetime semantics
-that imminent init/cap-handoff work would multiply and make harder to
-change.
+Use one gate while doing feature work: if the feature encounters a known issue
+that can corrupt/free live kernel memory, dereference a freed object, repeatedly
+leak physical memory on its normal path, deadlock/hang indefinitely, halt the
+whole machine on recoverable failure, bypass intended capability authority, or
+cement a broken ownership contract, fix that concrete dependency before building
+further on it. Otherwise keep the issue in the bounded backlog.
 
-Under the currently known findings, the stop-the-line set is:
+Particularly relevant outstanding dependencies are:
 
-1.  bounded ELF admission fixes and removal of the ELF-triggered
-    `cli; hlt` failure path;
-2.  explicit `AS_THREAD_CREATE` enforcement;
-3.  no new generic started-thread destruction until the
-    managed-wrapper/core-thread termination contract is sound; verify
-    current reaper/kernel-stack cleanup before thread churn becomes a
-    normal path;
-4.  anonymous VMO/PMEM backing ownership and reclamation sufficient that
-    create/map/unmap/destroy/failure paths do not permanently leak
-    pages;
-5.  reachable AS acquire/unregister/destruction correctness and the
-    global capability-lock/destructor rule, including no unsafe
-    `cap_t *` lifetime across unlock;
-6.  any additional concrete UAF/deadlock/double-free/irrecoverable leak
-    discovered while fixing those exact paths.
+-   PMEM↔VMO retention/reclamation before relying heavily on PMEM-backed VMOs;
+-   the known ELF admission/failure-path issues before treating generic or
+    untrusted ELF launch as robust;
+-   explicit `AS_THREAD_CREATE` enforcement before expanding thread creation
+    authority;
+-   started-thread termination/reaper details before exposing arbitrary started
+    thread destruction or relying on heavy churn;
+-   `kcaps` destructive-operation/global-lock semantics before building cap
+    handoff paths that depend on them.
 
-Do **not** recursively promote every theoretical issue found by the
-audit into tonight's blocker list. Once the known stop-the-line set is
-green and tests pass, it is legitimate to do feature work while keeping
-the finite lifetime audit as the next deliberate reliability project.
+Good fun targets remain tiny ring3 init/bootstrap work, a bounded generic-launch
+piece whose dependencies are already sound, a small syscall completing an
+existing safe subsystem interface, or adversarial regression toys. Do not turn
+feature work into speculative POSIX/process APIs, pager machinery, or a giant
+framework.
 
-## Fun work allowed after the stop-the-line set is green
-
-These are real feature-development choices, not consolation-prize
-cleanup. Pick whichever is motivating once the stop-the-line foundations
-it depends on are green. Prefer work that exercises the new generic
-mechanisms and exposes the next concrete requirement.
-
-### Option A --- begin the real ring3 init (**best near-term feature target**)
-
-Start a deliberately tiny `init` now, even before it can launch the
-whole system. Keep the first version aggressively boring: enter in ring3
-through the standard bootstrap path, inspect/consume its bootstrap
-information, print an unmistakable `hello from init`/diagnostic, and
-become the place where subsequent generic launch policy will live. Grow
-it only as the required cap-handoff and launch mechanisms become
-available. Do not start dependency graphs, supervision frameworks,
-configuration languages, or driver metadata yet.
-
-This is useful even if init initially cannot launch another service: it
-gives the bootstrap ABI and capability handoff work a real consumer
-instead of designing them in the abstract.
-
-### Option B --- add the minimum syscalls/factories that init immediately needs
-
-Adding syscalls is fair game when a concrete init/driver consumer is
-waiting for them. Prefer small capability-controlled mechanisms over
-speculative syscall families. Immediate candidates are the minimum
-`CAP_DERIVE` / `CAP_TRANSFER` / `CAP_FORWARD` semantics needed to
-construct a restricted child domain, **provided cap
-ownership/destruction foundations are sound first**. If init exposes
-another missing primitive, add that primitive narrowly and document
-which consumer required it.
-
-Do not add syscalls merely because they seem generally Unix-like or
-might be useful to a future personality. Let init and the first migrated
-services pull the ABI into existence.
-
-### Option C --- standard bootstrap ABI + generic ELF launch
-
-Define the small initial userspace stack/cap bootstrap format and make
-one generic launcher path perform: create AS -\> load admitted ELF -\>
-map stack/bootstrap -\> install restricted initial caps -\> create
-initial thread at validated RIP/RSP -\> start. This is both fun and
-directly on the critical path to init. Keep the existing named-cap
-bootstrap idea as the starting point and resist making a miniature
-process framework.
-
-### Option D --- migrate a driver/service to ELF (**tempting, but gated**)
-
-Do **not** migrate a long-running or authority-rich real driver while
-the current stop-the-line loader/lifetime issues remain. Once loader
-admission, thread lifetime, VMO/PMEM reclamation, AS/cap destruction
-foundations, and generic launch are green, migrate **one** existing
-controlled ring3 payload/service as the integration test. Pick something
-with limited authority and simple bootstrap needs before PS/2 or another
-driver holding juicy hardware caps.
-
-The migration is valuable because it will reveal which bootstrap caps,
-factories, registry operations, readiness mechanisms, and metadata are
-genuinely required. Do not design the complete driver metadata system
-before this experiment.
-
-### Option E --- add a small syscall because it is intrinsically fun
-
-Allowed after the stop-the-line set, but give it a rule: the syscall
-must either exercise an existing subsystem safely or have a concrete
-near-term init/service consumer. Good small additions are operations
-that complete an already-existing object's minimal useful interface. Bad
-additions tonight are broad POSIX/process APIs, personality forwarding,
-pager/fault APIs, or speculative lifecycle controls that would force
-lifetime semantics not yet audited.
-
-### Option F --- adversarial integration toys
-
-Keep malformed-ELF regression specimens, thread-state torture tests, and
-create/map/destroy memory reclamation loops. These count as fun when
-they make the kernel visibly reject attempted murder. They also turn
-tonight's boring fixes into permanent executable claims about Sharkix
-behaviour.
-
-### Suggested motivation loop
-
-Do not require an entire audit phase before touching features. A sane
-loop is:
+When returning to the dreaded boring audit, the active queue is simply:
 
 ``` text
-fix one stop-the-line invariant
-    -> add/prove its regression test
-    -> do one bounded piece of init/generic-launch/syscall work
-    -> if that exposes a concrete foundational bug, fix it before building further
-    -> return to fun work
+kvmo / VMO sets + close PMEM↔VMO contract
+    ↓
+kipc
+    ↓
+kcaps LAST
+    ↓
+THE FUCKING LIFETIME AUDIT IS FINISHED
 ```
 
-The most rewarding near-term feature milestone remains: **real ring3
-init uses generic facilities to construct a restricted domain, load an
-ELF, provide its bootstrap caps, create its initial thread, and start it
-without bespoke kernel launch code.**
-
-## Dreaded boring audit work that remains important
-
-After (or interleaved in bounded chunks with) the fun milestone work,
-continue the finite typed lifetime audit rather than doing an open-ended
-rewrite:
-
-``` text
-KAS / AS registry lifetime                     DONE for current paths
-    ↓
-basic kthread create/start/unstarted destroy    DONE for current paths
-    ↓
-pick a simpler remaining typed subsystem
-    ↓
-VMO + PMEM backing ownership / refs / final reclamation
-    ↓
-VMO sets + AS mappings / persistent refs
-    ↓
-cap REMOVE vs DESTROY + concurrent destructive operations
-    ↓
-IPC endpoint/service death and blocked-waiter semantics
-    ↓
-notifications
-    ↓
-IRQ
-```
-
-Thread follow-up is now a bounded dependency item rather than a reason
-to hold the whole audit open: lightly inspect core `thread.c`/reaper
-semantics, verify kernel-stack reclamation, and defer arbitrary
-other-thread termination until its cross-subsystem cancellation rules
-can be designed deliberately.
-
-Adjust the exact order when a concrete dependency demands it, but keep
-each pass typed and bounded: read-only inspection -\> state the intended
-lifetime rule -\> identify violations -\> smallest understandable fix
--\> build/test -\> commit. Comments should explain ownership/state
-invariants to a human reader, not narrate syntax.
-
-The finite audit is done when capability-visible objects needed by init
-have coherent ownership, acquisition/unregister/free rules and there are
-no known reachable UAFs, deadlocks, double-destroys, or permanent
-resource leaks on implemented paths. It is **not** done only when every
-hypothetical future object and concurrency model has been designed.
-
-## Explicitly not tonight
-
-Unless a stop-the-line bug proves one is required, do not spend tonight
-on: COW/demand paging; a general pager; dynamic ELF/linker/TLS support;
-final quota/resource-accounting architecture; a universal
-kobject/lifetime framework; cap-over-IPC; PUBSUB policy completeness;
-buddy allocation; driver metadata framework design; personality
-forwarding; generalized userspace exception handling; boot-protocol
-portability; or polishing unrelated subsystem naming/refactors.
+Thread termination/reaper verification remains a bounded side item rather than a
+reason to reopen the completed basic kthread pass.
 
 # DEVELOPMENT ORDER
 
 ``` text
-FIX CONCRETE ELF LAUNCH CORRECTNESS GAPS + VERIFY THREAD REAPER CLEANUP
+BOUNDED FUN FEATURE WORK, FIXING ANY CONCRETE DEPENDENCY IT HITS
     ↓
-CONTINUE TYPED LIFETIME / DESTRUCTION / RESOURCE-LEAK AUDIT
+RETURN TO KVmo / VMO-SET → IPC → KCAPS LIFETIME AUDIT IN BOUNDED CHUNKS
+    ↓
+FIX ELF LAUNCH CORRECTNESS / VERIFY THREAD REAPER AS THEIR PATHS BECOME ACTIVE
     ↓
 IMPLEMENT MINIMUM CAP DERIVE / TRANSFER / FORWARD HANDOFF NEEDED BY INIT
     ↓
