@@ -40,6 +40,57 @@ Sharkix is split up into a few basic layers:
  9. Init system - not yet implemented, will eventually be responsible for running the drivers, resolving dependencies and handing out resources to them, spawning the personality layer and whatever else makes this thing an actual
     operating system, somewhat akin to (but not quite the same as) an seL4 root task.
 
+## Design philosopy
+
+Sharkix is a microkernel - if you don't know what that means, please research the subject.
+
+A simple summary: Microkernels put as much as possible into ring3 and rely on IPC instead of making the kernel responsible for everything (monolithic).
+
+Sharkix is intended to provide "mechanism not policy" as far as possible, while still being pragmatic. Drivers can be provided with the kernel but don't have to be used in any particular deployment and are easy to disable in the
+build system.
+
+Whenever allowing greater flexibility is possible, it should be done. If something wouldn't induce a security hole or reliability issue (or it only induces a security hole if userspace misuses it in weird ways), it's allowed.
+
+A "slogan" might be: Let geniuses be clever.
+
+Let geniuses be clever, but also try and respect the principle of least privilege as far as possible too, and don't be "too clever" in the actual kernel.
+
+"cleverness" should be built on top of sharkix, but not inside sharkix itself - and to be clear, by this I mean that the kernel itself should remain simple and easy to understand as far as possible.
+
+Under no circumstances should the microkernel itself begin adopting drivers that belong in userspace into ring0 - this can be done TEMPORARILY using the profiles system for rapid development, but never as part of the default build.
+
+When using the profiles system, take care to make it easier to port to ring3 later - for example, use caps instead of directly calling subsystems whenever possible, and consider using libsharkix-kernel (grep the code for details).
+
+## IPC subsystem
+
+For a full understanding, you should read the code, but here's the basics:
+
+Sharkix provides for IPC endpoints - these are FIFOs that at present default to 64 entries (this might be revised in future, including dynamic resizing). In the most basic case, a sender can write to the FIFO, and if full the writer
+thread blocks until a reader receives. Non-blocking operations are available which will return immediately if the FIFO is full (for send) or if there's nothing available (for receive).
+
+On top of this we also have the PUBSUB system - an endpoint can be created as a PUBSUB publisher or as a "subscription" - with a publisher, all sends result in a write to every subscribed endpoint - the semantics of this are subject
+to change in future of course as there are still questions about policy for slow subscribers etc.
+
+Read include/sharkix/kernel/subsystems/kipc.h for a brief idea of the API, and read the various profiles and userspace code to understand more about how IPC works.
+
+IPC is still not fully optimized yet, there is more to be done, but it is currently fairly performant - obviously as a microkernel, sharkix will ultimately live or die by IPC performance, so this subsystem is especially important.
+
+Messages consist of 5 64-bit words, and at present we do not yet have a means for sending caps over IPC, though this is planned as it is obviously going to be needed to make the system of practical use.
+
+Be careful to check the behavioural semantics with PUBSUB, it can sometimes be surprising.
+
+The kernel core currently contains an IPC registry, intended for use by drivers - this will at some point be moved out into userspace, it is currently used for the console system and tracks endpoints for console.input and console.output character streams, which work by sending a single character cast to a uint64_t over IPC. This protocol is intended to be expanded too eventually, word0 is a character count (currently always 1), and then the other 4 words will be packed with bytes, that must be shifted out of the 64-bit words to deserialize.
+
+The IPC system is NOT meant to be the correct place for bulk transfers - for that use shared VMOs (Virtual Memory Objects) instead, and use IPC for control operations.
+
+IPC endpoints can be bound to knotify objects instead of having to poll repeatedly - this is useful for checking multiple endpoints at once, similar to the traditonal POSIX select call, so a single thread can service multiple endpoints.
+
+## IRQ handling and knotify
+
+IRQs are handled in userspace by drivers - the kernel kirq subsystem handles kirq_t kobjects which can be accessed via caps, these can also be bound into knotify objects - one knotify object can be bound to up to 64 event sources including IRQs, endpoints or just anything you care to express using knotify_signal() and the related syscalls. knotify is intended as the primary means by which a service makes a number of listeners aware of an event occurring, a 
+classic use is to use knotify to indicate that there's something waiting on an IPC endpoint - though this can be somewhat redundant (because IPC endpoints can also be directly bound to a knotify object too), sharkix does not impose
+policy.
+
 ## Basic instructions
 
 This is still under heavy development, but use "make run PROFILE=whatever" to run a custom profile, or "make run" to run the default "normal" profile.
