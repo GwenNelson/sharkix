@@ -6,14 +6,39 @@ The core microkernel enforces permissions via capabilities - all syscalls work v
 
 At present, it is x86_64/amd64 only, but the longer term goal is to be cross platform.
 
-Beyond that, the goal is to provide for different personality layers that are easy to implement,by providing different syscall tables from userspace. This will start with a unix-like environment, as is traditional
+Beyond that, the goal is to provide for different personality layers that are easy to implement, by providing different syscall tables from userspace. This will start with a unix-like environment, as is traditional
 in the osdev community, but should be flexible enough for any design.
 
 The design is heavily inspired by seL4, but with some changes due to the author's preferences - for example, there is no such thing as a root task, instead there is an init system (or rather, will be - still under development).
 
 The init system will read metadata from ELF files in initrd and sort dependency ordering for drivers and system services, eventually producing the actual OS environment and personality layer.
 
-By default, tasks in initrd can acquire whatever their metadata says they require - but no more. This is intended as a halfway choice between a strict root task only and "everything goes".
+By default, tasks in initrd can acquire whatever their metadata says they require - but no more. This is intended as a halfway choice between a strict root task only and "everything goes". (At time of writing this isn't fully implemented yet, work in progress)
+
+## Basic design
+
+Sharkix is split up into a few basic layers:
+
+ 1. Architecture and boot protocol specific code (at present there's still a LOT of x86-64 specific stuff not yet properly abstracted, but the long-term intent is to move this stuff into the arch layer).
+    This layer is also where you'll find the multiboot1-specific code, and there's a handy little tool called bootstub32 used for qemu's -kernel param, go read that code for details
+ 2. The kernel core, in src/kernel/core - again, the abstraction isn't perfect yet, but it's intended that absolutely core stuff that can't go elsewhere lives entirely here, you'll find the scheduler, basic virtual memory,
+    page allocator and other "every kernel needs this" stuff there, a lot of older code lives here and is scheduled for rewriting
+ 3. The "subsystems" and kobjects - these represent various "objects" (not in the traditional OOP sense) with handles - every handle is a uint64_t and each subsystem is responsible for allocation and operations on these
+    objects. The rest of the kernel should NOT ever directly operate directly on pointers to these objects as far as possible, unless unavoidable. This has the IPC subsystem, abstract VMOs (Virtual Memory Objects),
+    knotify (notification objects) and other useful stuff.
+ 4. Caps/capabilities - this is technically another subsystem, but it's a special one - a cap is just a handle with a set of permissions attached via a bitmask, and it is ESSENTIAL that nothing in ring3 is able to ever touch
+    subsystems except via caps. This is how sharkix guarantees security, and any access via ring3 to a kobject, or worse, into core, is considered a critical security bug.
+ 5. Syscalls - technically part of core for now, syscalls are like in any other kernel how ring3/userspace interacts with the kernel's facilities - subsystems are exposed via syscalls which operate on cap handles, caps can
+    be given names (look at the CAP_SETNAME and CAP_GETNAME perms) - at time of writing this isn't properly abstracted, the longer term intent is for each subsystem to contain its own syscall implementations and to use more
+    arch-independent APIs
+ 6. The profile system - profiles are what controls what the kernel actually DOES at startup, it's used for implementing various tests and is used heavily during development - the pattern is to implement a new feature and then
+    add a new profile that exercises and tests it.
+ 7. Drivers - drivers are at time of writing split into ring0 kernel modules that setup hardware resources from the various subsystems and create caps for the ring3 implementation of the actual driver - ideally nearly ALL drivers
+    should be entirely ring3 eventually, and the long-term plan is to have an init system that will load ELFs from initrd according to metadata (see above).
+ 8. "Personality layer" - not yet implemented, this will eventually be how the positive syscalls are implemented, the design is in docs/PERSONALITY.md, at present positive numbered syscalls are a small set of basic test syscalls.
+    Negative numbered syscalls are used for native sharkix caps operations, while positive syscalls will be dealt with by the personality layer.
+ 9. Init system - not yet implemented, will eventually be responsible for running the drivers, resolving dependencies and handing out resources to them, spawning the personality layer and whatever else makes this thing an actual
+    operating system, somewhat akin to (but not quite the same as) an seL4 root task.
 
 ## Basic instructions
 
@@ -56,12 +81,26 @@ while I keep control of high-level algorithm, architectural and design choices a
 
 Sharkix is distributed under the terms of the GPLv2, and use of AI contributions does not change the license.
 
-Future contributions from third parties are welcome, including from third parties who themselves use AI, but you must warrant that it is your own work, or that any AI assistance is assistance only and not entirely machine generated.
+Furthermore, other than this very README, a lot of the documentation under docs/ and the GENERAL-TODO.md etc contain notes maintained by various AI assistants - but these are notes produced as extensive summaries of my own chats
+with these agents, a sort of "offloaded memory" for the most part, while others are audit results and analysis from those AIs. I use this to help keep track of my own progress as I work on sharkix, the AI documentation is NOT the
+actual "source of truth", and the actual design decisions remain my own, I only use AI-assisted notes to help organize my thoughts, and I use AIs to analyze progress and bughunt.
 
-In other words, if you can not explain what the code does, do not understand the design, patches will be rejected. This goes especially for any particularly large diffs - the larger the diff, the more scrutiny it deserves.
+The actual source of truth is the code, my own statements (such as this file) and anything I explicitly indicate as formal documentation. AI-maintained notes are working material and may be incomplete, stale, or wrong.
+
+In other words, for now assume only this README, code comments and my own words are accurate.
+
+External contributors should NOT modify these files, but may submit new documentation.
+
+## Regarding contributions
+
+Future contributions from third parties are welcome, including from third parties who themselves use AI.
+
+AI-assisted contributions are welcome, but contributors must understand, review and take responsibility for the code they submit. Do not submit substantial machine-generated patches that you cannot independently explain, review and maintain.
+
+In other words, if you can not explain what the code does or do not understand the design your patches will be rejected. This goes especially for any particularly large diffs - the larger the diff, the more scrutiny it deserves.
 If you're not certain, err on the side of "rewrite it manually and comment it properly so that fellow human beings can understand it".
 
-I do not keep track formally anymore of which parts of the overall codebase are AI generated vs entirely my own work, because there is too much intermingling to make the distinction by this point, and there is no legal requirement to do in order to properly claim copyright on the end results.
+I do not keep track formally anymore of which parts of the overall codebase are AI generated vs entirely my own work, because there is too much intermingling to make the distinction by this point, and there is no legal requirement to do in order to properly claim copyright on the end results. But I DO expect any contributions from other parties to reasonably be able to say they do actually understand it, so please don't submit a patch generated by an AI or blindly copy/pasted from somewhere else - especially the latter, if another human wrote it, respect the license and make clear that it isn't your own work, attribute it properly.
 
 Copyright law as it applies to AI output is still a developing area of law, but it is highly unlikely in my view that the courts or legislature will decide that any use of AI anywhere in the project "taints" the whole project and
  renders it unprotected by copyright. Should the law ever change in this area, the author will make efforts to audit for and replace all AI contributions with manually rewritten code so that the project remains suitable for
