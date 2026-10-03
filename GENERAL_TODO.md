@@ -64,6 +64,18 @@ Cross-subsystem horrors may become precise TODO items when solving them would
 explode the current pass. Completed subsystems stay closed without a concrete
 reason to reopen them.
 
+
+### Gemini review findings to verify (2026-10-03)
+
+Treat these as **review findings to investigate against the current source**, not as established facts.
+
+- **`THREAD_CREATE` in `syscall.c`: possible reused output variable.** Gemini reports that consecutive `kcapset_resolve_handle()` calls for the thread factory and target AS both write through the same local `object` variable. Inspect the current implementation and determine whether this is harmless temporary reuse today or risks incorrect structural tracking as the factory path grows. If appropriate, split it into explicit `factory_obj` / `as_obj` variables. Verify the actual call sites before patching.
+- **`AS_UNMAP` VMO authority: possible missing rights check.** Gemini reports that the `vmo_cap` passed to `AS_UNMAP` is resolved as `CAP_TYPE_VMO` with a required-rights mask of `0`, unlike related VM mapping/unmapping paths. Inspect the current syscall semantics and decide what authority unmapping by VMO identity should require. If `CAP_RIGHT_VMO_MAP` is the correct existing authority, enforce it consistently; leave any finer-grained future UNMAP-specific right to the planned capability/rights audit.
+
+Gemini also highlighted architectural properties worth checking against current code before promoting them to documented invariants: separation of logical destruction/loss of discoverability from final reclamation while references drain; avoiding a Giant Kernel Lock in favour of typed subsystem/registry locking for later SMP work; register-carried small values/names avoiding unnecessary userspace-pointer lifetime/fault handling on those syscall paths; and fixed small IPC messages keeping bulk transfer out of ordinary IPC in favour of shared VMO mechanisms.
+
+Its suggested next audit order agrees with the existing queue: **`kvmo` / VMO sets and PMEM backing retention first, then `kipc`, then `kcaps` last.** In particular, verify the PMEM-backed VMO retain/release contract and `kvmo_destroy()` / `owns_pmem` boundary rather than adding a second independent lifetime scheme.
+
 ## 1. Fix concrete thread / ELF launch correctness issues
 
 -   finish started-thread destruction semantics before exposing broader
