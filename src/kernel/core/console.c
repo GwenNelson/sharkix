@@ -41,6 +41,14 @@ void console_init_late(void) {
         console_write("Can not continue");
 	for(;;);
      }
+
+     status = kipc_create_publisher(&console_input_pub);
+     if(status != IPC_OK) {
+        console_write("console.c:console_init_late() - could not create the IPC endpoint!\n");
+	console_write("Can not continue");
+	for(;;);
+     }
+
      kipc_registry_register("console.output", console_output_pub);
      kipc_registry_register("console.input",  console_input_pub);
 
@@ -93,10 +101,10 @@ void console_hex(uint64_t value)
     for (int i = 15; i >= 0; --i) console_putc(digits[(value >> (i * 4)) & 0xf]);
 }
 
-void console_decimal(uint64_t value)
-{
+void console_decimal(uint64_t value) {
     char digits[21]; unsigned n = 0;
     if (!value) { console_putc('0'); return; }
     while (value) { digits[n++] = (char)('0' + value % 10); value /= 10; }
     while (n) console_putc(digits[--n]);
 }
+

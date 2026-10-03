@@ -9,10 +9,10 @@
  * structures, so registrations must use the natural alignment of this type.
  */
 typedef struct sharkix_console_driver_t {
-    const char *name;
-    void (*init)(void);
-    bool (*ready)(void);
-    void (*putc)(char c);
+	const char *name;
+	void (*init)(void);
+	bool (*ready)(void);
+	void (*putc)(char c);
 } sharkix_console_driver_t;
 
 
@@ -37,6 +37,7 @@ typedef struct sharkix_console_driver_t {
  * Register an early console driver.
  *
  * This macro must be used at global scope.
+ * Early console drivers for now always set getc to NULL, so we don't bother asking for that
  */
 #define REGISTER_EARLY_CONSOLE_DRIVER(driver_name, init_fn, ready_fn, putc_fn) \
     static sharkix_console_driver_t                                            \

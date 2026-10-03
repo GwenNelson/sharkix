@@ -121,7 +121,7 @@ void run_serial_service(void) {
 
             sharkix_syscall(&regs);
             if (regs.rax != 0) {   /* loop until we get an actual message */
-                regs.rax = SYSCALL_IPC_RECV;
+                regs.rax = SYSCALL_IPC_TRY_RECV;
                 regs.rdi = serial_output_cap;
                 continue;
             }
