@@ -31,6 +31,30 @@ size_t strlen( const char *s )
     return n;
 }
 
+int strncmp( const char *s1, const char *s2, size_t n )
+{
+    const unsigned char *a = ( const unsigned char * ) s1;
+    const unsigned char *b = ( const unsigned char * ) s2;
+
+    while( n-- != 0 )
+    {
+        if( *a != *b )
+        {
+            return ( int ) *a - ( int ) *b;
+        }
+
+        if( *a == '\0' )
+        {
+            return 0;
+        }
+
+        ++a;
+        ++b;
+    }
+
+    return 0;
+}
+
 int memcmp(const void *s1, const void *s2, size_t n) {
     const unsigned char *a = s1;
     const unsigned char *b = s2;
