@@ -7,6 +7,7 @@
 #include <sharkix/kernel/subsystems/kipc.h>
 #include <sharkix/kernel/subsystems/kcaps.h>
 #include <sharkix/kernel/subsystems/kportio.h>
+#include <sharkix/kernel/subsystems/kpmem.h>
 #include <sharkix/kernel/subsystems/kvmo.h>
 #include <sharkix/kernel/subsystems/kas.h>
 #include <sharkix/kernel/subsystems/kthread.h>
@@ -1228,9 +1229,152 @@ SHARKIX_SYSCALL_IMPL(VM_PROTECT) {
 	return syscall_return();
 }
 
+/*
+ * Allocate a physical-memory object.
+ *
+ * input:
+ *     RDI = FACTORY_PMEM capability
+ *     RSI = physical base; must be zero for an anonymous allocation
+ *     RDX = requested length
+ *     R10 = requested PMEM capability rights
+ *     R8  = allocation flags (the final argument)
+ *           KPMEM_ALLOC_FLAG_ANON: allocate fresh, zero-filled pages
+ *           KPMEM_ALLOC_FLAG_ANY:  describe the supplied physical range
+ *
+ * KPMEM_ALLOC_FLAG_ANON requires CAP_RIGHT_FACTORY_PMEM_ALLOC_ANON.
+ * KPMEM_ALLOC_FLAG_ANY requires CAP_RIGHT_FACTORY_PMEM_ALLOC_ANY.
+ * No flag bits other than the least significant bit are currently valid.
+ *
+ * return:
+ *     RAX = VM status
+ *     RSI = new PMEM capability, or CAP_INVALID_HANDLE on failure
+ *     RDX = actual PMEM length, or zero on failure
+ */
 SHARKIX_SYSCALL_IMPL(PMEM_ALLOC) {
-	(void)ctx;
-	return syscall_return();
+    const cap_rights_t valid_requested_rights =
+        CAP_RIGHT_PMEM_MAP |
+        CAP_RIGHT_PMEM_READ |
+        CAP_RIGHT_PMEM_WRITE |
+        CAP_RIGHT_PMEM_EXEC |
+        CAP_RIGHT_PMEM_DERIVE |
+        CAP_RIGHT_PMEM_MERGE;
+    thread_t *caller;
+    cap_handle_t factory_cap;
+    cap_handle_t new_cap;
+    cap_rights_t requested_rights;
+    cap_rights_t required_factory_right;
+    cap_rights_t new_cap_rights;
+    kobject_handle_t factory_object;
+    pmem_handle_t new_pmem;
+    uintptr_t physical_base;
+    size_t requested_len;
+    size_t actual_len;
+    uint64_t flags;
+    bool allocate_any;
+
+    caller = thread_current();
+    factory_cap = (cap_handle_t)ctx->rdi;
+    physical_base = (uintptr_t)ctx->rsi;
+    requested_len = (size_t)ctx->rdx;
+    requested_rights = (cap_rights_t)ctx->r10;
+    flags = ctx->r8;
+
+    if (!caller || !caller->address_space) {
+        ctx->rax = VM_ERR_INVALID;
+        goto fail;
+    }
+
+    if (flags & ~KPMEM_ALLOC_VALID_FLAGS) {
+        ctx->rax = VM_ERR_INVALID;
+        goto fail;
+    }
+
+    if (requested_rights & ~valid_requested_rights) {
+        ctx->rax = VM_ERR_INVALID;
+        goto fail;
+    }
+
+    if (requested_len == 0) {
+        ctx->rax = VM_ERR_INVALID;
+        goto fail;
+    }
+
+    allocate_any = (flags & KPMEM_ALLOC_FLAG_ANY) != 0;
+
+    if (allocate_any) {
+        if (physical_base % PAGE_SIZE != 0 ||
+            requested_len % PAGE_SIZE != 0 ||
+            (uintmax_t)requested_len >
+                (uintmax_t)UINTPTR_MAX - (uintmax_t)physical_base) {
+            ctx->rax = VM_ERR_INVALID;
+            goto fail;
+        }
+
+        required_factory_right = CAP_RIGHT_FACTORY_PMEM_ALLOC_ANY;
+    } else {
+        if (physical_base != 0 ||
+            requested_len > SIZE_MAX - (PAGE_SIZE - 1)) {
+            ctx->rax = VM_ERR_INVALID;
+            goto fail;
+        }
+
+        required_factory_right = CAP_RIGHT_FACTORY_PMEM_ALLOC_ANON;
+    }
+
+    if (kcapset_resolve_handle(caller->address_space->capset,
+                               factory_cap,
+                               CAP_TYPE_FACTORY_PMEM,
+                               required_factory_right,
+                               &factory_object) != 0) {
+        ctx->rax = VM_ERR_PERMISSION;
+        goto fail;
+    }
+
+    /* Factory capabilities carry authority, not an underlying kobject. */
+    (void)factory_object;
+
+    if (allocate_any) {
+        if (kpmem_create(&new_pmem, physical_base, requested_len) != 0) {
+            ctx->rax = VM_ERR_NO_MEMORY;
+            goto fail;
+        }
+        actual_len = requested_len;
+    } else {
+        if (kpmem_alloc_owned_pages(&new_pmem,
+                                    requested_len,
+                                    &actual_len) != 0) {
+            ctx->rax = VM_ERR_NO_MEMORY;
+            goto fail;
+        }
+    }
+
+    new_cap_rights = CAP_GENERIC_VALID_RIGHTS | requested_rights;
+
+    if (kcap_create((kobject_handle_t)new_pmem,
+                    CAP_TYPE_PMEM,
+                    new_cap_rights,
+                    &new_cap) != 0) {
+        (void)kpmem_destroy(new_pmem);
+        ctx->rax = VM_ERR_FAILED_CAP_CREATE;
+        goto fail;
+    }
+
+    if (kcapset_addcap(caller->address_space->capset, new_cap) != 0) {
+        (void)kcap_destroy(new_cap);
+        (void)kpmem_destroy(new_pmem);
+        ctx->rax = VM_ERR_FAILED_CAP_CREATE;
+        goto fail;
+    }
+
+    ctx->rax = VM_OK;
+    ctx->rsi = (uint64_t)new_cap;
+    ctx->rdx = (uint64_t)actual_len;
+    return syscall_return();
+
+fail:
+    ctx->rsi = (uint64_t)CAP_INVALID_HANDLE;
+    ctx->rdx = 0;
+    return syscall_return();
 }
 
 SHARKIX_SYSCALL_IMPL(PMEM_DERIVE) {

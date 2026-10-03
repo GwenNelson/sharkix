@@ -10,6 +10,17 @@ typedef uint64_t pmem_handle_t;
 
 #define PMEM_INVALID_HANDLE ((pmem_handle_t)UINT64_MAX)
 
+/*
+ * PMEM_ALLOC operation flags.
+ *
+ * The least significant bit selects whether the syscall allocates fresh,
+ * anonymous pages or describes an arbitrary physical range.  No other flag
+ * bits are currently valid.
+ */
+#define KPMEM_ALLOC_FLAG_ANON   UINT64_C(0)
+#define KPMEM_ALLOC_FLAG_ANY    (UINT64_C(1) << 0)
+#define KPMEM_ALLOC_VALID_FLAGS KPMEM_ALLOC_FLAG_ANY
+
 // represents a region of contiguous physical memory with no holes
 typedef struct pmem_t {
 	pmem_handle_t handle;
@@ -26,6 +37,15 @@ int kpmem_get(pmem_handle_t handle, pmem_t *out);
 
 // create a new physical memory object, returns 0 on success and -1 on failure
 int kpmem_create(pmem_handle_t *out, uintptr_t base, size_t len);
+
+/*
+ * Allocate fresh, zero-filled physical pages and create a PMEM which owns
+ * them.  The requested length is rounded up to a whole number of pages and
+ * returned through actual_len.
+ */
+int kpmem_alloc_owned_pages(pmem_handle_t *out,
+                            size_t requested_len,
+                            size_t *actual_len);
 
 // derive a new sub-region, returns 0 on success and -1 on failure
 int kpmem_derive(pmem_handle_t source, uintptr_t new_base, size_t new_len, pmem_handle_t* out);

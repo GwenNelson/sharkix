@@ -75,7 +75,11 @@ int kpmem_get(pmem_handle_t handle, pmem_t *out) {
     return 0;
 }
 
-int kpmem_create(pmem_handle_t *out, uintptr_t base, size_t len) {
+static int kpmem_create_internal(pmem_handle_t *out,
+                                 uintptr_t base,
+                                 size_t len,
+                                 bool owns_pages)
+{
     pmem_t *pmem;
     uintptr_t end;
     int result;
@@ -88,6 +92,10 @@ int kpmem_create(pmem_handle_t *out, uintptr_t base, size_t len) {
     if (kpmem_get_end(base, len, &end) < 0)
         return -1;
 
+    if (owns_pages &&
+        (len == 0 || base % PAGE_SIZE != 0 || len % PAGE_SIZE != 0))
+        return -1;
+
     pmem = kmalloc(sizeof(*pmem));
     if (!pmem)
         return -1;
@@ -95,7 +103,7 @@ int kpmem_create(pmem_handle_t *out, uintptr_t base, size_t len) {
     memset(pmem, 0, sizeof(*pmem));
     pmem->phys_base = base;
     pmem->length = len;
-    pmem->owns_pages = false;
+    pmem->owns_pages = owns_pages;
 
     kmutex_lock(&global_pmem_table_lock);
     result = kpmem_insert_locked(pmem);
@@ -107,6 +115,49 @@ int kpmem_create(pmem_handle_t *out, uintptr_t base, size_t len) {
     }
 
     *out = pmem->handle;
+    return 0;
+}
+
+int kpmem_create(pmem_handle_t *out, uintptr_t base, size_t len)
+{
+    return kpmem_create_internal(out, base, len, false);
+}
+
+int kpmem_alloc_owned_pages(pmem_handle_t *out,
+                            size_t requested_len,
+                            size_t *actual_len)
+{
+    uint64_t physical_base;
+    size_t rounded_len;
+    size_t page_count;
+
+    if (!out || !actual_len)
+        return -1;
+
+    *out = PMEM_INVALID_HANDLE;
+    *actual_len = 0;
+
+    if (requested_len == 0 ||
+        requested_len > SIZE_MAX - (PAGE_SIZE - 1))
+        return -1;
+
+    rounded_len = (requested_len + PAGE_SIZE - 1) &
+                  ~(size_t)(PAGE_SIZE - 1);
+    page_count = rounded_len / PAGE_SIZE;
+
+    if (phys_alloc_pages(page_count, &physical_base) != 0) return -1;
+
+    memset(phys_to_virt(physical_base), 0, rounded_len);
+
+    if (kpmem_create_internal(out,
+                              (uintptr_t)physical_base,
+                              rounded_len,
+                              true) != 0) {
+        phys_free_pages(physical_base, page_count);
+        return -1;
+    }
+
+    *actual_len = rounded_len;
     return 0;
 }
 
