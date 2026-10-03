@@ -1377,9 +1377,122 @@ fail:
     return syscall_return();
 }
 
+/*
+ * Create a PMEM describing a page-aligned subrange of another PMEM.
+ *
+ * input:
+ *     RDI = source PMEM capability
+ *     RSI = byte offset within the source PMEM
+ *     RDX = length
+ *     R10 = complete rights mask for the new PMEM capability
+ *
+ * return:
+ *     RAX = VM status
+ *     RSI = new PMEM capability, or CAP_INVALID_HANDLE on failure
+ *     RDX = derived length, or zero on failure
+ */
 SHARKIX_SYSCALL_IMPL(PMEM_DERIVE) {
-	(void)ctx;
-	return syscall_return();
+    thread_t *caller;
+    cap_handle_t source_cap_handle;
+    cap_handle_t derived_cap_handle;
+    cap_rights_t requested_rights;
+    cap_t source_cap;
+    pmem_handle_t source_handle;
+    pmem_handle_t derived_handle;
+    pmem_t source_pmem;
+    size_t offset;
+    size_t length;
+    uintptr_t derived_base;
+
+    caller = thread_current();
+    source_cap_handle = (cap_handle_t)ctx->rdi;
+    offset = (size_t)ctx->rsi;
+    length = (size_t)ctx->rdx;
+    requested_rights = (cap_rights_t)ctx->r10;
+
+    if (!caller || !caller->address_space) {
+        ctx->rax = VM_ERR_INVALID;
+        goto fail;
+    }
+
+    if (requested_rights & ~CAP_PMEM_VALID_RIGHTS) {
+        ctx->rax = VM_ERR_INVALID;
+        goto fail;
+    }
+
+    if (length == 0 || offset % PAGE_SIZE != 0 || length % PAGE_SIZE != 0) {
+        ctx->rax = VM_ERR_INVALID;
+        goto fail;
+    }
+
+    if (kcapset_resolve_record(caller->address_space->capset,
+                               source_cap_handle,
+                               CAP_RIGHT_PMEM_DERIVE,
+                               &source_cap) != 0 ||
+        source_cap.type != CAP_TYPE_PMEM ||
+        (requested_rights & ~source_cap.rights) != 0) {
+        ctx->rax = VM_ERR_PERMISSION;
+        goto fail;
+    }
+
+    source_handle = (pmem_handle_t)source_cap.obj_handle;
+    if (kpmem_get(source_handle, &source_pmem) != 0) {
+        ctx->rax = VM_ERR_NOT_FOUND;
+        goto fail;
+    }
+
+    if (offset > source_pmem.length ||
+        length > source_pmem.length - offset ||
+        offset > UINTPTR_MAX - source_pmem.phys_base) {
+        ctx->rax = VM_ERR_RANGE;
+        goto fail;
+    }
+
+    derived_base = source_pmem.phys_base + offset;
+    if (derived_base % PAGE_SIZE != 0) {
+        ctx->rax = VM_ERR_INVALID;
+        goto fail;
+    }
+
+    /*
+     * kpmem_derive() re-resolves and retains the source while holding the
+     * PMEM registry lock. If source destruction wins the race, this fails
+     * without publishing a derived object.
+     */
+    if (kpmem_derive(source_handle,
+                     derived_base,
+                     length,
+                     &derived_handle) != 0) {
+        ctx->rax = VM_ERR_INVALID;
+        goto fail;
+    }
+
+    if (kcap_create((kobject_handle_t)derived_handle,
+                    CAP_TYPE_PMEM,
+                    requested_rights,
+                    &derived_cap_handle) != 0) {
+        (void)kpmem_destroy(derived_handle);
+        ctx->rax = VM_ERR_FAILED_CAP_CREATE;
+        goto fail;
+    }
+
+    if (kcapset_addcap(caller->address_space->capset,
+                       derived_cap_handle) != 0) {
+        (void)kcap_destroy(derived_cap_handle);
+        (void)kpmem_destroy(derived_handle);
+        ctx->rax = VM_ERR_FAILED_CAP_CREATE;
+        goto fail;
+    }
+
+    ctx->rax = VM_OK;
+    ctx->rsi = (uint64_t)derived_cap_handle;
+    ctx->rdx = (uint64_t)length;
+    return syscall_return();
+
+fail:
+    ctx->rsi = (uint64_t)CAP_INVALID_HANDLE;
+    ctx->rdx = 0;
+    return syscall_return();
 }
 
 SHARKIX_SYSCALL_IMPL(PMEM_MERGE) {
