@@ -196,6 +196,13 @@ int kcap_destroy(cap_handle_t handle) {
 }
 
 // TODO - the below should somehow be refactored so that caps.c doesn't need subsystem-specific knowledge, perhaps something in caps.inc can point to the code for destroying objects?
+/*
+ * DO NOT ADD FACTORY CAPS HERE.
+ *
+ * Factory capabilities represent authority to create objects. They do not
+ * represent kobjects of their own, so there is no underlying object for this
+ * function to destroy.
+ */
 int kcap_destroy_obj(cap_handle_t handle) {
     cap_t *found;
     int status = 0;

@@ -120,8 +120,8 @@ SHARKIX_CAP_TYPE_END(THREAD)
 /*
  * Factories
  *
- * Factories currently have no type-specific rights. Possession of the
- * appropriately typed factory cap is the creation authority.
+ * Possession of an appropriately typed factory cap is creation authority.
+ * Factory types may additionally define type-specific rights.
  * 
  * We make them use IDs 1000+ to give obscene amounts of space for other types
  */
@@ -134,3 +134,10 @@ SHARKIX_CAP_TYPE_END(FACTORY_AS)
 
 SHARKIX_CAP_TYPE_BEGIN(FACTORY_THREAD, 1003)
 SHARKIX_CAP_TYPE_END(FACTORY_THREAD)
+
+SHARKIX_CAP_TYPE_BEGIN(FACTORY_PMEM, 1004)
+
+SHARKIX_CAP_RIGHT(FACTORY_PMEM, ALLOC_ANON, 10)
+SHARKIX_CAP_RIGHT(FACTORY_PMEM, ALLOC_ANY,  11)
+
+SHARKIX_CAP_TYPE_END(FACTORY_PMEM)
