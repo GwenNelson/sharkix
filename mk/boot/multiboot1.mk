@@ -16,6 +16,7 @@ MULTIBOOT1_KERNEL_ARGS = -kernel $(KERNEL_ELF)
 endif
 
 RUN_COMMAND = $(QEMU) $(QEMU_ARGS) $(MULTIBOOT1_KERNEL_ARGS)
+RUN_SERIAL_COMMAND = $(QEMU) $(subst -debugcon stdio,-debugcon file:sharkix-debug.log,$(QEMU_ARGS)) -serial stdio $(MULTIBOOT1_KERNEL_ARGS)
 RUN_GDB_COMMAND = $(QEMU) $(QEMU_ARGS) $(MULTIBOOT1_KERNEL_ARGS) -S -s
 RUN_ISO_COMMAND = $(QEMU) $(QEMU_ARGS) -cdrom $(ISO_IMAGE)
 VERIFY_COMMAND = readelf -h $(KERNEL_ELF); readelf -l $(KERNEL_ELF); grub-file --is-x86-multiboot $(KERNEL_ELF)

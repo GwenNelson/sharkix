@@ -9,7 +9,7 @@ USER_ASM_OBJECTS := $(patsubst $(USER_SRC_ROOT)/%.s,$(USER_OBJ_ROOT)/%.o,$(USER_
 USER_ELFS := $(patsubst $(USER_OBJ_ROOT)/%.o,$(USER_OBJ_ROOT)/%.elf,$(USER_ASM_OBJECTS))
 KERNEL_DEPFILES := $(KERNEL_OBJECTS:.o=.d)
 
-.PHONY: all clean iso run run-gdb run-iso verify FORCE _run-gdb
+.PHONY: all clean iso run run-serial run-gdb run-iso verify FORCE _run-gdb
 .SECONDARY: $(USER_ASM_OBJECTS) $(USER_ELFS)
 .DEFAULT_GOAL := all
 -include $(KERNEL_DEPFILES)
@@ -65,6 +65,9 @@ $(LIBFIFO_ARTIFACT): $(LIBFIFO_OBJECTS)
 
 run: $(KERNEL_ELF) $(BOOT_ARTIFACTS)
 	$(if $(strip $(RUN_COMMAND)),$(RUN_COMMAND),$(error run is unsupported by the selected architecture and platform))
+
+run-serial: $(KERNEL_ELF) $(BOOT_ARTIFACTS)
+	$(if $(strip $(RUN_SERIAL_COMMAND)),$(RUN_SERIAL_COMMAND),$(error run-serial is unsupported by the selected architecture and platform))
 
 # Preserve the historical public target and its clean debug rebuild behavior.
 run-gdb:
