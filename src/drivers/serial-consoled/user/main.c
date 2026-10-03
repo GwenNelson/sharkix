@@ -4,6 +4,7 @@
 #include <sharkix/libsharkix/syscalls.h>
 
 static uint64_t serial_output_cap;
+static uint64_t serial_input_cap;
 static uint64_t serial_ready_cap;
 static uint64_t serial_ier_cap;   // IER (Interrupt Enable) cap
 static uint64_t serial_lcr_cap;   // LCR (Line Control) cap
@@ -113,36 +114,54 @@ void run_serial_service(void) {
 	serial_signal_ready();
 
 	sharkix_syscall_regs_t regs = { 0 };
-        regs.rax = SYSCALL_IPC_RECV;
-        regs.rdi = serial_output_cap;
-        for (;;) {
+	for (;;) {
             uint64_t words[4];
             uint64_t count;
 
+	    /* Drain available output without blocking input polling. */
+	    regs = (sharkix_syscall_regs_t) { 0 };
+	    regs.rax = SYSCALL_IPC_TRY_RECV;
+	    regs.rdi = serial_output_cap;
             sharkix_syscall(&regs);
-            if (regs.rax != 0) {   /* loop until we get an actual message */
-                regs.rax = SYSCALL_IPC_TRY_RECV;
-                regs.rdi = serial_output_cap;
-                continue;
-            }
-            count = regs.rsi;
-            if (count > 32) count = 32;
-            words[0] = regs.rdx;
-            words[1] = regs.r10;
-            words[2] = regs.r8;
-            words[3] = regs.r9;
-            for (uint64_t i = 0; i < count; ++i)
-                 internal_console_serial_putc((char)(words[i / 8] >> ((i % 8) * 8)));
-            regs.rax = SYSCALL_IPC_RECV;
-            regs.rdi = serial_output_cap;
+	    while (regs.rax == 0) {
+	        count = regs.rsi;
+	        if (count > 32) count = 32;
+	        words[0] = regs.rdx;
+	        words[1] = regs.r10;
+	        words[2] = regs.r8;
+	        words[3] = regs.r9;
+	        for (uint64_t i = 0; i < count; ++i)
+	            internal_console_serial_putc((char)(words[i / 8] >> ((i % 8) * 8)));
+	        regs = (sharkix_syscall_regs_t) { 0 };
+	        regs.rax = SYSCALL_IPC_TRY_RECV;
+	        regs.rdi = serial_output_cap;
+	        sharkix_syscall(&regs);
+	    }
+
+	    /* LSR bit 0 says COM1 has a byte in RBR. Drain what is ready now. */
+	    while (serial_port_inb(serial_lsr_cap) & 0x01) {
+	        uint8_t byte = serial_port_inb(serial_com1_cap);
+	        regs = (sharkix_syscall_regs_t) { 0 };
+	        regs.rax = SYSCALL_IPC_SEND;
+	        regs.rdi = serial_input_cap;
+	        regs.rsi = 1;
+	        regs.rdx = byte;
+	        sharkix_syscall(&regs);
+	        if ((int64_t)regs.rax != 0)
+	            serial_panic("serial input publication failed!");
+    }
+
+	/* This ABI has no userspace yield call; pause until timer preemption. */
+	__asm__ volatile ("pause");
         }
 	
 }
 
 void driver_user_main(uint64_t *bootstrap) {
-    uint64_t handles[8];
+    uint64_t handles[9];
     char *capv[] = {
         "serial.out",
+        "serial.in",
         "serial.ready",
         "serial.ier",
         "serial.lcr",
@@ -152,23 +171,24 @@ void driver_user_main(uint64_t *bootstrap) {
 	"serial.com1",
     };
 
-    if (!bootstrap || bootstrap[0] != 8) {
+    if (!bootstrap || bootstrap[0] != 9) {
 	serial_panic("invalid bootstrap!");
     }
 
-    if (sharkix_get_bootstrap(handles, capv, 8, bootstrap) !=
+    if (sharkix_get_bootstrap(handles, capv, 9, bootstrap) !=
         SHARKIX_BOOTSTRAP_OK) {
         serial_panic("bootstrap discovery failed\n");
     }
 
     serial_output_cap = handles[0];
-    serial_ready_cap  = handles[1];
-    serial_ier_cap    = handles[2];
-    serial_lcr_cap    = handles[3];
-    serial_mcr_cap    = handles[4];
-    serial_iir_cap    = handles[5];
-    serial_lsr_cap    = handles[6];
-    serial_com1_cap   = handles[7];
+    serial_input_cap  = handles[1];
+    serial_ready_cap  = handles[2];
+    serial_ier_cap    = handles[3];
+    serial_lcr_cap    = handles[4];
+    serial_mcr_cap    = handles[5];
+    serial_iir_cap    = handles[6];
+    serial_lsr_cap    = handles[7];
+    serial_com1_cap   = handles[8];
 
     serial_log("obtained required caps");
     

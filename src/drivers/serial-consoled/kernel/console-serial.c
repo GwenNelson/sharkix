@@ -15,7 +15,7 @@
 static bool serial_ready = false;
 
 enum {
-    SERIAL_CONSOLED_STACK_WORDS = 9,
+    SERIAL_CONSOLED_STACK_WORDS = 10,
     SERIAL_CONSOLED_STACK_BYTES = SERIAL_CONSOLED_STACK_WORDS * sizeof(uint64_t)
 };
 
@@ -25,6 +25,7 @@ extern const uint8_t serial_consoled_image_end[];
 // IPC
 static ipc_handle_t serial_endpoint     = IPC_INVALID_HANDLE;
 static cap_handle_t   serial_output_cap   = CAP_INVALID_HANDLE;
+static cap_handle_t   serial_input_cap    = CAP_INVALID_HANDLE;
 
 static ipc_handle_t serial_ready_endpoint = IPC_INVALID_HANDLE;
 static cap_handle_t   serial_ready_cap      = CAP_INVALID_HANDLE;
@@ -112,12 +113,20 @@ void console_serial_init(void) {
      if(kipc_registry_lookup("console.output",&console_output_pub)!=0) {
        console_write("serial-consoled: can't find console.output endpoint\n");
      }
+     ipc_handle_t console_input_pub;
+     if(kipc_registry_lookup("console.input",&console_input_pub)!=0) {
+       console_write("serial-consoled: can't find console.input endpoint\n");
+       for (;;) __asm__ volatile ("cli; hlt");
+     }
 
      // setup the endpoints
      if (kipc_subscribe(console_output_pub,&serial_endpoint) != IPC_OK ||
          kcap_create(serial_endpoint, CAP_TYPE_IPC,
                      CAP_RIGHT_IPC_RECV | CAP_RIGHT_GETNAME,
                      &serial_output_cap) != 0 ||
+         kcap_create(console_input_pub, CAP_TYPE_IPC,
+                     CAP_RIGHT_IPC_SEND | CAP_RIGHT_GETNAME,
+                     &serial_input_cap) != 0 ||
          kipc_create(&serial_ready_endpoint) != IPC_OK ||
          kcap_create(serial_ready_endpoint, CAP_TYPE_IPC,
                      CAP_RIGHT_IPC_SEND | CAP_RIGHT_GETNAME,
@@ -149,7 +158,7 @@ void console_serial_init(void) {
                      &serial_lsr_cap) != 0 ||
          kportio_create(&serial_com1, UINT16_C(0x3F8), 1) != 0 ||
          kcap_create(serial_com1, CAP_TYPE_PORTIO,
-                     CAP_RIGHT_PORTIO_WRITE | CAP_RIGHT_GETNAME,
+                     CAP_RIGHT_PORTIO_READ | CAP_RIGHT_PORTIO_WRITE | CAP_RIGHT_GETNAME,
                      &serial_com1_cap) != 0) {
          console_write("serial-consoled port I/O setup failed\n");
          for (;;) __asm__ volatile ("cli; hlt");
@@ -159,6 +168,8 @@ void console_serial_init(void) {
      if (create_user_task(&user_as, &user_thread, &bootstrap) != 0 ||
          kcap_set_name(serial_output_cap, "serial.out",
                        sizeof("serial.out") - 1) != 0 ||
+         kcap_set_name(serial_input_cap, "serial.in",
+                       sizeof("serial.in") - 1) != 0 ||
          kcap_set_name(serial_ready_cap, "serial.ready",
                        sizeof("serial.ready") - 1) != 0 ||
          kcap_set_name(serial_ier_cap, "serial.ier",
@@ -174,6 +185,7 @@ void console_serial_init(void) {
          kcap_set_name(serial_com1_cap, "serial.com1",
                        sizeof("serial.com1") - 1) != 0 ||
          kcapset_addcap(user_as->capset, serial_output_cap) != 0 ||
+         kcapset_addcap(user_as->capset, serial_input_cap) != 0 ||
          kcapset_addcap(user_as->capset, serial_ready_cap) != 0 ||
          kcapset_addcap(user_as->capset, serial_ier_cap) != 0 ||
          kcapset_addcap(user_as->capset, serial_lcr_cap) != 0 ||
@@ -186,15 +198,16 @@ void console_serial_init(void) {
     }
     
     // Preserve the capability order expected by serial_consoled_main().
-    bootstrap[0] = 8;
+    bootstrap[0] = 9;
     bootstrap[1] = serial_output_cap;
-    bootstrap[2] = serial_ready_cap;
-    bootstrap[3] = serial_ier_cap;
-    bootstrap[4] = serial_lcr_cap;
-    bootstrap[5] = serial_mcr_cap;
-    bootstrap[6] = serial_iir_cap;
-    bootstrap[7] = serial_lsr_cap;
-    bootstrap[8] = serial_com1_cap;
+    bootstrap[2] = serial_input_cap;
+    bootstrap[3] = serial_ready_cap;
+    bootstrap[4] = serial_ier_cap;
+    bootstrap[5] = serial_lcr_cap;
+    bootstrap[6] = serial_mcr_cap;
+    bootstrap[7] = serial_iir_cap;
+    bootstrap[8] = serial_lsr_cap;
+    bootstrap[9] = serial_com1_cap;
 
     // Match the user task's priority so the ready waiter cannot starve startup.
     worker_thread = startup_kernel_thread(kernel_worker, "serial-consoled-worker",
