@@ -550,7 +550,7 @@ static ipc_status_t kipc_publish(ipc_endpoint_t *publisher,
                      continue;
 
                  if (subscriber->ep_type == IPC_ENDPOINT_SUBSCRIBER)
-                     (void)kipc_enqueue_nonblocking(subscriber, queued);
+                     (void)kipc_enqueue_blocking(subscriber, queued); // TODO - we need policy here!
 
                  kipc_release(subscriber);
              }
