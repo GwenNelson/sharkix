@@ -782,6 +782,25 @@ bookkeeping object per page when a contiguous block is available.
 
 Do NOT block the current ELF/BSS work on replacing the allocator.
 
+## Kernel shell `cmd_threads` / thread introspection
+
+-   finish `cmd_threads` as a read-only kernel-debugging command that reports the
+    threads currently known to Sharkix and useful existing metadata such as thread
+    identity and execution state; do not add thread-control semantics merely to
+    support the display;
+-   add a clean core-thread interface for querying / iterating thread metadata
+    rather than having the shell reach directly into scheduler-private lists or
+    depend on internal `thread_t` layout;
+-   keep the interface small and snapshot/debug-oriented. Expose only metadata the
+    core already owns and can report coherently; do not invent a general process
+    introspection framework;
+-   define locking/lifetime semantics so iteration cannot retain or dereference a
+    stale `thread_t *` while threads exit or are reaped. Prefer copying the needed
+    metadata while appropriately protected rather than handing raw thread pointers
+    to the shell;
+-   let future useful fields (for example wait reason / object or CPU) be added only
+    when the underlying scheduler has a clean source for them.
+
 ## Threads / kthread
 
 The userspace-visible `kthread` wrapper and basic
