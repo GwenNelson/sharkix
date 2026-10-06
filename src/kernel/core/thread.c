@@ -1,5 +1,6 @@
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 #include "arch.h"
 #include "console.h"
 #include "sync.h"
@@ -32,6 +33,14 @@ static thread_t *thread_allocate(void)
     thread_registry = thread;
     kcritical_exit();
     return thread;
+}
+
+static void thread_free_create_params(thread_t *thread)
+{
+    if (!thread || !thread->create_params) return;
+    kfree((void *)thread->create_params->name);
+    kfree(thread->create_params);
+    thread->create_params = NULL;
 }
 
 thread_t *thread_lookup(uint64_t id)
@@ -125,6 +134,26 @@ thread_t *thread_create(address_space_t *address_space, thread_privilege_t privi
 
     thread_t *thread = thread_allocate();
     if (!thread) return NULL;
+    thread->create_params = kmalloc(sizeof(*thread->create_params));
+    if (!thread->create_params) {
+        thread_unlink(thread);
+        kfree(thread);
+        return NULL;
+    }
+    *thread->create_params = *params;
+    thread->create_params->name = NULL;
+    if (params->name) {
+        size_t name_length = strlen(params->name);
+        char *name_copy = kmalloc(name_length + 1);
+        if (!name_copy) {
+            thread_free_create_params(thread);
+            thread_unlink(thread);
+            kfree(thread);
+            return NULL;
+        }
+        memcpy(name_copy, params->name, name_length + 1);
+        thread->create_params->name = name_copy;
+    }
     thread->privilege = privilege;
     thread->address_space = address_space;
     kcritical_enter();
@@ -136,6 +165,7 @@ thread_t *thread_create(address_space_t *address_space, thread_privilege_t privi
     if (!stack_base) {
         thread_release_address_space(thread);
         thread_unlink(thread);
+        thread_free_create_params(thread);
         kfree(thread);
         return NULL;
     }
@@ -172,6 +202,7 @@ void thread_destroy_unstarted(thread_t *thread)
     thread_release_kernel_resources(thread);
     thread_release_address_space(thread);
     thread_unlink(thread);
+    thread_free_create_params(thread);
     kfree(thread);
     kcritical_exit();
 }
@@ -251,6 +282,7 @@ void thread_reap(void)
         kcritical_exit();
         thread_release_kernel_resources(thread);
         thread_release_address_space(thread);
+        thread_free_create_params(thread);
         kfree(thread);
         kcritical_enter();
         ++reaped_threads;

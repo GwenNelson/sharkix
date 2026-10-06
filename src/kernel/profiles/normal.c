@@ -34,8 +34,9 @@ static size_t shell_input_len = 0;
 static size_t shell_input_pos = 0;
 
 #define COMMANDS \
-	CMD("help",   cmd_help,   "display help output") \
-	CMD("uptime", cmd_uptime, "output uptime of the system")
+	CMD("help",    cmd_help,   "display help output") \
+	CMD("uptime",  cmd_uptime, "output uptime of the system") \
+	CMD("threads", cmd_threads,"list threads")
 
 #define CMD(name, func, usage) static void func(void);
 COMMANDS
@@ -162,6 +163,10 @@ static void input_buf_reader(void* argument) {
 		// TODO: For now, the console drivers only ever feed 1 byte, later we should loop a few times and properly deserialize
 		fifo_push_wait(&input_buf, (void *)(uintptr_t)msg.words[1]);
 	}
+}
+
+static void cmd_threads() {
+	
 }
 
 static void cmd_uptime() {

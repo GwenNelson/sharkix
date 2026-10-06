@@ -51,6 +51,7 @@ typedef struct thread {
     struct thread *scheduler_next;
     struct thread *reap_next; /* Intrusive link used by the deferred thread reaper. */
     struct thread *registry_next;
+    thread_create_params_t* create_params; /* used only for metadata - NOT authoritative for runtime */
 } thread_t;
 
 typedef struct cpu_local {
