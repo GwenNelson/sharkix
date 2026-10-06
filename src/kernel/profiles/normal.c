@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "startup.h"
+#include "scheduler.h"
 #include "thread.h"
 
 #include "console.h"
@@ -31,6 +32,14 @@ static void** input_buf_storage;
 static char   shell_input[INPUT_BUF_CAPACITY]; // this is for reading the actual shell input line
 static size_t shell_input_len = 0;
 static size_t shell_input_pos = 0;
+
+#define COMMANDS \
+	CMD("help",   cmd_help,   "display help output") \
+	CMD("uptime", cmd_uptime, "output uptime of the system")
+
+#define CMD(name, func, usage) static void func(void);
+COMMANDS
+#undef CMD
 
 static char input_buf_getc() {
 	return (char)(uintptr_t)fifo_pop_wait(&input_buf);
@@ -155,10 +164,58 @@ static void input_buf_reader(void* argument) {
 	}
 }
 
-static void print_usage() {
+static void cmd_uptime() {
+	uint64_t total_msecs     = ticks_so_far * (uint64_t)TIMER_TICK_MS; 
+	uint64_t total_secs      = total_msecs / 1000;
+	uint64_t remaining_msecs = total_msecs % 1000;
+
+	uint64_t days  = total_secs / 86400;
+	uint64_t hours = (total_secs % 86400) / 3600;
+	uint64_t mins  = (total_secs % 3600)  / 60;
+	uint64_t secs  = (total_secs % 60);
+
+	console_write("up ");
+	
+	console_decimal(days);
+	console_write(" days, ");
+	
+	console_decimal(hours);
+	console_write(":");
+	console_decimal(mins);
+	console_write(":");
+	console_decimal(secs);
+	console_write(".");
+	console_decimal(remaining_msecs);
+	
+	console_write("\n");
+
+}
+
+static void cmd_help(void) {
 	console_write("\n");
 	console_write("Supported commands:\n");
-	console_write("\tFUCK ALL YET\n");
+
+#define CMD(name,func,usage) \
+	console_write("\t"); \
+	console_write(name); \
+	console_write("\t\t"); \
+	console_write(usage); \
+	console_write("\n");
+COMMANDS
+#undef CMD
+}
+
+static void dispatch_cmd(char* cmd) {
+	#define CMD(name,func,usage) \
+		if(strncmp(cmd, name, strlen(name)) == 0) { \
+			func(); \
+			return; \
+		}
+
+		COMMANDS
+	#undef CMD
+	console_write("Unknown command: ");
+	console_write(cmd);
 	console_write("\n");
 }
 
@@ -194,7 +251,8 @@ static void normal_task(void *argument) {
 	for(;;) {
 		console_write("Sharkix> ");
 		char* cmd = readline();
-		if(strncmp(cmd,"help",4)==0) print_usage();
+		dispatch_cmd(cmd);
+		
 	}
 }
 
